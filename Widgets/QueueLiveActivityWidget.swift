@@ -80,14 +80,14 @@ private struct ExpandedBottom: View {
         switch state.phase {
         case .searching(let info):
             VStack(spacing: 6) {
-                WaitMeter(progress: info.progress(),
-                          isOverdue: info.isOverdue(),
-                          tint: info.role.tint)
+                TimedWaitMeter(start: info.startedAt,
+                               estimatedEnd: info.estimatedEnd,
+                               tint: info.role.tint)
                 HStack {
                     Text(info.mode.displayName)
                     Spacer()
                     Text(info.isOverdue() ? "Longer than usual"
-                                          : QueueTime.estimate(info.estimatedWait))
+                                          : "Estimated \(QueueTime.estimate(info.estimatedWait))")
                 }
                 .font(.caption2)
                 .foregroundStyle(Palette.white.opacity(0.6))
@@ -139,12 +139,12 @@ private struct LockScreenView: View {
                     .foregroundStyle(Palette.white)
 
                 if case .searching(let info) = state.phase {
-                    WaitMeter(progress: info.progress(),
-                              isOverdue: info.isOverdue(),
-                              tint: info.role.tint)
+                    TimedWaitMeter(start: info.startedAt,
+                                   estimatedEnd: info.estimatedEnd,
+                                   tint: info.role.tint)
                         .frame(maxWidth: 150)
                     Text(info.isOverdue() ? "Longer than usual"
-                                          : QueueTime.estimate(info.estimatedWait))
+                                          : "Estimated \(QueueTime.estimate(info.estimatedWait))")
                         .font(.caption2)
                         .foregroundStyle(Palette.white.opacity(0.55))
                 }

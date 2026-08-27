@@ -120,3 +120,47 @@ public struct ElapsedTimer: View {
             .foregroundStyle(Palette.white)
     }
 }
+
+/// `WaitMeter` for surfaces that cannot run a timeline.
+///
+/// A Live Activity's views are only re-rendered when the app pushes new content, so a
+/// bar whose width is computed from `Date.now` freezes at whatever it was when the push
+/// landed — during a search that means an empty bar for the whole queue while the phone
+/// fills one every second. `ProgressView(timerInterval:)` is the one progress primitive
+/// ActivityKit advances by itself, so this stays in step with the app for free.
+///
+/// The indeterminate case is a static gradient rather than `ShimmerMask`, because
+/// `TimelineView` doesn't tick out here either and would just pin one frame of the sweep.
+public struct TimedWaitMeter: View {
+    public var start: Date
+    /// When the estimate runs out. Nil when the server hasn't given one.
+    public var estimatedEnd: Date?
+    public var tint: Color
+
+    public init(start: Date, estimatedEnd: Date?, tint: Color) {
+        self.start = start
+        self.estimatedEnd = estimatedEnd
+        self.tint = tint
+    }
+
+    public var body: some View {
+        Group {
+            if let estimatedEnd, estimatedEnd > start, estimatedEnd > .now {
+                ProgressView(timerInterval: start...estimatedEnd, countsDown: false) {
+                    EmptyView()
+                } currentValueLabel: {
+                    EmptyView()
+                }
+                .progressViewStyle(.linear)
+                .tint(tint)
+            } else {
+                // No estimate, or already past it — the same "nobody knows" treatment the
+                // app shows, minus the animation this process can't drive.
+                Capsule()
+                    .fill(LinearGradient(colors: [tint.opacity(0.3), tint, tint.opacity(0.3)],
+                                         startPoint: .leading, endPoint: .trailing))
+            }
+        }
+        .frame(height: 6)
+    }
+}

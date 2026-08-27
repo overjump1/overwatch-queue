@@ -37,6 +37,14 @@ public struct SearchInfo: Codable, Hashable, Sendable {
         max(0, now.timeIntervalSince(startedAt))
     }
 
+    /// The moment the estimate runs out, as an absolute date. Surfaces that can't
+    /// recompute a fraction every second — a Live Activity's bar, above all — measure the
+    /// wait against this instead of against `progress()`.
+    public var estimatedEnd: Date? {
+        guard let estimatedWait, estimatedWait > 0 else { return nil }
+        return startedAt.addingTimeInterval(estimatedWait)
+    }
+
     /// 0…1 against the estimate, clamped. Nil when there is no estimate to measure against.
     public func progress(at now: Date = .now) -> Double? {
         guard let estimatedWait, estimatedWait > 0 else { return nil }
@@ -245,6 +253,39 @@ public extension QueuePhase {
         case (.cancelled, .searching):                return true
         case let (a, b) where a == b:                 return true   // payload refresh
         default:                                      return false
+        }
+    }
+}
+
+// MARK: - Clock correction
+
+public extension QueuePhase {
+    /// The same phase with every timestamp moved onto this device's clock.
+    ///
+    /// The app reads its dates back through `QueueStore.clock`, but a widget process has
+    /// no access to that correction — it can only compare what it's handed against a bare
+    /// `Date.now`. Anything crossing into one (the Live Activity above all) has to be
+    /// converted first, or its timers and bars run from a different origin than the
+    /// screen they're mirroring.
+    func localized(with clock: ClockSync) -> QueuePhase {
+        switch self {
+        case .idle, .cancelled:
+            return self
+        case .searching(var i):
+            i.startedAt = clock.toLocal(i.startedAt)
+            return .searching(i)
+        case .matchFound(var i):
+            i.lockInAt = clock.toLocal(i.lockInAt)
+            return .matchFound(i)
+        case .mapVote(var i):
+            i.deadline = clock.toLocal(i.deadline)
+            return .mapVote(i)
+        case .heroSelect(var i):
+            i.deadline = clock.toLocal(i.deadline)
+            return .heroSelect(i)
+        case .inGame(var i):
+            i.startedAt = clock.toLocal(i.startedAt)
+            return .inGame(i)
         }
     }
 }

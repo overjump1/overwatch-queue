@@ -63,14 +63,20 @@ public final class AppModel {
             self?.react(from: previous, to: next)
         }
         store.onSnapshot = { [weak self] snapshot in
+            guard let self else { return }
             // The watch mirrors whatever the phone is showing, mock or real.
             WatchLink.shared.send(snapshot: snapshot)
-            LiveActivityController.shared.sync(to: snapshot)
+            // The activity gets the store's drift correction too, so its timers and its
+            // wait bar run from the same origin as the ones on screen.
+            LiveActivityController.shared.sync(to: snapshot, clock: store.clock)
             SharedState.write(snapshot)
         }
     }
 
     public func start() {
+        // Before anything can push: take over the activity a previous launch left on the
+        // Lock Screen, rather than stacking a new one on top of it.
+        LiveActivityController.shared.adoptRunningActivity()
         WatchLink.shared.activate()
         WatchLink.shared.onCommand = { [weak self] command in
             // A vote or hero pick made on the wrist is handled exactly as if it had been
