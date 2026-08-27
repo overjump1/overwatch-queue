@@ -1,0 +1,103 @@
+import Foundation
+
+/// The versioned envelope every message travels in, in both directions.
+/// `docs/PROTOCOL.md` is the normative description of this format for the PC server.
+public struct WireEnvelope<Body: Codable & Sendable>: Codable, Sendable {
+    /// Bumped only on breaking changes; a client seeing an unknown version says so
+    /// rather than misreading the payload.
+    public static var currentVersion: Int { 1 }
+
+    public var v: Int
+    public var body: Body
+
+    public init(_ body: Body, v: Int = WireEnvelope<Body>.currentVersion) {
+        self.v = v
+        self.body = body
+    }
+}
+
+/// Server → client.
+public enum QueueEvent: Codable, Sendable {
+    /// Full state. The server may send this at any time; it is always safe to apply.
+    case snapshot(QueueSnapshot)
+    /// Liveness only — carries the server clock so `ClockSync` keeps tracking drift
+    /// during a long quiet queue.
+    case heartbeat(serverTime: Date)
+    /// The server rejected or couldn't fulfil a command.
+    case error(code: String, message: String)
+}
+
+/// Client → server. Sent when the player acts on phone or watch; the PC side decides
+/// whether to act on them (e.g. drive the in-game selection) or merely record them.
+public enum ClientCommand: Codable, Sendable {
+    /// First message on a new connection. Lets the server address this client and
+    /// immediately push a snapshot.
+    case hello(client: ClientIdentity)
+    case voteMap(mapKey: String)
+    case selectHero(heroKey: String)
+    /// Best-effort. Overwatch 2 has no accept prompt — once a match is found you are
+    /// pulled in. There is a brief, unreliable window in which cancelling the queue
+    /// still works, and this is a request to try it; the server may not be able to.
+    case cancelQueue
+    /// Ask for a fresh snapshot, e.g. after the app returns to the foreground.
+    case requestSnapshot
+}
+
+public struct ClientIdentity: Codable, Hashable, Sendable {
+    public enum Kind: String, Codable, Sendable {
+        case phone, watch
+    }
+
+    public var kind: Kind
+    public var name: String
+    public var appVersion: String
+
+    public init(kind: Kind, name: String, appVersion: String) {
+        self.kind = kind
+        self.name = name
+        self.appVersion = appVersion
+    }
+}
+
+/// One coder pair used everywhere, so the phone, the watch and the PC agree on date
+/// format without each surface inventing its own.
+public enum Wire {
+    public static let encoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        e.outputFormatting = [.sortedKeys]
+        return e
+    }()
+
+    public static let decoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }()
+
+    public static func encode<T: Codable & Sendable>(_ value: T) throws -> Data {
+        try encoder.encode(WireEnvelope(value))
+    }
+
+    public static func decode<T: Codable & Sendable>(_ type: T.Type, from data: Data) throws -> T {
+        let envelope = try decoder.decode(WireEnvelope<T>.self, from: data)
+        guard envelope.v == WireEnvelope<T>.currentVersion else {
+            throw WireError.unsupportedVersion(envelope.v)
+        }
+        return envelope.body
+    }
+}
+
+public enum WireError: LocalizedError {
+    case unsupportedVersion(Int)
+    case notConnected
+
+    public var errorDescription: String? {
+        switch self {
+        case .unsupportedVersion(let v):
+            return "Server speaks protocol v\(v); this app speaks v\(WireEnvelope<QueueSnapshot>.currentVersion). Update one of them."
+        case .notConnected:
+            return "Not connected to the queue server."
+        }
+    }
+}

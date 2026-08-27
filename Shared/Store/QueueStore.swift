@@ -1,0 +1,141 @@
+import Foundation
+import Observation
+
+/// The app's single source of truth. Owns the current snapshot, the transport, and the
+/// clock correction; everything the UI renders comes from here.
+///
+/// Deliberately platform-neutral — the phone, the watch and the widgets all use this
+/// same class. Platform-specific reactions (Live Activities, haptics, the watch relay)
+/// hang off `onPhaseChange` instead of being baked in.
+@MainActor
+@Observable
+public final class QueueStore {
+    public private(set) var snapshot: QueueSnapshot = .idle
+    public private(set) var status: TransportStatus = .offline
+    public private(set) var clock = ClockSync()
+    public private(set) var lastUpdate: Date = .distantPast
+
+    /// Fires when the phase *kind* changes — not on every payload refresh, so a vote tally
+    /// ticking up doesn't retrigger the match-found animation and haptic.
+    public var onPhaseChange: ((QueuePhase, QueuePhase) -> Void)?
+    /// Fires for every accepted snapshot, including payload-only refreshes. Used to keep
+    /// the Live Activity and the watch in step.
+    public var onSnapshot: ((QueueSnapshot) -> Void)?
+
+    public let catalog: CatalogService
+    public private(set) var transport: (any QueueTransport)?
+
+    public var phase: QueuePhase { snapshot.phase }
+
+    public init(catalog: CatalogService = .shared) {
+        self.catalog = catalog
+    }
+
+    // MARK: - Transport
+
+    /// Swaps the state source. Used by the debug panel to flip between the mock driver
+    /// and a live server without restarting the app.
+    public func use(_ transport: any QueueTransport) {
+        self.transport?.disconnect()
+        self.transport?.onEvent = nil
+        self.transport?.onStatusChange = nil
+
+        self.transport = transport
+        transport.onEvent = { [weak self] event in self?.handle(event) }
+        transport.onStatusChange = { [weak self] status in self?.status = status }
+        status = transport.status
+        transport.connect()
+    }
+
+    public func handle(_ event: QueueEvent) {
+        switch event {
+        case .snapshot(let incoming):
+            ingest(incoming)
+        case .heartbeat(let serverTime):
+            clock.observe(serverTime: serverTime)
+            lastUpdate = .now
+        case .error(_, let message):
+            status = .failed(message)
+        }
+    }
+
+    /// Applies a snapshot if it's actually newer. WCSession gives no ordering guarantee
+    /// and a reconnecting socket can replay, so this check is what keeps the UI from
+    /// jumping backwards.
+    public func ingest(_ incoming: QueueSnapshot) {
+        guard snapshot.supersededBy(incoming) || snapshot.sequence == 0 else { return }
+        let previous = snapshot.phase
+        clock.observe(serverTime: incoming.serverTime)
+        snapshot = incoming
+        lastUpdate = .now
+
+        if previous.kind != incoming.phase.kind {
+            onPhaseChange?(previous, incoming.phase)
+        }
+        onSnapshot?(incoming)
+    }
+
+    // MARK: - Player actions
+
+    /// Records the vote locally for instant feedback and sends it upstream. The optimistic
+    /// local update is overwritten by the server's next snapshot if it disagrees.
+    public func vote(map key: String) {
+        if case .mapVote(var info) = snapshot.phase, info.myVote != key {
+            info.myVote = key
+            snapshot = snapshot.advanced(to: .mapVote(info), now: clock.remoteNow())
+        }
+        transport?.send(.voteMap(mapKey: key))
+    }
+
+    public func select(hero key: String) {
+        if case .heroSelect(var info) = snapshot.phase, info.myHeroKey != key {
+            info.myHeroKey = key
+            snapshot = snapshot.advanced(to: .heroSelect(info), now: clock.remoteNow())
+        }
+        transport?.send(.selectHero(heroKey: key))
+    }
+
+    /// Leaves the queue, or tries to bail out of a match that's already been found.
+    /// The latter is not guaranteed to work — see `ClientCommand.cancelQueue`.
+    public func cancelQueue() { transport?.send(.cancelQueue) }
+    public func requestRefresh() { transport?.send(.requestSnapshot) }
+
+    // MARK: - Derived values
+
+    /// Corrected for clock drift, so a PC running a few seconds fast doesn't inflate the
+    /// wait time shown on the phone.
+    public func localDeadline() -> Date? {
+        phase.deadline.map { clock.toLocal($0) }
+    }
+
+    public func localQueueStart() -> Date? {
+        guard case .searching(let info) = phase else { return nil }
+        return clock.toLocal(info.startedAt)
+    }
+
+    /// The map the player is heading to, once one is known.
+    public var currentMap: OverwatchMap? {
+        switch phase {
+        case .heroSelect(let i): return catalog.map(i.mapKey)
+        case .inGame(let i): return catalog.map(i.mapKey)
+        case .mapVote(let i): return catalog.map(i.myVote ?? i.leader?.mapKey)
+        default: return nil
+        }
+    }
+
+    public var currentHero: Hero? {
+        switch phase {
+        case .heroSelect(let i): return catalog.hero(i.myHeroKey)
+        case .inGame(let i): return catalog.hero(i.heroKey)
+        default: return nil
+        }
+    }
+
+    /// Heroes offered in the current hero-select, minus ones teammates already locked.
+    public func selectableHeroes() -> [Hero] {
+        guard case .heroSelect(let info) = phase else { return [] }
+        let taken = Set(info.takenHeroKeys)
+        return catalog.heroes(role: info.role, mode: info.mode)
+            .filter { !taken.contains($0.key) }
+    }
+}

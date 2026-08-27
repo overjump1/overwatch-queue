@@ -1,0 +1,122 @@
+import SwiftUI
+
+/// The estimated-wait bar. Once the wait runs past the estimate it stops pretending to
+/// be a progress bar and becomes a shimmer — the honest signal that nobody knows how
+/// much longer it'll be.
+public struct WaitMeter: View {
+    public var progress: Double?
+    public var isOverdue: Bool
+    public var tint: Color
+
+    public init(progress: Double?, isOverdue: Bool, tint: Color) {
+        self.progress = progress
+        self.isOverdue = isOverdue
+        self.tint = tint
+    }
+
+    public var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Palette.white.opacity(0.10))
+
+                if isOverdue || progress == nil {
+                    Capsule()
+                        .fill(LinearGradient(colors: [tint.opacity(0.25), tint, tint.opacity(0.25)],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .mask { ShimmerMask() }
+                } else if let progress {
+                    Capsule()
+                        .fill(LinearGradient(colors: [tint.opacity(0.75), tint],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(6, geo.size.width * progress))
+                        .shadow(color: tint.opacity(0.5), radius: 6, y: 1)
+                        .animation(.smooth(duration: 0.8), value: progress)
+                }
+            }
+        }
+        .frame(height: 6)
+    }
+}
+
+/// A highlight that sweeps left to right forever. Used to say "still working" where a
+/// determinate bar would be a lie.
+public struct ShimmerMask: View {
+    public init() {}
+
+    public var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { context in
+            GeometryReader { geo in
+                let period: Double = 1.8
+                let t = context.date.timeIntervalSinceReferenceDate
+                    .truncatingRemainder(dividingBy: period) / period
+                let width = geo.size.width
+
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .white, location: 0.5),
+                        .init(color: .clear, location: 1),
+                    ],
+                    startPoint: .leading, endPoint: .trailing)
+                .frame(width: width * 0.45)
+                .offset(x: -width * 0.45 + t * (width * 1.45))
+            }
+        }
+    }
+}
+
+/// A ring that empties as a deadline approaches, going red in the last quarter.
+/// Self-ticking, so it costs nothing to keep on screen.
+public struct CountdownRing: View {
+    public var deadline: Date
+    public var total: TimeInterval
+    public var lineWidth: CGFloat
+    public var tint: Color
+
+    public init(deadline: Date, total: TimeInterval, lineWidth: CGFloat = 4, tint: Color = Palette.orange) {
+        self.deadline = deadline
+        self.total = max(1, total)
+        self.lineWidth = lineWidth
+        self.tint = tint
+    }
+
+    public var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: false)) { context in
+            let remaining = max(0, deadline.timeIntervalSince(context.date))
+            let fraction = min(1, remaining / total)
+            let urgent = fraction < 0.25
+
+            ZStack {
+                Circle().stroke(Palette.white.opacity(0.12), lineWidth: lineWidth)
+                Circle()
+                    .trim(from: 0, to: fraction)
+                    .stroke(urgent ? Palette.damage : tint,
+                            style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .shadow(color: (urgent ? Palette.damage : tint).opacity(0.7), radius: 6)
+            }
+        }
+    }
+}
+
+/// Big self-ticking elapsed time. Uses `Text(timerInterval:)` so the system drives the
+/// digits — no per-second view updates from our side.
+public struct ElapsedTimer: View {
+    public var since: Date
+    public var size: CGFloat
+    public var weight: Font.Weight
+
+    public init(since: Date, size: CGFloat = 56, weight: Font.Weight = .bold) {
+        self.since = since
+        self.size = size
+        self.weight = weight
+    }
+
+    public var body: some View {
+        Text(timerInterval: since...Date.distantFuture, countsDown: false)
+            .font(.system(size: size, weight: weight, design: .rounded))
+            .monospacedDigit()
+            .contentTransition(.numericText())
+            .foregroundStyle(Palette.white)
+    }
+}
