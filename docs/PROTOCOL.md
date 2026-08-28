@@ -222,6 +222,7 @@ Sent when the player acts on the phone or the watch.
 {"v":1,"body":{"type":"selectHero","data":{"heroKey":"reinhardt"}}}
 {"v":1,"body":{"type":"cancelQueue"}}
 {"v":1,"body":{"type":"requestSnapshot"}}
+{"v":1,"body":{"type":"registerPushToken","data":{"token":"5fceb98...","environment":"sandbox"}}}
 ```
 
 `kind` is `phone` or `watch`. `token` is the pairing token — see [Pairing](#pairing).
@@ -237,6 +238,32 @@ work, just keep sending the real state; don't fabricate a cancellation.
 The client applies its own votes and hero picks locally for instant feedback, then sends
 the command. **Your next snapshot is authoritative** — if it disagrees, the client accepts
 the server's version.
+
+`registerPushToken` hands over the APNs device token this client just got from
+`didRegisterForRemoteNotificationsWithDeviceToken` (or the watchOS equivalent), hex-encoded.
+`environment` is `sandbox` for a debug build, `production` for a release one — Apple runs
+separate push hosts for each, and a token is only valid against the one it was issued for.
+Sent once per launch, right after `hello`; re-sending overwrites whatever this `kind`
+registered before.
+
+## Push
+
+Silent by default, loud when it matters. Every state change — the same one that triggers
+a `snapshot` broadcast — also, if this client has a registered push token, becomes a
+**background** APNs push (`content-available`, no banner, no sound): just enough for the
+app to wake up, reconnect, and pull a fresh snapshot on its own. A `matchFound`, `mapVote`
+or `heroSelect` additionally gets a visible **alert** push, since those are the moments
+worth surfacing even with the app fully closed.
+
+This is unrelated to the WebSocket above — a push is how the PC reaches a device that
+currently holds no socket open at all (screen locked, app killed, watch out of range).
+The server in `server/` needs an Apple Push Notification Auth Key to send these, and by
+default reaches Apple through [`relay/`](../relay/README.md) — a small hosted service
+that holds that key so no installed copy of the server has to — rather than talking to
+Apple directly; see [server/README.md](../server/README.md#push-notifications-optional)
+for both that default and the advanced bring-your-own-key path. Nothing here is required
+— a server with neither configured just never pushes, and every client still works
+exactly as it does today.
 
 ## The server
 

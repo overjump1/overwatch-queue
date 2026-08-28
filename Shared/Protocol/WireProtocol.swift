@@ -42,6 +42,27 @@ public enum ClientCommand: Codable, Sendable {
     case cancelQueue
     /// Ask for a fresh snapshot, e.g. after the app returns to the foreground.
     case requestSnapshot
+    /// Hands over this device's APNs token, so the PC can wake it with a push once it's
+    /// no longer holding this socket open. Sent once per launch, right after `hello`.
+    case registerPushToken(token: String, environment: PushEnvironment)
+}
+
+/// Which of Apple's two push environments a device token is valid against — a debug
+/// build's token only works against the sandbox host, a release build's only against
+/// production.
+public enum PushEnvironment: String, Codable, Sendable {
+    case sandbox, production
+
+    /// The build this binary was compiled as. `aps-environment` in the entitlements
+    /// determines which host a token is actually issued for, and that always matches
+    /// the build configuration.
+    public static var current: PushEnvironment {
+        #if DEBUG
+        return .sandbox
+        #else
+        return .production
+        #endif
+    }
 }
 
 public struct ClientIdentity: Codable, Hashable, Sendable {
@@ -63,6 +84,15 @@ public struct ClientIdentity: Codable, Hashable, Sendable {
 public extension Bundle {
     var appVersion: String {
         (infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.0"
+    }
+}
+
+public extension Data {
+    /// The lowercase hex string APNs device tokens are conventionally written as —
+    /// `didRegisterForRemoteNotificationsWithDeviceToken` hands over raw bytes, and this
+    /// is what actually goes in `registerPushToken`.
+    var hexEncoded: String {
+        map { String(format: "%02x", $0) }.joined()
     }
 }
 

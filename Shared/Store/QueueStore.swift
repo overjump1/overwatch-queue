@@ -25,6 +25,11 @@ public final class QueueStore {
     public let catalog: CatalogService
     public private(set) var transport: (any QueueTransport)?
 
+    /// Set once this device has an APNs token to offer. Kept here, not in the transport,
+    /// because it has to survive a transport being swapped out (relay → direct, or a
+    /// fresh pairing) and resent to whichever one connects next.
+    private var pendingPushToken: (token: String, environment: PushEnvironment)?
+
     public var phase: QueuePhase { snapshot.phase }
 
     public init(catalog: CatalogService = .shared) {
@@ -39,9 +44,25 @@ public final class QueueStore {
 
         self.transport = transport
         transport.onEvent = { [weak self] event in self?.handle(event) }
-        transport.onStatusChange = { [weak self] status in self?.status = status }
+        transport.onStatusChange = { [weak self] status in
+            self?.status = status
+            if status.isLive { self?.sendPendingPushToken() }
+        }
         status = transport.status
         transport.connect()
+    }
+
+    /// Registers this device's APNs token with whichever transport is live — resent
+    /// automatically on every future (re)connect, since a relay swap or a fresh pairing
+    /// means a new socket that has never heard about it.
+    public func registerPushToken(_ token: String, environment: PushEnvironment) {
+        pendingPushToken = (token, environment)
+        sendPendingPushToken()
+    }
+
+    private func sendPendingPushToken() {
+        guard status.isLive, let pending = pendingPushToken else { return }
+        transport?.send(.registerPushToken(token: pending.token, environment: pending.environment))
     }
 
     /// Drops the transport and goes quiet. The last snapshot stays put; unpairing is

@@ -53,6 +53,7 @@ public final class WatchModel {
     public func start() {
         UNUserNotificationCenter.current().delegate = notificationPresenter
         requestNotificationAuthorizationIfNeeded()
+        WKApplication.shared().registerForRemoteNotifications()
 
         #if DEBUG
         // Standalone mode: `-server <host:port> -token <uuid>` points the watch straight
@@ -77,6 +78,26 @@ public final class WatchModel {
         }
         store.use(link)
         Task { await catalog.load() }
+    }
+
+    // MARK: - Push notifications
+    //
+    // Independent of the phone relay on purpose: this is the token APNs uses to wake the
+    // watch directly, for the case the relay is built to fail over from — the phone is
+    // out of range, asleep, or simply not carried.
+
+    public func didReceive(deviceToken: Data) {
+        store.registerPushToken(deviceToken.hexEncoded, environment: .current)
+    }
+
+    /// A background push arrived: make sure a connection is live and ask for the truth.
+    public func handleBackgroundPush(completion: @escaping () -> Void) {
+        if store.transport?.status.isLive != true { store.transport?.connect() }
+        store.requestRefresh()
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            completion()
+        }
     }
 
     /// A real, content-bearing alert that fires no matter which transport delivered the

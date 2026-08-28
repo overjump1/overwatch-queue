@@ -106,6 +106,7 @@ extension ClientCommand {
     private struct MapKey: Codable { var mapKey: String }
     private struct HeroKey: Codable { var heroKey: String }
     private struct Hello: Codable { var token: String?; var client: ClientIdentity }
+    private struct PushToken: Codable { var token: String; var environment: PushEnvironment }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: TaggedKeys.self)
@@ -123,6 +124,9 @@ extension ClientCommand {
             try c.tag("cancelQueue")
         case .requestSnapshot:
             try c.tag("requestSnapshot")
+        case .registerPushToken(let token, let environment):
+            try c.tag("registerPushToken")
+            try c.encode(PushToken(token: token, environment: environment), forKey: .data)
         }
     }
 
@@ -140,6 +144,9 @@ extension ClientCommand {
             self = .cancelQueue
         case "requestSnapshot":
             self = .requestSnapshot
+        case "registerPushToken":
+            let push = try c.decode(PushToken.self, forKey: .data)
+            self = .registerPushToken(token: push.token, environment: push.environment)
         case let other:
             throw DecodingError.dataCorruptedError(
                 forKey: .type, in: c,

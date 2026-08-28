@@ -14,7 +14,10 @@ import threading
 import time
 
 from . import protocol
+from .apns import APNsClient, APNsConfig
 from .protocol import QueueSession
+from .pushrelay import PushRelayClient, PushRelayConfig
+from .pushtokens import PushTokens
 from .wsserver import CLOSE_POLICY_VIOLATION, WebSocketServer
 
 HEARTBEAT_SECONDS = 10
@@ -23,7 +26,7 @@ HELLO_TIMEOUT_SECONDS = 10
 
 
 class QueueServer:
-    def __init__(self, pairing, catalog, log=None):
+    def __init__(self, pairing, catalog, log=None, push_tokens=None):
         self.pairing = pairing
         self.catalog = catalog
         self.session = QueueSession()
@@ -38,6 +41,17 @@ class QueueServer:
         self._scenario_stop = threading.Event()
         self.on_change = None            # called (on any thread) after state moves
 
+        # Pushing is entirely optional: with neither of these configured, a backgrounded
+        # phone or watch just won't be woken until it reconnects on its own.
+        #
+        # `apns.json` (a real Apple Auth Key, held locally) wins if it's there — that's
+        # the advanced path for someone who'd rather not depend on anyone else's relay.
+        # Otherwise, `push_relay.json` points at the maintainer's Cloudflare Worker (see
+        # `relay/`), which is what lets this server push without an Apple Developer
+        # account of its own. Same interface either way — nothing below this cares which.
+        self.push_tokens = push_tokens if push_tokens is not None else PushTokens()
+        self.apns = self._make_push_client()
+
         self.ws = WebSocketServer(port=pairing.port,
                                   on_open=self._client_connected,
                                   on_message=self._client_said,
@@ -48,6 +62,16 @@ class QueueServer:
                                   log=lambda message: self.log(message))
         self._heartbeat = None
         self._running = False
+
+    def _make_push_client(self):
+        log = lambda message: self.log(message)                          # noqa: E731
+        apns_config = APNsConfig.load()
+        if apns_config:
+            return APNsClient(apns_config, log=log)
+        relay_config = PushRelayConfig.load()
+        if relay_config:
+            return PushRelayClient(relay_config, log=log)
+        return None
 
     # ------------------------------------------------------------ lifecycle
 
@@ -64,6 +88,8 @@ class QueueServer:
         self._running = False
         self.stop_scenario()
         self.ws.stop()
+        if self.apns:
+            self.apns.close()
 
     @property
     def clients(self) -> list:
@@ -109,6 +135,27 @@ class QueueServer:
 
     def _broadcast_snapshot(self):
         self.ws.broadcast(self.session.snapshot())
+        self._push_apns()
+
+    def _push_apns(self):
+        """Reaches whichever paired kinds have registered a device token — regardless of
+        whether they're also connected over the socket right now, since a client that's
+        about to go stale benefits from the wake-up landing just before it notices.
+        A duplicate delivery is harmless: the client discards anything not newer than its
+        current `sequence`."""
+        if not self.apns:
+            return
+        session_id, sequence, kind = self.session.session_id, self.session.sequence, self.session.kind
+        for client_kind, device_token, environment in list(self.push_tokens.items()):
+            response = self.apns.send_background(
+                client_kind, device_token, environment, session_id, sequence)
+            if self.apns.token_is_invalid(response):
+                self.push_tokens.forget(client_kind)
+                continue
+            if kind in protocol.URGENT_KINDS:
+                title, body = protocol.notification_copy(kind)
+                self.apns.send_alert(client_kind, device_token, environment,
+                                     title, body, session_id, sequence)
 
     def _changed(self):
         if self.on_change:
@@ -156,6 +203,8 @@ class QueueServer:
             self._select_hero(client, data.get("heroKey"))
         elif kind == "cancelQueue":
             self._cancel(client)
+        elif kind == "registerPushToken":
+            self._register_push_token(client, data.get("token"), data.get("environment"))
         else:
             self.log("%s sent an unknown command: %s" % (client.name, kind))
 
@@ -197,6 +246,13 @@ class QueueServer:
             self._broadcast_snapshot()
         self.log("%s picked %s" % (client.name, self.catalog.name_for_hero(hero_key)))
         self._changed()
+
+    def _register_push_token(self, client, token, environment):
+        kind = (client.identity or {}).get("kind")
+        if kind not in ("phone", "watch") or not token or environment not in ("sandbox", "production"):
+            return
+        self.push_tokens.register(kind, token, environment)
+        self.log("%s registered for push notifications" % client.name)
 
     def _cancel(self, client):
         if not self.honour_cancel:

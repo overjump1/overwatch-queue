@@ -33,6 +33,63 @@ drive the screen on your wrist. **New token** invalidates every paired device at
 If your PC has more than one address — a VPN, Docker, a second NIC — pick the one the
 phone can reach from the dropdown; the code redraws for whichever you choose.
 
+## Push notifications (optional)
+
+The WebSocket only reaches a device that's holding it open — the moment the phone's
+screen locks or the watch drifts out of range, that stops being true. Apple Push
+Notification service is how the PC reaches them anyway: it pushes a snapshot to Apple's
+servers, and Apple delivers it even to a fully backgrounded app. See
+[docs/PROTOCOL.md](../docs/PROTOCOL.md#push) for what actually gets sent.
+
+The phone and watch each register their own device token the moment they connect and
+have push permission — nothing to do on that side beyond installing a build with the
+Push Notifications capability. Nothing below is required either: a server with neither
+of these configured just never pushes, and everything else works exactly as it does today.
+
+### The easy way: the maintainer's relay
+
+APNs authorizes at the Apple Developer Team level, not per device — the credential that
+lets you push at all would let you push to *every* installed copy of this app, not just
+your own, so it can't simply ship inside the open-source server. Instead, `relay/` is a
+small Cloudflare Worker that holds that one credential; every PC talks to it over HTTPS
+instead of to Apple directly. See [relay/README.md](../relay/README.md) for why that's
+the shape of it and exactly what it does and doesn't protect against.
+
+Point your server at a deployed relay with `~/.overwatch-queue/push_relay.json`:
+
+```json
+{
+  "url": "https://overwatch-queue-push-relay.<your-subdomain>.workers.dev",
+  "api_key": "<the RELAY_API_KEY the relay was deployed with>"
+}
+```
+
+### The advanced way: your own Apple Auth Key
+
+If you'd rather not depend on anyone's relay — including the maintainer's — the server
+will use a real Apple Auth Key directly if it finds one, before ever looking for
+`push_relay.json`. This only makes sense for a server you and nobody else installs: the
+same key that lets you push to your own phone lets you push to *any* device registered
+for this app, so it should never leave a machine you personally control.
+
+1. In the [Apple Developer portal](https://developer.apple.com/account/resources/authkeys/list),
+   create an APNs Auth Key and download the `.p8` it gives you (only once — Apple won't
+   let you download it again). Note its **Key ID** and your account's **Team ID**.
+2. Drop the file in as `~/.overwatch-queue/AuthKey_<KeyID>.p8`.
+3. Create `~/.overwatch-queue/apns.json` next to it:
+
+   ```json
+   {
+     "team_id": "ABCDE12345",
+     "key_id": "F6G7H8J9K0",
+     "bundle_id_ios": "com.tomerady.OverwatchQueue",
+     "bundle_id_watch": "com.tomerady.OverwatchQueue.watchkitapp"
+   }
+   ```
+
+4. Install the extra dependencies this path needs (already listed, commented, in
+   `server/requirements.txt`) and restart the server.
+
 ## The controls
 
 | | |
@@ -83,6 +140,9 @@ owqserver/
   wsserver.py     a small RFC 6455 WebSocket server
   protocol.py     the wire format from docs/PROTOCOL.md
   pairing.py      the token, where it's stored, and the addresses to offer
+  pushtokens.py   registered APNs device tokens, one per phone/watch
+  apns.py         talks to Apple directly — the advanced, bring-your-own-key path
+  pushrelay.py    talks to the maintainer's relay instead — see ../relay/
   qr.py           a QR encoder, so none of the above needs installing
   catalog.py      hero and map keys, read from the app's own catalog
 tests/            unittest; no dependencies, and the GUI tests run offscreen

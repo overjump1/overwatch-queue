@@ -1,1 +1,5 @@
 PyQt6>=6.4
+# Optional: only needed to push to a backgrounded phone/watch via APNs. The server runs
+# fine without them — see server/README.md for the one-time Apple Developer setup.
+httpx[http2]>=0.27
+PyJWT[crypto]>=2.8

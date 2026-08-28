@@ -60,6 +60,7 @@ final class WireFormatTests: XCTestCase {
             .selectHero(heroKey: "ana"),
             .cancelQueue,
             .requestSnapshot,
+            .registerPushToken(token: "5fceb98...", environment: .sandbox),
         ]
         for command in commands {
             let text = try json(command)
@@ -105,5 +106,6 @@ final class WireFormatTests: XCTestCase {
         print("SAMPLE voteMap: \(try json(ClientCommand.voteMap(mapKey: "ilios")))")
         print("SAMPLE selectHero: \(try json(ClientCommand.selectHero(heroKey: "reinhardt")))")
         print("SAMPLE cancelQueue: \(try json(ClientCommand.cancelQueue))")
+        print("SAMPLE registerPushToken: \(try json(ClientCommand.registerPushToken(token: "5fceb98...", environment: .sandbox)))")
     }
 }
