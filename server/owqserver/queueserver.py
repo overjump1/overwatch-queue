@@ -150,7 +150,11 @@ class QueueServer:
         whether they're also connected over the socket right now, since a client that's
         about to go stale benefits from the wake-up landing just before it notices.
         A duplicate delivery is harmless: the client discards anything not newer than its
-        current `sequence`."""
+        current `sequence`.
+
+        Silent only — no visible alert push. The Live Activity below is the one thing
+        that's meant to surface a change with the app fully closed; a banner on top of it
+        would just be the same event twice."""
         if not self.apns:
             return
         session_id, sequence, kind = self.session.session_id, self.session.sequence, self.session.kind
@@ -159,11 +163,6 @@ class QueueServer:
                 client_kind, device_token, environment, session_id, sequence)
             if self.apns.token_is_invalid(response):
                 self.push_tokens.forget(client_kind)
-                continue
-            if kind in protocol.URGENT_KINDS:
-                title, body = protocol.notification_copy(kind)
-                self.apns.send_alert(client_kind, device_token, environment,
-                                     title, body, session_id, sequence)
         self._push_activity(session_id, sequence, kind)
 
     def _push_activity(self, session_id: str, sequence: int, kind: str):
@@ -181,10 +180,6 @@ class QueueServer:
         """
         content_state = protocol.content_state(self.session.phase, sequence)
         timestamp = int(protocol.now().timestamp())
-        alert = None
-        if kind in protocol.URGENT_KINDS:
-            title, body = protocol.notification_copy(kind)
-            alert = {"title": title, "body": body}
 
         activity = self.activity_tokens.update_token(session_id)
         if activity:
@@ -193,8 +188,7 @@ class QueueServer:
                 self.apns.send_activity_end(token, environment, content_state, timestamp)
                 self.activity_tokens.forget_update()
             else:
-                self.apns.send_activity_update(token, environment, content_state,
-                                               timestamp, alert=alert)
+                self.apns.send_activity_update(token, environment, content_state, timestamp)
             return
 
         if kind in ("idle", "cancelled") or self._activity_start_sent_for == session_id:
@@ -205,8 +199,7 @@ class QueueServer:
         token, environment = start
         attributes = {"sessionID": session_id,
                      "startedAt": protocol.reference_date_seconds(protocol.now())}
-        self.apns.send_activity_start(token, environment, attributes, content_state,
-                                      timestamp, alert=alert)
+        self.apns.send_activity_start(token, environment, attributes, content_state, timestamp)
         self._activity_start_sent_for = session_id
 
     def _changed(self):

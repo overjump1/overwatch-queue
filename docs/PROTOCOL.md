@@ -262,24 +262,32 @@ whenever the system hands over a replacement.
 
 ## Push
 
-Silent by default, loud when it matters. Every state change — the same one that triggers
-a `snapshot` broadcast — also, if this client has a registered push token, becomes a
-**background** APNs push (`content-available`, no banner, no sound): just enough for the
-app to wake up, reconnect, and pull a fresh snapshot on its own. A `matchFound`, `mapVote`
-or `heroSelect` additionally gets a visible **alert** push, since those are the moments
-worth surfacing even with the app fully closed.
+Silent, deliberately. Every state change — the same one that triggers a `snapshot`
+broadcast — becomes a **background** APNs push to any registered phone/watch token
+(`content-available`, no banner, no sound): just enough for the app to wake up,
+reconnect, and pull a fresh snapshot on its own. The **Live Activity pushes** below are
+what's meant to actually surface a change on screen; `server/` never sends the visible
+**alert** push type on its own, even for `matchFound`/`mapVote`/`heroSelect` — a banner
+on top of the Live Activity's own content changing would just be the same event twice.
+(The `alert` push type itself still exists and is a real, tested capability of both
+`apns.py`/`pushrelay.py` and the relay — a server built differently is free to use it;
+this one's own policy just doesn't.)
 
 **Live Activity pushes** are a different, more specific mechanism layered on top of the
 same relay: they update the Dynamic Island / Lock Screen card directly, without waking the
-app at all. Three events, all under `apns-push-type: liveactivity`:
+app at all. Three events, all under `apns-push-type: liveactivity` and the **same topic**,
+`<bundle-id>.push-type.liveactivity` — including the start push. A separate
+`.push-type.liveactivity.start` topic is commonly described online for this, but it's
+wrong, at least for real push-to-start tokens against this account: verified directly by
+sending the same real token to both topics — `TopicDisallowed` on the `.start` one, `200`
+on the plain one, unchanged otherwise.
 
 - **start** — creates the activity from nothing, using the push-to-start token. Sent once
   per session, the first time a phase actually starts and no per-activity token exists
-  yet. Carries `attributes` (`sessionID`, `startedAt`) and `content-state`, under the topic
-  `<bundle-id>.push-type.liveactivity.start`.
+  yet. Carries `attributes` (`sessionID`, `startedAt`) and `content-state`.
 - **update** — pushed to the activity's own per-activity token on every subsequent change,
   once the phone has had a chance to register one (see `registerActivityPushToken` above).
-  Carries `content-state`; an urgent phase adds an `alert`.
+  Carries `content-state` only — no `alert`, for the same reason as above.
 - **end** — sent instead of an update once the phase goes back to `idle`/`cancelled`, then
   the per-activity token is forgotten.
 

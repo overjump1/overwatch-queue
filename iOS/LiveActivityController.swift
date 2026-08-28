@@ -196,16 +196,9 @@ public final class LiveActivityController {
 
         let content = ActivityContent(state: state, staleDate: staleDate(for: state.phase))
 
-        Task {
-            // Only an urgent phase gets an alert — that's what expands the Dynamic Island
-            // and buzzes the paired watch. Alerting on every tally change would train the
-            // user to ignore it.
-            if kindChanged, state.phase.isUrgent {
-                await activity.update(content, alertConfiguration: alert(for: state.phase))
-            } else {
-                await activity.update(content)
-            }
-        }
+        // No alert configuration — the card's own content changing is the signal; a
+        // banner on top of it would be a second, redundant notification for the same event.
+        Task { await activity.update(content) }
         record(state)
     }
 
@@ -267,11 +260,5 @@ public final class LiveActivityController {
     private func staleDate(for phase: QueuePhase) -> Date? {
         if let deadline = phase.deadline { return deadline.addingTimeInterval(5) }
         return Date.now.addingTimeInterval(15 * 60)
-    }
-
-    private func alert(for phase: QueuePhase) -> AlertConfiguration {
-        AlertConfiguration(title: LocalizedStringResource(stringLiteral: NotificationCopy.title(for: phase)),
-                           body: LocalizedStringResource(stringLiteral: NotificationCopy.body(for: phase)),
-                           sound: .default)
     }
 }

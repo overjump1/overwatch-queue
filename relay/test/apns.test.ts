@@ -145,7 +145,9 @@ describe("sendPush", () => {
 
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("https://api.sandbox.push.apple.com/3/device/start-token");
-    expect(init.headers["apns-topic"]).toBe("com.tomerady.OverwatchQueue.push-type.liveactivity.start");
+    // Not `.push-type.liveactivity.start` — Apple rejects that suffix for a real
+    // push-to-start token (`TopicDisallowed`); see the comment on `topicFor`.
+    expect(init.headers["apns-topic"]).toBe("com.tomerady.OverwatchQueue.push-type.liveactivity");
     expect(init.headers["apns-push-type"]).toBe("liveactivity");
     expect(init.headers["apns-priority"]).toBe("10");
     const body = JSON.parse(init.body);

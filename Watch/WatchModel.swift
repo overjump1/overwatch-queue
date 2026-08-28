@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import UserNotifications
 import WatchKit
 
 /// Watch-side counterpart to `AppModel`. State arrives from the paired iPhone; votes and
@@ -14,9 +13,6 @@ public final class WatchModel {
 
     /// The phone while it's in range, the PC when it isn't — see `WatchTransport`.
     private var link: WatchTransport?
-    /// Kept alive for as long as the model is, so the delegate reference `center.delegate`
-    /// holds weakly doesn't get deallocated out from under it.
-    private let notificationPresenter = ForegroundNotificationPresenter()
 
     public init() {
         store.onPhaseChange = { [weak self] _, next in
@@ -25,12 +21,12 @@ public final class WatchModel {
             case .matchFound:
                 self.matchFoundToken += 1
                 // The wrist tap is the whole reason the watch app exists — this is the
-                // signal that reaches you when the phone is in a pocket.
+                // signal that reaches you when the phone is in a pocket. No notification
+                // banner alongside it — the Live Activity on the phone is the only thing
+                // that surfaces this beyond a glance at the watch itself.
                 WKInterfaceDevice.current().play(.notification)
-                self.notify(for: next)
             case .mapVote, .heroSelect:
                 WKInterfaceDevice.current().play(.directionUp)
-                self.notify(for: next)
                 // Same reasoning as on the phone, and more acute here: the watch has a
                 // slower link, so art must be in hand before the grid appears.
                 switch next {
@@ -51,8 +47,6 @@ public final class WatchModel {
     }
 
     public func start() {
-        UNUserNotificationCenter.current().delegate = notificationPresenter
-        requestNotificationAuthorizationIfNeeded()
         WKApplication.shared().registerForRemoteNotifications()
 
         #if DEBUG
@@ -100,28 +94,6 @@ public final class WatchModel {
         }
     }
 
-    /// A real, content-bearing alert that fires no matter which transport delivered the
-    /// phase — the relay, or the watch's own direct connection to the PC. Unlike the
-    /// mirrored Live Activity, this doesn't depend on the phone process being alive.
-    private func notify(for phase: QueuePhase) {
-        let content = UNMutableNotificationContent()
-        content.title = NotificationCopy.title(for: phase)
-        content.body = NotificationCopy.body(for: phase)
-        content.sound = .default
-        let request = UNNotificationRequest(identifier: UUID().uuidString,
-                                            content: content,
-                                            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 0.1, repeats: false))
-        UNUserNotificationCenter.current().add(request)
-    }
-
-    private func requestNotificationAuthorizationIfNeeded() {
-        let center = UNUserNotificationCenter.current()
-        center.getNotificationSettings { settings in
-            guard settings.authorizationStatus == .notDetermined else { return }
-            center.requestAuthorization(options: [.alert, .sound]) { _, _ in }
-        }
-    }
-
     private var identity: ClientIdentity {
         ClientIdentity(kind: .watch,
                        name: WKInterfaceDevice.current().name,
@@ -144,14 +116,4 @@ public final class WatchModel {
                        token: token)
     }
     #endif
-}
-
-/// Without this, a local notification posted while the watch app is in the foreground is
-/// delivered silently — the app is already showing the match-found/vote/pick state, but a
-/// raised wrist that catches the app already open should still get the banner and sound.
-private final class ForegroundNotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
-    func userNotificationCenter(_ center: UNUserNotificationCenter,
-                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
-    }
 }

@@ -131,7 +131,10 @@ class LiveActivityPushTests(unittest.TestCase):
         self.fake = _FakeHTTPXClient()
         self.client._client = self.fake
 
-    def test_start_uses_the_dot_start_topic_and_carries_attributes(self):
+    def test_start_uses_the_same_topic_as_update_and_carries_attributes(self):
+        # Not `.push-type.liveactivity.start` — verified directly against a live
+        # push-to-start token that Apple actually rejects that suffix (`TopicDisallowed`)
+        # and accepts the plain topic below. See the comment on `_LIVE_ACTIVITY_TOPIC_SUFFIX`.
         self.client.send_activity_start(
             "start-token", "sandbox",
             attributes={"sessionID": "abc", "startedAt": 721692800.0},
@@ -140,7 +143,7 @@ class LiveActivityPushTests(unittest.TestCase):
         call = self.fake.calls[0]
         self.assertEqual(call["url"], "https://api.sandbox.push.apple.com/3/device/start-token")
         self.assertEqual(call["headers"]["apns-topic"],
-                         "com.tomerady.OverwatchQueue.push-type.liveactivity.start")
+                         "com.tomerady.OverwatchQueue.push-type.liveactivity")
         self.assertEqual(call["headers"]["apns-push-type"], "liveactivity")
         self.assertEqual(call["headers"]["apns-priority"], "10")
         aps = call["json"]["aps"]
