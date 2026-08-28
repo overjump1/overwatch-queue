@@ -54,10 +54,17 @@ class QueueServer:
         # A Live Activity's own push tokens — see `_push_activity` for how the two get
         # used differently from the phone/watch tokens above.
         self.activity_tokens = activity_tokens if activity_tokens is not None else ActivityTokens()
-        # Guards against re-sending push-to-start for a session that's already been
-        # started that way — Apple has no "start, but only if it isn't already running"
-        # semantics, so a second `start` event for the same activity is just a bug here.
-        self._activity_start_sent_for = None
+        # A background push-to-start is best-effort like any other APNs push — it can be
+        # delayed or dropped, and there's no acknowledgement. So this isn't a one-shot: a
+        # session with no update token yet keeps retrying `start` on every subsequent
+        # change, throttled by the cooldown below so a burst of fast changes (or repeated
+        # manual testing) doesn't hammer it. `startedAt` is fixed the first time a session
+        # sends one, not recomputed per retry — same attributes every time is what lets
+        # Apple's system recognise a retry as the same activity rather than a new one.
+        self._activity_session_id = None
+        self._activity_started_at = None
+        self._activity_start_last_sent_at = 0.0
+        self._activity_start_retry_seconds = 20
         self.apns = self._make_push_client()
 
         self.ws = WebSocketServer(port=pairing.port,
@@ -173,13 +180,24 @@ class QueueServer:
           idle/cancelled, an end — the activity's own equivalent of `LiveActivityController
           .end()`, reachable even when nothing local is around to call that).
         - No token yet, but a phase has actually started → push-to-start creates the
-          activity from nothing, once per session. Sent alongside — never instead of —
-          the phone's own silent wake-up above, since only that wake-up gives the app a
-          chance to attach to the newly-created activity and register a real per-activity
-          token for every update after this one.
+          activity from nothing. Retried on every subsequent change (throttled — see
+          `_activity_start_retry_seconds`) until an update token registers, since a
+          background push is best-effort and the first attempt landing is never
+          guaranteed. Sent alongside — never instead of — the phone's own silent wake-up
+          above, since only that wake-up gives the app a chance to attach to the activity
+          and register a real per-activity token for every update after this one.
+
+        An urgent phase carries a real alert — sound, haptic, a brief peek — the same way
+        a delivery app's Live Activity announces "your order is on the way" without a
+        separate notification alongside it. Routine changes stay silent; the card
+        updating is signal enough.
         """
         content_state = protocol.content_state(self.session.phase, sequence)
         timestamp = int(protocol.now().timestamp())
+        alert = None
+        if kind in protocol.URGENT_KINDS:
+            title, body = protocol.notification_copy(kind)
+            alert = {"title": title, "body": body}
 
         activity = self.activity_tokens.update_token(session_id)
         if activity:
@@ -187,20 +205,33 @@ class QueueServer:
             if kind in ("idle", "cancelled"):
                 self.apns.send_activity_end(token, environment, content_state, timestamp)
                 self.activity_tokens.forget_update()
+                self._activity_session_id = None
             else:
-                self.apns.send_activity_update(token, environment, content_state, timestamp)
+                self.apns.send_activity_update(token, environment, content_state,
+                                               timestamp, alert=alert)
             return
 
-        if kind in ("idle", "cancelled") or self._activity_start_sent_for == session_id:
+        if kind in ("idle", "cancelled"):
+            self._activity_session_id = None
             return
         start = self.activity_tokens.start_token()
         if not start:
             return
+
+        if self._activity_session_id != session_id:
+            self._activity_session_id = session_id
+            self._activity_started_at = protocol.reference_date_seconds(protocol.now())
+            self._activity_start_last_sent_at = 0.0            # a new session always retries immediately
+
+        now = time.time()
+        if now - self._activity_start_last_sent_at < self._activity_start_retry_seconds:
+            return
+        self._activity_start_last_sent_at = now
+
         token, environment = start
-        attributes = {"sessionID": session_id,
-                     "startedAt": protocol.reference_date_seconds(protocol.now())}
-        self.apns.send_activity_start(token, environment, attributes, content_state, timestamp)
-        self._activity_start_sent_for = session_id
+        attributes = {"sessionID": session_id, "startedAt": self._activity_started_at}
+        self.apns.send_activity_start(token, environment, attributes, content_state,
+                                      timestamp, alert=alert)
 
     def _changed(self):
         if self.on_change:

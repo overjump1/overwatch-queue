@@ -266,12 +266,13 @@ Silent, deliberately. Every state change — the same one that triggers a `snaps
 broadcast — becomes a **background** APNs push to any registered phone/watch token
 (`content-available`, no banner, no sound): just enough for the app to wake up,
 reconnect, and pull a fresh snapshot on its own. The **Live Activity pushes** below are
-what's meant to actually surface a change on screen; `server/` never sends the visible
-**alert** push type on its own, even for `matchFound`/`mapVote`/`heroSelect` — a banner
-on top of the Live Activity's own content changing would just be the same event twice.
-(The `alert` push type itself still exists and is a real, tested capability of both
-`apns.py`/`pushrelay.py` and the relay — a server built differently is free to use it;
-this one's own policy just doesn't.)
+what's meant to actually surface a change on screen; `server/` never sends the standalone
+visible **alert** push type on its own device-token, even for
+`matchFound`/`mapVote`/`heroSelect` — that would be a second, separate notification for
+the same event the Live Activity already announces (see below). (The `alert` push type
+itself still exists and is a real, tested capability of both `apns.py`/`pushrelay.py` and
+the relay — a server built differently is free to use it directly; this one's own policy
+just routes the "make noise" moments through the Live Activity's own alert instead.)
 
 **Live Activity pushes** are a different, more specific mechanism layered on top of the
 same relay: they update the Dynamic Island / Lock Screen card directly, without waking the
@@ -282,19 +283,29 @@ wrong, at least for real push-to-start tokens against this account: verified dir
 sending the same real token to both topics — `TopicDisallowed` on the `.start` one, `200`
 on the plain one, unchanged otherwise.
 
-- **start** — creates the activity from nothing, using the push-to-start token. Sent once
-  per session, the first time a phase actually starts and no per-activity token exists
-  yet. Carries `attributes` (`sessionID`, `startedAt`) and `content-state`.
+- **start** — creates the activity from nothing, using the push-to-start token. Sent the
+  first time a phase actually starts and no per-activity token exists yet, and *retried*
+  on every subsequent change (throttled to once per `_activity_start_retry_seconds`) until
+  one registers — a background push is best-effort, so the first attempt landing is never
+  guaranteed. Carries `attributes` (`sessionID`, a `startedAt` fixed once per session and
+  reused on every retry, so Apple recognises a retry as the same activity rather than a
+  new one) and `content-state`.
 - **update** — pushed to the activity's own per-activity token on every subsequent change,
   once the phone has had a chance to register one (see `registerActivityPushToken` above).
-  Carries `content-state` only — no `alert`, for the same reason as above.
+  Carries `content-state`.
 - **end** — sent instead of an update once the phase goes back to `idle`/`cancelled`, then
   the per-activity token is forgotten.
 
-Between "start" and the phone registering a real per-activity token, further changes are
-silently held — there's a real, expected gap here, since push-to-start creates the
-activity entirely OS-side without running any app code; only the *next* ordinary
-background wake-up (above) gives the app a chance to attach and register one.
+`matchFound`, `mapVote` and `heroSelect` additionally carry an `alert` (title/body) on
+whichever of start/update actually fires for them — sound, haptic, and a brief peek, the
+same way a delivery app announces "your order is on the way" without a separate
+notification alongside it. Routine changes carry no `alert`.
+
+Between "start" and the phone registering a real per-activity token, further updates
+have nothing to reach yet — there's a real, expected gap here, since push-to-start
+creates the activity entirely OS-side without running any app code; only the *next*
+ordinary background wake-up (above) gives the app a chance to attach and register one.
+`start` itself keeps retrying in the meantime, so a delayed first attempt isn't fatal.
 
 The one thing worth knowing if you implement a server for this from scratch: a Live
 Activity push's `content-state` is decoded with a plain `JSONDecoder`, not this protocol's

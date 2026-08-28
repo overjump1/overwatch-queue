@@ -292,11 +292,33 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.assertEqual(content_state["phase"]["type"], "searching")
         self.assertIsNone(alert)                    # searching isn't urgent
 
-    def test_start_is_sent_only_once_per_session(self):
+    def test_start_is_not_resent_within_the_retry_cooldown(self):
         self.server.activity_tokens.register_start("start-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.server.apply(protocol.match_found("quickPlay", "damage", 30))
         self.assertEqual(len(self.fake.activity_starts), 1)
+
+    def test_start_is_retried_once_the_cooldown_elapses(self):
+        # A background push-to-start is best-effort — the first one landing is never
+        # guaranteed, so a session with no update token yet keeps retrying rather than
+        # giving up after one attempt.
+        self.server.activity_tokens.register_start("start-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.server._activity_start_last_sent_at -= self.server._activity_start_retry_seconds + 1
+        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
+        self.assertEqual(len(self.fake.activity_starts), 2)
+
+    def test_retried_attributes_keep_the_same_startedAt(self):
+        # Apple recognises a retry as the same activity by matching attributes — a
+        # `startedAt` that drifted between attempts would make each retry look like a
+        # brand new activity instead.
+        self.server.activity_tokens.register_start("start-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        first_started_at = self.fake.activity_starts[0][2]["startedAt"]
+        self.server._activity_start_last_sent_at -= self.server._activity_start_retry_seconds + 1
+        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
+        second_started_at = self.fake.activity_starts[1][2]["startedAt"]
+        self.assertEqual(first_started_at, second_started_at)
 
     def test_a_start_token_registered_mid_session_still_gets_the_current_phase(self):
         # The start token can arrive late (the app only just got its first chance to run
@@ -308,15 +330,24 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.assertEqual(len(self.fake.activity_starts), 1)
         content_state, alert = self.fake.activity_starts[0][3], self.fake.activity_starts[0][5]
         self.assertEqual(content_state["phase"]["type"], "matchFound")
-        self.assertIsNone(alert)              # no banner — the card's content is the signal
+        self.assertEqual(alert, {"title": "Match Found",
+                                 "body": "You're being pulled into the game — get back to your PC."})
 
-    def test_updates_never_carry_an_alert_even_for_an_urgent_phase(self):
+    def test_routine_updates_carry_no_alert(self):
+        self.server.activity_tokens.register_update(
+            self.server.session.session_id, "activity-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        alert = self.fake.activity_updates[-1][4]
+        self.assertIsNone(alert)
+
+    def test_an_urgent_update_carries_an_alert(self):
         self.server.activity_tokens.register_update(
             self.server.session.session_id, "activity-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.server.apply(protocol.match_found("quickPlay", "damage", 30))
         alert = self.fake.activity_updates[-1][4]
-        self.assertIsNone(alert)
+        self.assertEqual(alert, {"title": "Match Found",
+                                 "body": "You're being pulled into the game — get back to your PC."})
 
     def test_a_registered_update_token_is_used_instead_of_starting_again(self):
         self.server.activity_tokens.register_start("start-token", "sandbox")
