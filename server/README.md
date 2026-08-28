@@ -141,6 +141,7 @@ owqserver/
   protocol.py     the wire format from docs/PROTOCOL.md
   pairing.py      the token, where it's stored, and the addresses to offer
   pushtokens.py   registered APNs device tokens, one per phone/watch
+  activitytokens.py  the Live Activity's own push tokens — push-to-start and per-activity
   apns.py         talks to Apple directly — the advanced, bring-your-own-key path
   pushrelay.py    talks to the maintainer's relay instead — see ../relay/
   qr.py           a QR encoder, so none of the above needs installing

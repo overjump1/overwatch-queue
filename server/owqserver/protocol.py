@@ -47,6 +47,45 @@ def notification_copy(kind: str):
         _NOTIFICATION_BODIES.get(kind, "Status changed.")
 
 
+# ---------------------------------------------------------------- Live Activity pushes
+#
+# A Live Activity push's `content-state` is decoded on-device with a plain `JSONDecoder`
+# — not this protocol's `.iso8601` one — so every `Date` inside it has to match Swift's
+# *default* `Codable` encoding for `Date`, which is a bare number of seconds since
+# 2001-01-01T00:00:00Z (`timeIntervalSinceReferenceDate`), not 1970 and not a string.
+# Get this wrong and the Live Activity silently fails to update; nothing else on this
+# wire uses this epoch, which is exactly why it's worth a comment.
+
+REFERENCE_DATE_EPOCH_OFFSET = 978307200.0      # 2001-01-01T00:00:00Z, in Unix seconds
+
+_ACTIVITY_DATE_KEYS = ("startedAt", "deadline", "lockInAt")
+
+
+def reference_date_seconds(when: datetime.datetime) -> float:
+    return when.timestamp() - REFERENCE_DATE_EPOCH_OFFSET
+
+
+def _iso_to_reference_date_seconds(iso_string: str) -> float:
+    parsed = datetime.datetime.strptime(iso_string, "%Y-%m-%dT%H:%M:%SZ").replace(
+        tzinfo=datetime.timezone.utc)
+    return reference_date_seconds(parsed)
+
+
+def content_state(phase: dict, sequence: int) -> dict:
+    """The `QueueActivityAttributes.ContentState` shape for a Live Activity push —
+    identical to the wire phase shape except every date is a reference-date float. Never
+    mutates `phase`; the caller's own copy (typically `self.session.phase`) has to keep
+    its ISO-8601 strings for the WebSocket and every other client."""
+    data = phase.get("data")
+    if data:
+        data = dict(data)
+        for key in _ACTIVITY_DATE_KEYS:
+            if key in data:
+                data[key] = _iso_to_reference_date_seconds(data[key])
+        phase = {**phase, "data": data}
+    return {"phase": phase, "sequence": sequence}
+
+
 MODE_NAMES = {
     "quickPlay": "Quick Play",
     "competitive": "Competitive",

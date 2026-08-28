@@ -130,4 +130,82 @@ describe("sendPush", () => {
     expect(result.status).toBe(400);
     expect(JSON.parse(result.body)).toEqual({ reason: "BadDeviceToken" });
   });
+
+  it("posts a Live Activity start to the .start topic with attributes and no kind needed", async () => {
+    const { config } = await generateConfig();
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendPush(config, {
+      token: "start-token", environment: "sandbox", pushType: "liveActivityStart",
+      timestamp: 1700000000,
+      attributes: { sessionID: "abc", startedAt: 721692800.0 },
+      contentState: { phase: { type: "idle" }, sequence: 0 },
+    });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://api.sandbox.push.apple.com/3/device/start-token");
+    expect(init.headers["apns-topic"]).toBe("com.tomerady.OverwatchQueue.push-type.liveactivity.start");
+    expect(init.headers["apns-push-type"]).toBe("liveactivity");
+    expect(init.headers["apns-priority"]).toBe("10");
+    const body = JSON.parse(init.body);
+    expect(body.aps.event).toBe("start");
+    expect(body.aps["attributes-type"]).toBe("QueueActivityAttributes");
+    expect(body.aps.attributes).toEqual({ sessionID: "abc", startedAt: 721692800.0 });
+    expect(body.aps.alert).toBeUndefined();
+  });
+
+  it("includes an alert on a start push when title/body are given", async () => {
+    const { config } = await generateConfig();
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendPush(config, {
+      token: "start-token", environment: "sandbox", pushType: "liveActivityStart",
+      timestamp: 1, attributes: { sessionID: "abc", startedAt: 0 }, contentState: {},
+      title: "Match Found", body: "Get back to your PC.",
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.aps.alert).toEqual({ title: "Match Found", body: "Get back to your PC." });
+  });
+
+  it("posts a Live Activity update to the plain topic, no .start suffix", async () => {
+    const { config } = await generateConfig();
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendPush(config, {
+      token: "activity-token", environment: "production", pushType: "liveActivityUpdate",
+      timestamp: 1700000005, contentState: { phase: { type: "searching" }, sequence: 3 },
+      staleDate: 1700000600,
+    });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("https://api.push.apple.com/3/device/activity-token");
+    expect(init.headers["apns-topic"]).toBe("com.tomerady.OverwatchQueue.push-type.liveactivity");
+    expect(init.headers["apns-push-type"]).toBe("liveactivity");
+    expect(init.headers["apns-priority"]).toBe("10");
+    const body = JSON.parse(init.body);
+    expect(body.aps.event).toBe("update");
+    expect(body.aps["stale-date"]).toBe(1700000600);
+    expect(body.aps["content-state"]).toEqual({ phase: { type: "searching" }, sequence: 3 });
+  });
+
+  it("posts a Live Activity end with the end event and an optional dismissalDate", async () => {
+    const { config } = await generateConfig();
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendPush(config, {
+      token: "activity-token", environment: "production", pushType: "liveActivityEnd",
+      timestamp: 1700000009, contentState: { phase: { type: "idle" } }, dismissalDate: 1700000700,
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.aps.event).toBe("end");
+    expect(body.aps["dismissal-date"]).toBe(1700000700);
+    expect(fetchMock.mock.calls[0][1].headers["apns-topic"])
+      .toBe("com.tomerady.OverwatchQueue.push-type.liveactivity");
+  });
 });

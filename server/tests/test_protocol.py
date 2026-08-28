@@ -141,6 +141,50 @@ class TransitionTests(unittest.TestCase):
             self.assertTrue(protocol.can_transition(kind, kind))
 
 
+class ContentStateTests(unittest.TestCase):
+    """The Live Activity push shape — the one place on this wire that uses Apple's
+    reference-date epoch (2001-01-01) instead of ISO-8601, because push content-state is
+    decoded with a plain JSONDecoder rather than this protocol's `.iso8601` one."""
+
+    FIXED = datetime.datetime(2023, 11, 14, 22, 13, 20, tzinfo=datetime.timezone.utc)
+
+    def test_reference_date_epoch_is_2001_not_1970(self):
+        epoch_2001 = datetime.datetime(2001, 1, 1, tzinfo=datetime.timezone.utc)
+        self.assertEqual(protocol.reference_date_seconds(epoch_2001), 0.0)
+
+    def test_reference_date_matches_the_known_fixture(self):
+        # The same instant Tests/WireFormatTests.swift pins as
+        # `Date(timeIntervalSince1970: 1_700_000_000)` — cross-checks the two
+        # implementations agree on the same date without sharing any code.
+        self.assertEqual(protocol.reference_date_seconds(self.FIXED), 721692800.0)
+
+    def test_content_state_converts_every_date_field_in_the_phase(self):
+        phase = protocol.searching("competitive", "tank", self.FIXED, 240)
+        state = protocol.content_state(phase, sequence=7)
+        self.assertEqual(state["sequence"], 7)
+        self.assertEqual(state["phase"]["type"], "searching")
+        self.assertEqual(state["phase"]["data"]["startedAt"], 721692800.0)
+        self.assertIsInstance(state["phase"]["data"]["startedAt"], float)
+
+    def test_content_state_leaves_non_date_fields_untouched(self):
+        phase = protocol.match_found("competitive", "tank", waited=137, lock_in_seconds=15)
+        state = protocol.content_state(phase, sequence=2)
+        self.assertEqual(state["phase"]["data"]["mode"], "competitive")
+        self.assertEqual(state["phase"]["data"]["waited"], 137)
+        self.assertIsInstance(state["phase"]["data"]["lockInAt"], float)
+
+    def test_content_state_handles_a_payloadless_phase(self):
+        state = protocol.content_state(protocol.idle(), sequence=0)
+        self.assertEqual(state, {"phase": {"type": "idle"}, "sequence": 0})
+
+    def test_content_state_does_not_mutate_the_original_phase(self):
+        phase = protocol.searching("competitive", "tank", self.FIXED, 240)
+        original_started_at = phase["data"]["startedAt"]
+        protocol.content_state(phase, sequence=1)
+        self.assertEqual(phase["data"]["startedAt"], original_started_at)
+        self.assertIsInstance(phase["data"]["startedAt"], str)
+
+
 class SessionTests(unittest.TestCase):
     def test_sequence_climbs_only_on_accepted_changes(self):
         session = protocol.QueueSession()

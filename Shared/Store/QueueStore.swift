@@ -29,6 +29,11 @@ public final class QueueStore {
     /// because it has to survive a transport being swapped out (relay → direct, or a
     /// fresh pairing) and resent to whichever one connects next.
     private var pendingPushToken: (token: String, environment: PushEnvironment)?
+    /// The push token for whichever Live Activity is currently running, if any — one per
+    /// session, replaced wholesale when a new activity starts.
+    private var pendingActivityPushToken: (sessionID: UUID, token: String, environment: PushEnvironment)?
+    /// The app-level push-to-start token — independent of any one session.
+    private var pendingActivityStartToken: (token: String, environment: PushEnvironment)?
 
     public var phase: QueuePhase { snapshot.phase }
 
@@ -46,7 +51,7 @@ public final class QueueStore {
         transport.onEvent = { [weak self] event in self?.handle(event) }
         transport.onStatusChange = { [weak self] status in
             self?.status = status
-            if status.isLive { self?.sendPendingPushToken() }
+            if status.isLive { self?.sendPendingRegistrations() }
         }
         status = transport.status
         transport.connect()
@@ -57,12 +62,35 @@ public final class QueueStore {
     /// means a new socket that has never heard about it.
     public func registerPushToken(_ token: String, environment: PushEnvironment) {
         pendingPushToken = (token, environment)
-        sendPendingPushToken()
+        sendPendingRegistrations()
     }
 
-    private func sendPendingPushToken() {
-        guard status.isLive, let pending = pendingPushToken else { return }
-        transport?.send(.registerPushToken(token: pending.token, environment: pending.environment))
+    /// Registers the push token for one running Live Activity — see
+    /// `ClientCommand.registerActivityPushToken`.
+    public func registerActivityPushToken(sessionID: UUID, token: String, environment: PushEnvironment) {
+        pendingActivityPushToken = (sessionID, token, environment)
+        sendPendingRegistrations()
+    }
+
+    /// Registers the app-level push-to-start token — see
+    /// `ClientCommand.registerActivityStartToken`.
+    public func registerActivityStartToken(_ token: String, environment: PushEnvironment) {
+        pendingActivityStartToken = (token, environment)
+        sendPendingRegistrations()
+    }
+
+    private func sendPendingRegistrations() {
+        guard status.isLive else { return }
+        if let pending = pendingPushToken {
+            transport?.send(.registerPushToken(token: pending.token, environment: pending.environment))
+        }
+        if let pending = pendingActivityPushToken {
+            transport?.send(.registerActivityPushToken(sessionID: pending.sessionID, token: pending.token,
+                                                        environment: pending.environment))
+        }
+        if let pending = pendingActivityStartToken {
+            transport?.send(.registerActivityStartToken(token: pending.token, environment: pending.environment))
+        }
     }
 
     /// Drops the transport and goes quiet. The last snapshot stays put; unpairing is

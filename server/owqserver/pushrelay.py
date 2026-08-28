@@ -59,6 +59,42 @@ class PushRelayClient:
                            "pushType": "alert", "sessionId": session_id, "sequence": sequence,
                            "title": title, "body": body})
 
+    # ------------------------------------------------------------ Live Activity pushes
+    #
+    # Same three shapes as `apns.APNsClient` — see its docstring — just carried as JSON
+    # to the relay instead of straight to Apple. No `kind`: these always mean the iOS app.
+
+    def send_activity_start(self, push_to_start_token: str, environment: str,
+                            attributes: dict, content_state: dict, timestamp: int,
+                            alert=None):
+        payload = {"pushType": "liveActivityStart", "token": push_to_start_token,
+                   "environment": environment, "timestamp": timestamp,
+                   "attributes": attributes, "contentState": content_state}
+        if alert:
+            payload["alert"] = alert
+        return self._send(payload)
+
+    def send_activity_update(self, activity_token: str, environment: str,
+                             content_state: dict, timestamp: int, alert=None,
+                             stale_date=None):
+        payload = {"pushType": "liveActivityUpdate", "token": activity_token,
+                   "environment": environment, "timestamp": timestamp,
+                   "contentState": content_state}
+        if alert:
+            payload["alert"] = alert
+        if stale_date is not None:
+            payload["staleDate"] = stale_date
+        return self._send(payload)
+
+    def send_activity_end(self, activity_token: str, environment: str,
+                          content_state: dict, timestamp: int, dismissal_date=None):
+        payload = {"pushType": "liveActivityEnd", "token": activity_token,
+                   "environment": environment, "timestamp": timestamp,
+                   "contentState": content_state}
+        if dismissal_date is not None:
+            payload["dismissalDate"] = dismissal_date
+        return self._send(payload)
+
     def _send(self, payload: dict):
         request = urllib.request.Request(
             "%s/v1/push" % self.config.url,

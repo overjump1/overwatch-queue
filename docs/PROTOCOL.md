@@ -223,6 +223,8 @@ Sent when the player acts on the phone or the watch.
 {"v":1,"body":{"type":"cancelQueue"}}
 {"v":1,"body":{"type":"requestSnapshot"}}
 {"v":1,"body":{"type":"registerPushToken","data":{"token":"5fceb98...","environment":"sandbox"}}}
+{"v":1,"body":{"type":"registerActivityPushToken","data":{"sessionID":"3F2504E0-4F89-41D3-9A0C-0305E82C3301","token":"activity-token...","environment":"sandbox"}}}
+{"v":1,"body":{"type":"registerActivityStartToken","data":{"token":"start-token...","environment":"sandbox"}}}
 ```
 
 `kind` is `phone` or `watch`. `token` is the pairing token — see [Pairing](#pairing).
@@ -246,6 +248,18 @@ separate push hosts for each, and a token is only valid against the one it was i
 Sent once per launch, right after `hello`; re-sending overwrites whatever this `kind`
 registered before.
 
+`registerActivityPushToken` hands over the push token for one running Live Activity —
+what `Activity.pushTokenUpdates` yields once the phone starts it with `pushType: .token`.
+`sessionID` ties it to the queue session that activity is showing; a token for a session
+that's no longer current is simply ignored, so a late-arriving registration from an
+activity that already ended can't accidentally attach to a new one.
+
+`registerActivityStartToken` hands over the app-level **push-to-start** token — what
+`Activity<QueueActivityAttributes>.pushToStartTokenUpdates` yields. Independent of any one
+session: it's what lets the PC create the *next* Live Activity from nothing, even on a
+launch that's never opened this queue's activity itself. Sent once available, and again
+whenever the system hands over a replacement.
+
 ## Push
 
 Silent by default, loud when it matters. Every state change — the same one that triggers
@@ -254,6 +268,32 @@ a `snapshot` broadcast — also, if this client has a registered push token, bec
 app to wake up, reconnect, and pull a fresh snapshot on its own. A `matchFound`, `mapVote`
 or `heroSelect` additionally gets a visible **alert** push, since those are the moments
 worth surfacing even with the app fully closed.
+
+**Live Activity pushes** are a different, more specific mechanism layered on top of the
+same relay: they update the Dynamic Island / Lock Screen card directly, without waking the
+app at all. Three events, all under `apns-push-type: liveactivity`:
+
+- **start** — creates the activity from nothing, using the push-to-start token. Sent once
+  per session, the first time a phase actually starts and no per-activity token exists
+  yet. Carries `attributes` (`sessionID`, `startedAt`) and `content-state`, under the topic
+  `<bundle-id>.push-type.liveactivity.start`.
+- **update** — pushed to the activity's own per-activity token on every subsequent change,
+  once the phone has had a chance to register one (see `registerActivityPushToken` above).
+  Carries `content-state`; an urgent phase adds an `alert`.
+- **end** — sent instead of an update once the phase goes back to `idle`/`cancelled`, then
+  the per-activity token is forgotten.
+
+Between "start" and the phone registering a real per-activity token, further changes are
+silently held — there's a real, expected gap here, since push-to-start creates the
+activity entirely OS-side without running any app code; only the *next* ordinary
+background wake-up (above) gives the app a chance to attach and register one.
+
+The one thing worth knowing if you implement a server for this from scratch: a Live
+Activity push's `content-state` is decoded with a plain `JSONDecoder`, not this protocol's
+`.iso8601` one — every date inside it has to be a bare number of seconds since
+2001-01-01T00:00:00Z (Swift's default `Date` encoding, `timeIntervalSinceReferenceDate`),
+not an ISO-8601 string and not a 1970 Unix timestamp. `server/owqserver/protocol.py`'s
+`content_state()` is the reference implementation.
 
 This is unrelated to the WebSocket above — a push is how the PC reaches a device that
 currently holds no socket open at all (screen locked, app killed, watch out of range).

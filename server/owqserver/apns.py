@@ -121,8 +121,8 @@ class APNsClient:
         pull a fresh snapshot on its own."""
         payload = {"aps": {"content-available": 1},
                    "sessionID": session_id, "sequence": sequence}
-        return self._send(kind, device_token, environment, payload,
-                          push_type="background", priority="5")
+        return self._send(kind, self.config.bundle_id(kind), device_token, environment,
+                          payload, push_type="background", priority="5")
 
     def send_alert(self, kind: str, device_token: str, environment: str,
                    title: str, body: str, session_id: str, sequence: int):
@@ -130,11 +130,51 @@ class APNsClient:
         player should be told even with the app fully closed."""
         payload = {"aps": {"alert": {"title": title, "body": body}, "sound": "default"},
                    "sessionID": session_id, "sequence": sequence}
-        return self._send(kind, device_token, environment, payload,
-                          push_type="alert", priority="10")
+        return self._send(kind, self.config.bundle_id(kind), device_token, environment,
+                          payload, push_type="alert", priority="10")
 
-    def _send(self, kind: str, device_token: str, environment: str, payload: dict,
-              push_type: str, priority: str):
+    # ------------------------------------------------------------ Live Activity pushes
+    #
+    # A different beast from the two above: these target the Live Activity itself (its
+    # own push-to-start or per-activity token, not a phone/watch device token), always
+    # under the iOS bundle ID — the watch has no Live Activities — and always at
+    # immediate priority, which Apple requires for this push type. See
+    # `protocol.content_state` for the content-state shape these carry.
+
+    def send_activity_start(self, push_to_start_token: str, environment: str,
+                            attributes: dict, content_state: dict, timestamp: int,
+                            alert=None):
+        aps = {"timestamp": timestamp, "event": "start", "content-state": content_state,
+               "attributes-type": "QueueActivityAttributes", "attributes": attributes}
+        if alert:
+            aps["alert"] = alert
+        topic = "%s.push-type.liveactivity.start" % self.config.bundle_id_ios
+        return self._send("activity-start", topic, push_to_start_token, environment,
+                          {"aps": aps}, push_type="liveactivity", priority="10")
+
+    def send_activity_update(self, activity_token: str, environment: str,
+                             content_state: dict, timestamp: int, alert=None,
+                             stale_date=None):
+        aps = {"timestamp": timestamp, "event": "update", "content-state": content_state}
+        if alert:
+            aps["alert"] = alert
+        if stale_date is not None:
+            aps["stale-date"] = stale_date
+        topic = "%s.push-type.liveactivity" % self.config.bundle_id_ios
+        return self._send("activity-update", topic, activity_token, environment,
+                          {"aps": aps}, push_type="liveactivity", priority="10")
+
+    def send_activity_end(self, activity_token: str, environment: str,
+                          content_state: dict, timestamp: int, dismissal_date=None):
+        aps = {"timestamp": timestamp, "event": "end", "content-state": content_state}
+        if dismissal_date is not None:
+            aps["dismissal-date"] = dismissal_date
+        topic = "%s.push-type.liveactivity" % self.config.bundle_id_ios
+        return self._send("activity-end", topic, activity_token, environment,
+                          {"aps": aps}, push_type="liveactivity", priority="10")
+
+    def _send(self, label: str, topic: str, device_token: str, environment: str,
+              payload: dict, push_type: str, priority: str):
         import httpx        # imported lazily so a server without the extra installed
                             # can still run everything that doesn't touch APNs
 
@@ -144,19 +184,19 @@ class APNsClient:
         url = "%s/3/device/%s" % (_HOSTS[environment], device_token)
         headers = {
             "authorization": "bearer %s" % self._signed_auth_token(),
-            "apns-topic": self.config.bundle_id(kind),
+            "apns-topic": topic,
             "apns-push-type": push_type,
             "apns-priority": priority,
         }
         try:
             response = self._client.post(url, headers=headers, json=payload)
         except httpx.HTTPError as error:
-            self.log("APNs push to %s failed: %s" % (kind, error))
+            self.log("APNs push to %s failed: %s" % (label, error))
             return None
 
         if response.status_code >= 400:
             self.log("APNs push to %s refused: %s %s"
-                     % (kind, response.status_code, response.text.strip()))
+                     % (label, response.status_code, response.text.strip()))
         return response
 
     @staticmethod

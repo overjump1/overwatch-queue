@@ -14,6 +14,7 @@ import threading
 import time
 
 from . import protocol
+from .activitytokens import ActivityTokens
 from .apns import APNsClient, APNsConfig
 from .protocol import QueueSession
 from .pushrelay import PushRelayClient, PushRelayConfig
@@ -26,7 +27,7 @@ HELLO_TIMEOUT_SECONDS = 10
 
 
 class QueueServer:
-    def __init__(self, pairing, catalog, log=None, push_tokens=None):
+    def __init__(self, pairing, catalog, log=None, push_tokens=None, activity_tokens=None):
         self.pairing = pairing
         self.catalog = catalog
         self.session = QueueSession()
@@ -50,6 +51,13 @@ class QueueServer:
         # `relay/`), which is what lets this server push without an Apple Developer
         # account of its own. Same interface either way — nothing below this cares which.
         self.push_tokens = push_tokens if push_tokens is not None else PushTokens()
+        # A Live Activity's own push tokens — see `_push_activity` for how the two get
+        # used differently from the phone/watch tokens above.
+        self.activity_tokens = activity_tokens if activity_tokens is not None else ActivityTokens()
+        # Guards against re-sending push-to-start for a session that's already been
+        # started that way — Apple has no "start, but only if it isn't already running"
+        # semantics, so a second `start` event for the same activity is just a bug here.
+        self._activity_start_sent_for = None
         self.apns = self._make_push_client()
 
         self.ws = WebSocketServer(port=pairing.port,
@@ -156,6 +164,50 @@ class QueueServer:
                 title, body = protocol.notification_copy(kind)
                 self.apns.send_alert(client_kind, device_token, environment,
                                      title, body, session_id, sequence)
+        self._push_activity(session_id, sequence, kind)
+
+    def _push_activity(self, session_id: str, sequence: int, kind: str):
+        """Keeps the Live Activity itself current, independent of whether the phone's
+        process is even running:
+
+        - Already has a per-activity token for *this* session → push an update (or, on
+          idle/cancelled, an end — the activity's own equivalent of `LiveActivityController
+          .end()`, reachable even when nothing local is around to call that).
+        - No token yet, but a phase has actually started → push-to-start creates the
+          activity from nothing, once per session. Sent alongside — never instead of —
+          the phone's own silent wake-up above, since only that wake-up gives the app a
+          chance to attach to the newly-created activity and register a real per-activity
+          token for every update after this one.
+        """
+        content_state = protocol.content_state(self.session.phase, sequence)
+        timestamp = int(protocol.now().timestamp())
+        alert = None
+        if kind in protocol.URGENT_KINDS:
+            title, body = protocol.notification_copy(kind)
+            alert = {"title": title, "body": body}
+
+        activity = self.activity_tokens.update_token(session_id)
+        if activity:
+            token, environment = activity
+            if kind in ("idle", "cancelled"):
+                self.apns.send_activity_end(token, environment, content_state, timestamp)
+                self.activity_tokens.forget_update()
+            else:
+                self.apns.send_activity_update(token, environment, content_state,
+                                               timestamp, alert=alert)
+            return
+
+        if kind in ("idle", "cancelled") or self._activity_start_sent_for == session_id:
+            return
+        start = self.activity_tokens.start_token()
+        if not start:
+            return
+        token, environment = start
+        attributes = {"sessionID": session_id,
+                     "startedAt": protocol.reference_date_seconds(protocol.now())}
+        self.apns.send_activity_start(token, environment, attributes, content_state,
+                                      timestamp, alert=alert)
+        self._activity_start_sent_for = session_id
 
     def _changed(self):
         if self.on_change:
@@ -205,6 +257,11 @@ class QueueServer:
             self._cancel(client)
         elif kind == "registerPushToken":
             self._register_push_token(client, data.get("token"), data.get("environment"))
+        elif kind == "registerActivityPushToken":
+            self._register_activity_push_token(
+                data.get("sessionID"), data.get("token"), data.get("environment"))
+        elif kind == "registerActivityStartToken":
+            self._register_activity_start_token(data.get("token"), data.get("environment"))
         else:
             self.log("%s sent an unknown command: %s" % (client.name, kind))
 
@@ -253,6 +310,18 @@ class QueueServer:
             return
         self.push_tokens.register(kind, token, environment)
         self.log("%s registered for push notifications" % client.name)
+
+    def _register_activity_push_token(self, session_id, token, environment):
+        if not session_id or not token or environment not in ("sandbox", "production"):
+            return
+        self.activity_tokens.register_update(session_id, token, environment)
+        self.log("Live Activity registered for push updates")
+
+    def _register_activity_start_token(self, token, environment):
+        if not token or environment not in ("sandbox", "production"):
+            return
+        self.activity_tokens.register_start(token, environment)
+        self.log("Registered for Live Activity push-to-start")
 
     def _cancel(self, client):
         if not self.honour_cancel:
