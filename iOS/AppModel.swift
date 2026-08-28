@@ -48,6 +48,11 @@ public final class AppModel {
         LiveActivityController.shared.onPushToStartToken = { [weak self] token in
             self?.store.registerActivityStartToken(token, environment: .current)
         }
+        // Whatever the activity has to say about itself goes to the server window, where
+        // it can be read without the phone in hand.
+        LiveActivityController.shared.onDiagnostic = { [weak self] message in
+            self?.store.report(message)
+        }
     }
 
     public func start() {
@@ -153,6 +158,10 @@ public final class AppModel {
     /// hands it to `LiveActivityController.sync`, and sync starts the activity because
     /// there isn't one. The refresh *is* the start.
     public func handleUserOpened() {
+        // The counterpart of the watch's own line — together they say which device a tap
+        // actually landed on, which is the whole question when a card on the wrist opens
+        // the phone instead.
+        store.report("phone opened by a tap (notification or Live Activity)")
         // Reaching for the app is the player asking to see it, which outvotes having
         // swiped the card away earlier in the same queue.
         LiveActivityController.shared.forgetDismissal()

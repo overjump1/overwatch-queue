@@ -64,6 +64,7 @@ final class WireFormatTests: XCTestCase {
             .registerActivityPushToken(sessionID: UUID(uuidString: "3F2504E0-4F89-41D3-9A0C-0305E82C3301")!,
                                        token: "activity-token", environment: .sandbox),
             .registerActivityStartToken(token: "start-token", environment: .production),
+            .diagnostic("Live Activity: started 24C67173-AADE"),
         ]
         for command in commands {
             let text = try json(command)

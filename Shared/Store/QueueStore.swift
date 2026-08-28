@@ -79,6 +79,18 @@ public final class QueueStore {
         sendPendingRegistrations()
     }
 
+    /// Writes a line into the server's log — see `ClientCommand.diagnostic`.
+    ///
+    /// Dropped rather than queued when nothing is connected: a diagnostic is only worth
+    /// anything next to the moment it describes, and a backlog delivered minutes later
+    /// out of order would be worse than the silence it replaced.
+    public func report(_ message: @autoclosure () -> String) {
+        #if DEBUG
+        guard status.isLive else { return }
+        transport?.send(.diagnostic(message()))
+        #endif
+    }
+
     private func sendPendingRegistrations() {
         guard status.isLive else { return }
         if let pending = pendingPushToken {

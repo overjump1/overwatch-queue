@@ -10,7 +10,6 @@ struct QueueLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: QueueActivityAttributes.self) { context in
             ActivityRootView(state: context.state, attributes: context.attributes)
-                .widgetURL(DeepLink.openURL)
                 .activityBackgroundTint(Palette.night.opacity(0.92))
                 .activitySystemActionForegroundColor(Palette.orange)
         } dynamicIsland: { context in
@@ -82,9 +81,15 @@ struct ActivityRootView: View {
     var body: some View {
         switch family {
         case .small:
+            // Deliberately no `widgetURL`. This presentation is drawn on the wrist, but
+            // the activity behind it belongs to the iPhone — so a URL here is one the
+            // watch hands back to the phone, and the tap turns into "open this on your
+            // iPhone" instead of opening the watch app sitting right there. Left alone,
+            // watchOS launches the companion app itself, which is what we want.
             WatchActivityView(state: state, attributes: attributes)
         default:
             LockScreenView(state: state, attributes: attributes)
+                .widgetURL(DeepLink.openURL)
         }
     }
 }

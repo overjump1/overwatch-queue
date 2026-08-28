@@ -110,6 +110,7 @@ extension ClientCommand {
     private struct ActivityPushToken: Codable {
         var sessionID: UUID; var token: String; var environment: PushEnvironment
     }
+    private struct Diagnostic: Codable { var message: String }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: TaggedKeys.self)
@@ -137,6 +138,9 @@ extension ClientCommand {
         case .registerActivityStartToken(let token, let environment):
             try c.tag("registerActivityStartToken")
             try c.encode(PushToken(token: token, environment: environment), forKey: .data)
+        case .diagnostic(let message):
+            try c.tag("diagnostic")
+            try c.encode(Diagnostic(message: message), forKey: .data)
         }
     }
 
@@ -164,6 +168,8 @@ extension ClientCommand {
         case "registerActivityStartToken":
             let push = try c.decode(PushToken.self, forKey: .data)
             self = .registerActivityStartToken(token: push.token, environment: push.environment)
+        case "diagnostic":
+            self = .diagnostic(try c.decode(Diagnostic.self, forKey: .data).message)
         case let other:
             throw DecodingError.dataCorruptedError(
                 forKey: .type, in: c,

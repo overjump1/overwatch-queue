@@ -205,6 +205,40 @@ class ServerTests(unittest.TestCase):
         self.assertIsNone(self.server.push_tokens.get("phone"))
 
 
+class DiagnosticTests(unittest.TestCase):
+    """A line the device asks the server to write down — see `ClientCommand.diagnostic`."""
+
+    def setUp(self):
+        pairing = Pairing(token=TOKEN, port=PORT + 4, path=os.devnull)
+        self.server = QueueServer(pairing, Catalog(), push_tokens=PushTokens(os.devnull),
+                                  activity_tokens=ActivityTokens(os.devnull))
+        self.lines = []
+        self.server.log = self.lines.append
+        self.client = _FakeClient()
+
+    def test_a_message_is_logged_against_the_client(self):
+        self.server._log_diagnostic(self.client, "Live Activity: started 24C67173")
+        self.assertEqual(self.lines, ["iPhone says: Live Activity: started 24C67173"])
+
+    def test_newlines_are_flattened_so_one_report_stays_one_line(self):
+        self.server._log_diagnostic(self.client, "first\nsecond")
+        self.assertEqual(self.lines, ["iPhone says: first second"])
+
+    def test_a_long_message_is_truncated(self):
+        self.server._log_diagnostic(self.client, "x" * 5000)
+        self.assertEqual(len(self.lines), 1)
+        self.assertTrue(self.lines[0].endswith("x" * QueueServer._DIAGNOSTIC_LIMIT))
+
+    def test_nothing_useful_is_ignored(self):
+        for junk in (None, "", "   ", 42, {"message": "nested"}):
+            self.server._log_diagnostic(self.client, junk)
+        self.assertEqual(self.lines, [])
+
+
+class _FakeClient:
+    name = "iPhone"
+
+
 class _FakeAPNs:
     """Records what would have gone to Apple, without a network in sight."""
 

@@ -225,6 +225,7 @@ Sent when the player acts on the phone or the watch.
 {"v":1,"body":{"type":"registerPushToken","data":{"token":"5fceb98...","environment":"sandbox"}}}
 {"v":1,"body":{"type":"registerActivityPushToken","data":{"sessionID":"3F2504E0-4F89-41D3-9A0C-0305E82C3301","token":"activity-token...","environment":"sandbox"}}}
 {"v":1,"body":{"type":"registerActivityStartToken","data":{"token":"start-token...","environment":"sandbox"}}}
+{"v":1,"body":{"type":"diagnostic","data":{"message":"Live Activity: started 24C67173-AADE"}}}
 ```
 
 `kind` is `phone` or `watch`. `token` is the pairing token — see [Pairing](#pairing).
@@ -259,6 +260,18 @@ activity that already ended can't accidentally attach to a new one.
 session: it's what lets the PC create the *next* Live Activity from nothing, even on a
 launch that's never opened this queue's activity itself. Sent once available, and again
 whenever the system hands over a replacement.
+
+`diagnostic` is a line the device wants written into the server's log, and the only
+client command that isn't about the queue at all. Almost everything interesting about a
+Live Activity happens where nobody can watch: the card is created by the system, updated
+by push, and drawn by an extension in another process — so when one fails to appear there
+is nothing to read anywhere. This is how the device says so out loud.
+
+Debug builds only, and dropped rather than queued when the socket is down: a diagnostic
+is worth something next to the moment it describes and nothing at all delivered late and
+out of order. A server is free to ignore it entirely; `server/` prints it prefixed with
+the client's name, so a line the phone wrote is never mistaken for something the server
+observed.
 
 ## Push
 

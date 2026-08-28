@@ -108,6 +108,9 @@ public final class WatchModel {
     /// right place — all this has to do is make sure the phase it's about to draw is
     /// current rather than whatever was left over from the last connection.
     public func handleUserOpened() {
+        // The line that answers "did the tap on the wrist reach the wrist?" — if the
+        // mirrored Live Activity is opening the iPhone instead, this never appears.
+        store.report("watch opened by a tap (notification or Live Activity)")
         catchUp()
     }
 

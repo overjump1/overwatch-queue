@@ -26,6 +26,21 @@
 	<string>com.tomerady.OverwatchQueue</string>
 	<key>WKRunsIndependentlyOfCompanionApp</key>
 	<true/>
+	<!-- The same `owq` scheme the iPhone registers, claimed here too. The mirrored Live
+	     Activity carries one `widgetURL` for both platforms, and whichever device the tap
+	     happens on resolves it locally — without this the watch can't, so it offers to
+	     open the app on the iPhone instead of just opening itself. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.tomerady.OverwatchQueue.watchkitapp.open</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>owq</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connects to the queue server on your PC over your local network.</string>
 	<key>NSAppTransportSecurity</key>

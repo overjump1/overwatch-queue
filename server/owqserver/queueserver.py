@@ -375,6 +375,8 @@ class QueueServer:
                 data.get("sessionID"), data.get("token"), data.get("environment"))
         elif kind == "registerActivityStartToken":
             self._register_activity_start_token(data.get("token"), data.get("environment"))
+        elif kind == "diagnostic":
+            self._log_diagnostic(client, data.get("message"))
         else:
             self.log("%s sent an unknown command: %s" % (client.name, kind))
 
@@ -439,6 +441,18 @@ class QueueServer:
             return
         self.activity_tokens.register_start(token, environment)
         self.log("Registered for Live Activity push-to-start")
+
+    # A device is the only thing that can see whether its Live Activity actually appeared,
+    # and until this existed the only way to find out was to pick the phone up and ask.
+    # Truncated because it lands in a one-line log view, and marked so nobody mistakes a
+    # line the phone wrote for something the server observed.
+    _DIAGNOSTIC_LIMIT = 300
+
+    def _log_diagnostic(self, client, message):
+        if not isinstance(message, str) or not message.strip():
+            return
+        text = message.strip()[:self._DIAGNOSTIC_LIMIT].replace("\n", " ")
+        self.log("%s says: %s" % (client.name, text))
 
     def _cancel(self, client):
         if not self.honour_cancel:

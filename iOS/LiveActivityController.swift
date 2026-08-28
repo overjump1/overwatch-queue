@@ -171,11 +171,18 @@ public final class LiveActivityController {
         }
     }
 
-    /// Deliberately `print`, not `os_log`: this is read by attaching to the app's console
-    /// while reproducing a missing card, which is the only way to see any of it.
+    /// Where a Live Activity says what it's doing.
+    ///
+    /// Both destinations earn their place: `print` is there for a device attached to a
+    /// console, and `onDiagnostic` carries the same line to the server window, which is
+    /// the only way to see any of this on a phone in someone's hand. Debug builds only.
+    public var onDiagnostic: ((String) -> Void)?
+
     private static func log(_ message: @autoclosure () -> String) {
         #if DEBUG
-        print("[LiveActivity] \(message())")
+        let text = message()
+        print("[LiveActivity] \(text)")
+        shared.onDiagnostic?("Live Activity: \(text)")
         #endif
     }
 

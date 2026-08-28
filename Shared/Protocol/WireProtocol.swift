@@ -54,6 +54,16 @@ public enum ClientCommand: Codable, Sendable {
     /// itself. Independent of any one session; sent once it's available and again
     /// whenever the system hands over a new one.
     case registerActivityStartToken(token: String, environment: PushEnvironment)
+    /// Something the device wants written into the server's log.
+    ///
+    /// Almost everything interesting about a Live Activity happens where nobody can see
+    /// it: the card is created by the system, updated by push, and drawn by an extension
+    /// in another process, so when one fails to appear there is nothing to read. Rather
+    /// than reaching for the device each time, the device says so out loud — and the
+    /// server window is somewhere both a developer and a player can actually look.
+    ///
+    /// Debug builds only, and never anything but text the app composed itself.
+    case diagnostic(String)
 }
 
 /// Which of Apple's two push environments a device token is valid against — a debug
