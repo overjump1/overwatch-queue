@@ -61,14 +61,9 @@ public final class WatchLink: NSObject {
     /// iPhone → Watch.
     public func send(snapshot: QueueSnapshot) {
         #if canImport(WatchConnectivity)
-        guard isSupported, WCSession.default.activationState == .activated else { return }
-        guard let data = try? Wire.encode(snapshot) else { return }
+        guard isSupported, let data = try? Wire.encode(snapshot) else { return }
         latestSnapshot = data
-        pushContext()
-
-        if WCSession.default.isReachable {
-            WCSession.default.sendMessage([Key.snapshot: data], replyHandler: nil, errorHandler: nil)
-        }
+        flush()
         #endif
     }
 
@@ -80,7 +75,7 @@ public final class WatchLink: NSObject {
     /// where a watch app spends nearly all of its time.
     public func send(pairing: Pairing?) {
         #if canImport(WatchConnectivity)
-        guard isSupported, WCSession.default.activationState == .activated else { return }
+        guard isSupported else { return }
 
         if let pairing, let data = try? Wire.encoder.encode(pairing) {
             latestPairing = data
@@ -89,11 +84,7 @@ public final class WatchLink: NSObject {
             latestPairing = nil
             hasUnpaired = true
         }
-        pushContext()
-
-        if WCSession.default.isReachable {
-            WCSession.default.sendMessage(pairingPayload(), replyHandler: nil, errorHandler: nil)
-        }
+        flush()
         #endif
     }
 
@@ -101,6 +92,33 @@ public final class WatchLink: NSObject {
     private func pairingPayload() -> [String: Any] {
         if let latestPairing { return [Key.pairing: latestPairing] }
         return [Key.unpaired: true]
+    }
+
+    /// Hand over whatever is currently held, if the session is ready to carry it.
+    ///
+    /// The readiness check lives here rather than in the `send` methods above, and that
+    /// placement is the whole point. `WCSession.activate()` completes asynchronously, and
+    /// `AppModel.start()` hands over the pairing on the very next line — so a check at the
+    /// top of `send(pairing:)` fails on every cold launch, and the pairing is dropped with
+    /// nothing to re-send it. A watch installed after the phone was last paired then never
+    /// gets configured at all, and reports itself as waiting for an iPhone that is sitting
+    /// right there. Recording first and flushing on activation is what closes that gap.
+    private func flush() {
+        guard isSupported, WCSession.default.activationState == .activated else { return }
+        pushContext()
+
+        // The context alone is enough to arrive eventually; this is what makes it arrive
+        // *now* when the counterpart happens to be awake.
+        if WCSession.default.isReachable {
+            if let latestSnapshot {
+                WCSession.default.sendMessage([Key.snapshot: latestSnapshot],
+                                              replyHandler: nil, errorHandler: nil)
+            }
+            if latestPairing != nil || hasUnpaired {
+                WCSession.default.sendMessage(pairingPayload(),
+                                              replyHandler: nil, errorHandler: nil)
+            }
+        }
     }
 
     private func pushContext() {
@@ -161,12 +179,22 @@ extension WatchLink: WCSessionDelegate {
                                     activationDidCompleteWith state: WCSessionActivationState,
                                     error: Error?) {
         let reachable = session.isReachable
-        Task { @MainActor in self.isReachable = reachable }
+        Task { @MainActor in
+            self.isReachable = reachable
+            // The session can finally carry what `send(pairing:)` was asked to hand over
+            // before it was ready. See `flush`.
+            self.flush()
+        }
     }
 
     nonisolated public func sessionReachabilityDidChange(_ session: WCSession) {
         let reachable = session.isReachable
-        Task { @MainActor in self.isReachable = reachable }
+        Task { @MainActor in
+            self.isReachable = reachable
+            // The counterpart just woke: push straight to it rather than leaving it on
+            // the context's own schedule.
+            if reachable { self.flush() }
+        }
     }
 
     nonisolated public func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
