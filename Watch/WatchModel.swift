@@ -11,7 +11,8 @@ public final class WatchModel {
     public let catalog = CatalogService.shared
     public private(set) var matchFoundToken = 0
 
-    private let relay = WatchRelayTransport()
+    /// The phone while it's in range, the PC when it isn't — see `WatchTransport`.
+    private var link: WatchTransport?
 
     public init() {
         store.onPhaseChange = { [weak self] _, next in
@@ -55,7 +56,17 @@ public final class WatchModel {
             return
         }
         #endif
-        store.use(relay)
+
+        // Nothing is ever typed on the wrist: the pairing arrives from the phone, which
+        // got it from the one code you scanned.
+        let link = WatchTransport(pairing: Pairing.load(), identity: identity)
+        self.link = link
+        WatchLink.shared.onPairing = { [weak self] pairing in
+            // Kept, so a relaunch out of range still knows where the PC is.
+            if let pairing { pairing.save() } else { Pairing.forget() }
+            self?.link?.adopt(pairing)
+        }
+        store.use(link)
         Task { await catalog.load() }
     }
 

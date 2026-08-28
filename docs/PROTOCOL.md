@@ -99,12 +99,18 @@ random token, shows it as a QR code, and refuses every connection that doesn't p
    owq://pair?host=192.168.1.14&port=8787&token=3f2504e0-4f89-41d3-9a0c-0305e82c3301
    ```
 
-   `port` may be omitted, and defaults to 8787.
+   `port` may be omitted, and defaults to 8787. The iOS app registers `owq` in
+   `CFBundleURLTypes`, so the system camera can hand the code straight to it rather than
+   decoding a string with nowhere to go.
 3. The phone scans it, keeps it, and sends the token in every `hello`.
 4. A `hello` with a missing or wrong token gets an `error` with code `pairing_required`,
    and then a close with status **1008**. No snapshots are ever sent to a connection that
    hasn't presented the token.
 5. A connection that sends no `hello` within ten seconds is closed the same way.
+
+The phone passes the token on to its watch, so one scan configures both; expect the same
+token from more than one client, and `kind` is what tells them apart. Both may be
+connected at once, and both should get every snapshot.
 
 Generating a new token on the PC unpairs every device at once, which is the recovery path
 if a token leaks. There is no transport encryption: this is a token on a LAN, not a

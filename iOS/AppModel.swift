@@ -14,6 +14,10 @@ public final class AppModel {
     /// other source of state, so an unpaired app shows the pairing screen and nothing else.
     public private(set) var pairing: Pairing?
 
+    /// Why the last code was refused, if it was. Shown on the pairing screen — a code
+    /// that arrives from the system camera has no other way to report that it wasn't ours.
+    public private(set) var pairingProblem: String?
+
     /// Bumped every time a match lands. Views observe it to fire one-shot animations
     /// without having to diff the phase themselves.
     public private(set) var matchFoundToken = 0
@@ -21,7 +25,7 @@ public final class AppModel {
     public var isPaired: Bool { pairing != nil }
 
     public init() {
-        pairing = Self.launchPairing() ?? Pairing.load()
+        pairing = Pairing.load()
 
         store.onPhaseChange = { [weak self] previous, next in
             self?.react(from: previous, to: next)
@@ -49,41 +53,34 @@ public final class AppModel {
             if case .voteMap(let key) = command { self?.store.vote(map: key) }
             if case .selectHero(let key) = command { self?.store.select(hero: key) }
         }
+        // The watch is configured by the same scan the phone was: hand it over on every
+        // launch, so one that was off, flat or freshly installed catches up.
+        WatchLink.shared.send(pairing: pairing)
         connect()
         Task { await catalog.load() }
     }
 
     // MARK: - Pairing
 
-    /// Pairs from a launch argument, so a Simulator with no camera can be pointed at a
-    /// server in one command:
-    ///
-    ///     xcrun simctl launch booted com.tomerady.OverwatchQueue \
-    ///         -pair "owq://pair?host=192.168.1.14&port=8787&token=…"
-    ///
-    /// Not persisted: this is for a run, not for the device.
-    private static func launchPairing() -> Pairing? {
-        #if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        guard let flag = arguments.firstIndex(of: "-pair"), arguments.count > flag + 1
-        else { return nil }
-        return Pairing(pairingCode: arguments[flag + 1])
-        #else
-        return nil
-        #endif
-    }
-
-    /// Accepts a scanned or pasted pairing code and connects to that PC.
     @discardableResult
     public func pair(with code: String) -> Bool {
-        guard let scanned = Pairing(pairingCode: code) else { return false }
+        guard let scanned = Pairing(pairingCode: code) else {
+            pairingProblem = "That isn't a pairing code from the queue server."
+            return false
+        }
+        pairingProblem = nil
         pair(scanned)
         return true
+    }
+
+    public func clearPairingProblem() {
+        pairingProblem = nil
     }
 
     public func pair(_ pairing: Pairing) {
         self.pairing = pairing
         pairing.save()
+        WatchLink.shared.send(pairing: pairing)
         connect()
     }
 
@@ -94,6 +91,7 @@ public final class AppModel {
         store.reset()
         Pairing.forget()
         pairing = nil
+        WatchLink.shared.send(pairing: nil)
         LiveActivityController.shared.end()
     }
 

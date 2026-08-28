@@ -34,18 +34,19 @@ xcodebuild -project OverwatchQueue.xcodeproj -scheme OverwatchQueue -destination
 
 ## Pairing
 
-The server window shows a QR code. Point the app at it — that's the whole of setup.
+The server window shows a QR code. Point the app at it — that's the whole of setup. The
+system Camera works too: the app registers the `owq://` scheme, so a scan offers
+**Open in "OW Queue"** and pairs on the way in.
 
-Behind the code is a random token the PC keeps. Every device sends it back on connect, and
-a connection that doesn't present it is closed: a LAN is not a private place, and nobody
-else on your Wi-Fi should be able to drive the screen on your wrist.
+Scanning is the only way in. An address and a token typed by hand were a second route
+that had to be kept working and could be got subtly wrong; the code carries both and
+can't be mistyped. **Settings** has the other half: pair, or unpair.
 
-A Simulator has no camera, so press **Copy pairing link** and paste it in the app — or
-hand it over at launch:
+A Simulator has no camera, so there is nothing to point at a code. Hand it the link
+instead — iOS will ask once, and **Open** finishes the pairing:
 
 ```bash
-xcrun simctl launch booted com.tomerady.OverwatchQueue \
-    -pair "owq://pair?host=127.0.0.1&port=8787&token=<token>"
+xcrun simctl openurl booted "owq://pair?host=127.0.0.1&port=8787&token=<token>"
 ```
 
 ## Driving it by hand
@@ -107,6 +108,13 @@ allowed to rewind the UI.
 
 **Art is referenced, not bundled** — and cached in memory and on disk so it loads once.
 See [docs/ASSETS.md](docs/ASSETS.md), including how to drop in your own images per hero or map.
+
+**The watch is configured by the same scan.** The phone hands the pairing to the watch
+over WatchConnectivity the moment it has one, so nothing is ever set up on the wrist. The
+watch still listens to the phone by preference — that relay coalesces, arrives while the
+watch app is asleep, and costs the watch no radio of its own — but when the phone is out
+of range or switched off it now opens its own socket to the PC instead of going blank.
+Snapshots carry a sequence number, so a handover mid-queue can't rewind the screen.
 
 **One token, no transport security.** The socket carries which mode you queued for, and
 it never leaves your LAN. A token in a QR code is enough to stop a flatmate driving your
