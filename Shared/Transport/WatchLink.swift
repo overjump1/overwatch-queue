@@ -206,14 +206,33 @@ public final class WatchRelayTransport: QueueTransport {
     public var onStatusChange: ((TransportStatus) -> Void)?
 
     private let link = WatchLink.shared
+    private var lastSnapshotAt: Date = .distantPast
+    private var staleWatchdog: Task<Void, Never>?
 
-    public init() {}
+    /// How long a reachable-but-silent phone gets before its data counts as stale, and how
+    /// often that's checked. Injectable so tests don't have to wait 25 real seconds; the
+    /// defaults are comfortably longer than the phone's own socket heartbeat, so a
+    /// genuinely live phone never trips this.
+    private let staleTimeout: TimeInterval
+    private let pollInterval: TimeInterval
+
+    public convenience init() {
+        self.init(staleTimeout: 25, pollInterval: 5)
+    }
+
+    init(staleTimeout: TimeInterval, pollInterval: TimeInterval) {
+        self.staleTimeout = staleTimeout
+        self.pollInterval = pollInterval
+    }
 
     public func connect() {
         status = .connecting
+        lastSnapshotAt = .distantPast
         link.onSnapshot = { [weak self] snapshot in
-            self?.status = .connected
-            self?.onEvent?(.snapshot(snapshot))
+            guard let self else { return }
+            self.lastSnapshotAt = .now
+            self.status = .connected
+            self.onEvent?(.snapshot(snapshot))
         }
         link.onReachabilityChange = { [weak self] reachable in
             guard let self else { return }
@@ -226,12 +245,37 @@ public final class WatchRelayTransport: QueueTransport {
         if !link.isSupported {
             status = .failed("Watch connectivity unavailable")
         }
+        startStaleWatchdog()
     }
 
     public func disconnect() {
         link.onSnapshot = nil
         link.onReachabilityChange = nil
+        staleWatchdog?.cancel()
+        staleWatchdog = nil
         status = .offline
+    }
+
+    /// The phone can stay WatchConnectivity-reachable while its own upstream socket to the
+    /// PC has silently died (e.g. the screen locked and iOS suspended it) — reachability
+    /// alone can't see that. Poll for freshness so a stalled phone is reported as failed
+    /// instead of parked at `.connected` forever, which is what lets `WatchTransport` fail
+    /// over to a direct connection.
+    private func startStaleWatchdog() {
+        staleWatchdog?.cancel()
+        let pollInterval = self.pollInterval
+        let staleTimeout = self.staleTimeout
+        staleWatchdog = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(pollInterval))
+                guard !Task.isCancelled, let self else { return }
+                guard case .connected = self.status else { continue }
+                guard self.lastSnapshotAt != .distantPast else { continue }
+                if Date.now.timeIntervalSince(self.lastSnapshotAt) > staleTimeout {
+                    self.status = .failed("iPhone's connection is stale")
+                }
+            }
+        }
     }
 
     public func send(_ command: ClientCommand) {

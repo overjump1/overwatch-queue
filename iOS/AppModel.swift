@@ -24,6 +24,8 @@ public final class AppModel {
 
     public var isPaired: Bool { pairing != nil }
 
+    private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+
     public init() {
         pairing = Pairing.load()
 
@@ -104,6 +106,38 @@ public final class AppModel {
                                       name: UIDevice.current.name,
                                       appVersion: Bundle.main.appVersion)
         store.use(WebSocketTransport(pairing: pairing, identity: identity))
+    }
+
+    // MARK: - Foregrounding / backgrounding
+    //
+    // iOS suspends the socket within seconds of the screen locking, and nothing here can
+    // change that without APNs — this is cosmetic, not a fix for "phone locked for a
+    // while". That's what the watch's own direct-to-PC connection (`WatchTransport`) is
+    // for. All this does is avoid an abrupt mid-frame kill on the way out, and skip the
+    // transport's own backoff delay on the way back in.
+
+    public func didEnterBackground() {
+        guard backgroundTask == .invalid else { return }
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "queue-socket-drain") { [weak self] in
+            self?.endBackgroundTask()
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self, self.backgroundTask != .invalid else { return }
+            self.store.transport?.disconnect()
+            self.endBackgroundTask()
+        }
+    }
+
+    public func didBecomeActive() {
+        endBackgroundTask()
+        if store.transport?.status.isLive != true { connect() }
+    }
+
+    private func endBackgroundTask() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
     }
 
     // MARK: - Reactions

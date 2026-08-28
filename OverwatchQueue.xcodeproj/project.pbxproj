@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		C4BEAAC148DFBBB9A0FBEED8 /* QueueActivityAttributes.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */; };
+		6E8DA7BB4FD6454BBA28CCFA /* NotificationCopy.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 2BF28A235EFE449140405729 /* NotificationCopy.swift */; };
 		24452E1AB941C9DA1D68631F /* CatalogService.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 4D3558CE3531693468824E62 /* CatalogService.swift */; };
 		8D29563327BF93F5EB8E5862 /* ImageCache.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 9D08D081C0EA352C2D518009 /* ImageCache.swift */; };
 		7D86550972E1B15A4C5588A9 /* ArtViews.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = D848606DD7BD711B76EA0D70 /* ArtViews.swift */; };
@@ -78,6 +79,7 @@
 		D6224D583382EAD047CC662C /* catalog-fallback.json in QueueWidgets */ = {isa = PBXBuildFile; fileRef = B6C6645AE76DCF53BCBAA2C1 /* catalog-fallback.json */; };
 		3D63C32B5CB2CB6A074458B8 /* match_found.caf in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 3F3D700670D50849DBE7768A /* match_found.caf */; };
 		D9BF2182013F968925952B35 /* QueueActivityAttributes.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */; };
+		C394961399503464DEBB0D66 /* NotificationCopy.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 2BF28A235EFE449140405729 /* NotificationCopy.swift */; };
 		EA9AFC70410919E529C82DCD /* CatalogService.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 4D3558CE3531693468824E62 /* CatalogService.swift */; };
 		42F93BC424939E8F79CDDB39 /* ImageCache.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 9D08D081C0EA352C2D518009 /* ImageCache.swift */; };
 		FD21BEE7CA057E2CC067FBB6 /* ArtViews.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = D848606DD7BD711B76EA0D70 /* ArtViews.swift */; };
@@ -229,6 +231,7 @@
 
 /* Begin PBXFileReference section */
 		6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueActivityAttributes.swift"; path = "Shared/Activity/QueueActivityAttributes.swift"; sourceTree = "<group>"; };
+		2BF28A235EFE449140405729 /* NotificationCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "NotificationCopy.swift"; path = "Shared/Activity/NotificationCopy.swift"; sourceTree = "<group>"; };
 		4D3558CE3531693468824E62 /* CatalogService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "CatalogService.swift"; path = "Shared/Catalog/CatalogService.swift"; sourceTree = "<group>"; };
 		9D08D081C0EA352C2D518009 /* ImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ImageCache.swift"; path = "Shared/Catalog/ImageCache.swift"; sourceTree = "<group>"; };
 		D848606DD7BD711B76EA0D70 /* ArtViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ArtViews.swift"; path = "Shared/Design/ArtViews.swift"; sourceTree = "<group>"; };
@@ -366,6 +369,7 @@
 			isa = PBXGroup;
 			children = (
 				6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */,
+				2BF28A235EFE449140405729 /* NotificationCopy.swift */,
 			);
 			name = "Activity";
 			sourceTree = "<group>";
@@ -555,6 +559,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C4BEAAC148DFBBB9A0FBEED8 /* QueueActivityAttributes.swift */,
+				6E8DA7BB4FD6454BBA28CCFA /* NotificationCopy.swift */,
 				24452E1AB941C9DA1D68631F /* CatalogService.swift */,
 				8D29563327BF93F5EB8E5862 /* ImageCache.swift */,
 				7D86550972E1B15A4C5588A9 /* ArtViews.swift */,
@@ -633,6 +638,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D9BF2182013F968925952B35 /* QueueActivityAttributes.swift */,
+				C394961399503464DEBB0D66 /* NotificationCopy.swift */,
 				EA9AFC70410919E529C82DCD /* CatalogService.swift */,
 				42F93BC424939E8F79CDDB39 /* ImageCache.swift */,
 				FD21BEE7CA057E2CC067FBB6 /* ArtViews.swift */,

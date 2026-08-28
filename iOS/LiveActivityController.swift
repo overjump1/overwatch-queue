@@ -216,21 +216,8 @@ public final class LiveActivityController {
     }
 
     private func alert(for phase: QueuePhase) -> AlertConfiguration {
-        switch phase.kind {
-        case .matchFound:
-            return AlertConfiguration(title: "Match Found",
-                                      body: "You're being pulled into the game — get back to your PC.",
-                                      sound: .default)
-        case .mapVote:
-            return AlertConfiguration(title: "Map Vote",
-                                      body: "Pick where you want to play.",
-                                      sound: .default)
-        case .heroSelect:
-            return AlertConfiguration(title: "Hero Select",
-                                      body: "Choose your hero.",
-                                      sound: .default)
-        default:
-            return AlertConfiguration(title: "Overwatch Queue", body: "Status changed.", sound: .default)
-        }
+        AlertConfiguration(title: LocalizedStringResource(stringLiteral: NotificationCopy.title(for: phase)),
+                           body: LocalizedStringResource(stringLiteral: NotificationCopy.body(for: phase)),
+                           sound: .default)
     }
 }
