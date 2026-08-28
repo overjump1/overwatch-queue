@@ -53,6 +53,9 @@ public final class AppModel {
             if case .voteMap(let key) = command { self?.store.vote(map: key) }
             if case .selectHero(let key) = command { self?.store.select(hero: key) }
         }
+        // The watch is configured by the same scan the phone was: hand it over on every
+        // launch, so one that was off, flat or freshly installed catches up.
+        WatchLink.shared.send(pairing: pairing)
         connect()
         Task { await catalog.load() }
     }
@@ -77,6 +80,7 @@ public final class AppModel {
     public func pair(_ pairing: Pairing) {
         self.pairing = pairing
         pairing.save()
+        WatchLink.shared.send(pairing: pairing)
         connect()
     }
 
@@ -87,6 +91,7 @@ public final class AppModel {
         store.reset()
         Pairing.forget()
         pairing = nil
+        WatchLink.shared.send(pairing: nil)
         LiveActivityController.shared.end()
     }
 

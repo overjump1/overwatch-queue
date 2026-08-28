@@ -73,6 +73,16 @@ final class PairingTests: XCTestCase {
         XCTAssertEqual(decoded, token)
     }
 
+    /// The phone hands the pairing to the watch as encoded bytes in the WatchConnectivity
+    /// application context, so the two ends have to agree on the encoding exactly.
+    func testPairingSurvivesTheTripToTheWatch() throws {
+        let original = try XCTUnwrap(Pairing(pairingCode: code()))
+        let carried = try Wire.decoder.decode(Pairing.self,
+                                              from: try Wire.encoder.encode(original))
+        XCTAssertEqual(carried, original)
+        XCTAssertEqual(carried.socketURL, original.socketURL)
+    }
+
     func testAHelloWithoutATokenStillDecodes() throws {
         // Older clients, and anyone testing the server by hand with a raw frame.
         let raw = Data("""

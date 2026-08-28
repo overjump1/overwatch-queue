@@ -109,6 +109,13 @@ allowed to rewind the UI.
 **Art is referenced, not bundled** — and cached in memory and on disk so it loads once.
 See [docs/ASSETS.md](docs/ASSETS.md), including how to drop in your own images per hero or map.
 
+**The watch is configured by the same scan.** The phone hands the pairing to the watch
+over WatchConnectivity the moment it has one, so nothing is ever set up on the wrist. The
+watch still listens to the phone by preference — that relay coalesces, arrives while the
+watch app is asleep, and costs the watch no radio of its own — but when the phone is out
+of range or switched off it now opens its own socket to the PC instead of going blank.
+Snapshots carry a sequence number, so a handover mid-queue can't rewind the screen.
+
 **One token, no transport security.** The socket carries which mode you queued for, and
 it never leaves your LAN. A token in a QR code is enough to stop a flatmate driving your
 watch; TLS would mean issuing certificates for a machine with no name, to protect
