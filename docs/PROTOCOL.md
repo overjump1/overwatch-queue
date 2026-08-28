@@ -289,17 +289,19 @@ on the plain one, unchanged otherwise.
   one registers — a background push is best-effort, so the first attempt landing is never
   guaranteed. Carries `attributes` (`sessionID`, a `startedAt` fixed once per session and
   reused on every retry, so Apple recognises a retry as the same activity rather than a
-  new one) and `content-state`.
+  new one), `content-state`, and **always an `alert`** — verified directly, back to back,
+  against a real push-to-start token: an otherwise-identical silent one reliably never
+  showed up, one with an `alert` did, every time. There's nothing on screen yet for a
+  silent push to land on, and Apple appears to treat a wholly silent push-to-start as
+  low-priority best-effort in a way it doesn't one with an alert.
 - **update** — pushed to the activity's own per-activity token on every subsequent change,
   once the phone has had a chance to register one (see `registerActivityPushToken` above).
-  Carries `content-state`.
+  Carries `content-state`, plus an `alert` only for `matchFound`/`mapVote`/`heroSelect` —
+  sound, haptic, a brief peek, the way a delivery app announces "your order is on the way"
+  without a separate notification alongside it. Routine updates stay silent; the card
+  changing is signal enough once it's already visible.
 - **end** — sent instead of an update once the phase goes back to `idle`/`cancelled`, then
   the per-activity token is forgotten.
-
-`matchFound`, `mapVote` and `heroSelect` additionally carry an `alert` (title/body) on
-whichever of start/update actually fires for them — sound, haptic, and a brief peek, the
-same way a delivery app announces "your order is on the way" without a separate
-notification alongside it. Routine changes carry no `alert`.
 
 Between "start" and the phone registering a real per-activity token, further updates
 have nothing to reach yet — there's a real, expected gap here, since push-to-start

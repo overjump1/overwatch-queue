@@ -290,7 +290,9 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.assertEqual(environment, "sandbox")
         self.assertEqual(attributes["sessionID"], self.server.session.session_id)
         self.assertEqual(content_state["phase"]["type"], "searching")
-        self.assertIsNone(alert)                    # searching isn't urgent
+        # Every start carries an alert, even a routine phase — verified directly
+        # against a real device that a silent push-to-start just doesn't reliably land.
+        self.assertEqual(alert, {"title": "Overwatch Queue", "body": "Status changed."})
 
     def test_start_is_not_resent_within_the_retry_cooldown(self):
         self.server.activity_tokens.register_start("start-token", "sandbox")
