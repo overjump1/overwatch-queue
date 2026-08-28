@@ -9,7 +9,8 @@ import WidgetKit
 struct QueueLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: QueueActivityAttributes.self) { context in
-            LockScreenView(state: context.state, attributes: context.attributes)
+            ActivityRootView(state: context.state, attributes: context.attributes)
+                .widgetURL(DeepLink.openURL)
                 .activityBackgroundTint(Palette.night.opacity(0.92))
                 .activitySystemActionForegroundColor(Palette.orange)
         } dynamicIsland: { context in
@@ -50,17 +51,53 @@ struct QueueLiveActivityWidget: Widget {
                 Image(systemName: context.state.symbolName)
                     .foregroundStyle(accent(context.state.phase))
             }
-            .widgetURL(URL(string: "owqueue://open"))
+            .widgetURL(DeepLink.openURL)
             .keylineTint(accent(context.state.phase))
         }
+        // The Apple Watch mirrors this activity into the Smart Stack on its own, with no
+        // code at all — but without this it would render the Dynamic Island's leading and
+        // trailing views, which are sized for a cutout beside a camera and read as a
+        // leftover on the wrist. `.small` is the wrist's own presentation.
+        .supplementalActivityFamilies([.small])
     }
 
     private func accent(_ phase: QueuePhase) -> Color { Palette.accent(for: phase) }
 
-    /// Counts up while searching, down against a deadline while the player owes an action.
     @ViewBuilder
     private func timerText(for state: QueueActivityAttributes.ContentState,
                            attributes: QueueActivityAttributes) -> some View {
+        ActivityTimer(state: state, attributes: attributes)
+    }
+}
+
+/// Which presentation to draw. The Lock Screen and the watch's Smart Stack are different
+/// enough in size and in what they're competing with that sharing one view would shortchange
+/// both; `activityFamily` is how the system says which one it's asking for.
+struct ActivityRootView: View {
+    var state: QueueActivityAttributes.ContentState
+    var attributes: QueueActivityAttributes
+
+    @Environment(\.activityFamily) private var family
+
+    var body: some View {
+        switch family {
+        case .small:
+            WatchActivityView(state: state, attributes: attributes)
+        default:
+            LockScreenView(state: state, attributes: attributes)
+        }
+    }
+}
+
+/// Counts up while searching, down against a deadline while the player owes an action.
+///
+/// One implementation, shared by the Lock Screen, the Dynamic Island and the watch — the
+/// rule about which direction a phase counts in belongs in one place, not three.
+struct ActivityTimer: View {
+    var state: QueueActivityAttributes.ContentState
+    var attributes: QueueActivityAttributes
+
+    var body: some View {
         if let deadline = state.phase.deadline {
             Text.countdown(to: deadline)
         } else if case .searching(let info) = state.phase {

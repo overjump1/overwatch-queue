@@ -27,6 +27,7 @@
 		929C11131B9E4DCB7FD35C83 /* QueueStore.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = B2992B15E0406704A64599AB /* QueueStore.swift */; };
 		619D18E477AB6C41D9CE7E45 /* SharedState.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 52D334DCC418B27F1E6D3DA4 /* SharedState.swift */; };
 		B24BB8B7D4F078FE6EBED852 /* TimeFormatting.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 2E24E8FB55110F65457DEF89 /* TimeFormatting.swift */; };
+		1D031BED94DF733C99844F7B /* DeepLink.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 62689D9624D4CB8AAC12E01E /* DeepLink.swift */; };
 		44FFB125BDD0836E15FD581E /* Pairing.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = E6035E5992C05622FD60592A /* Pairing.swift */; };
 		01FF57CFF52F4F83DB638E00 /* QueueTransport.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 10EAB8B4B5CA95BCFBD5164A /* QueueTransport.swift */; };
 		17EA3D24D77C30136D9D1A68 /* WatchLink.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = B01D383136E7D0B6E795A21D /* WatchLink.swift */; };
@@ -68,12 +69,14 @@
 		4D11C8AC14E40CC3518C28F0 /* QueueStore.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = B2992B15E0406704A64599AB /* QueueStore.swift */; };
 		6C7D8CBE2A7A26F6E19B3904 /* SharedState.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 52D334DCC418B27F1E6D3DA4 /* SharedState.swift */; };
 		22530CDCE8B73A9BDA53F3F0 /* TimeFormatting.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 2E24E8FB55110F65457DEF89 /* TimeFormatting.swift */; };
+		8AEB58B995787E4FC903F967 /* DeepLink.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 62689D9624D4CB8AAC12E01E /* DeepLink.swift */; };
 		6DA708B1E02D0FE9D3251D4F /* Pairing.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = E6035E5992C05622FD60592A /* Pairing.swift */; };
 		F4F5E673605E932506D30225 /* QueueTransport.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 10EAB8B4B5CA95BCFBD5164A /* QueueTransport.swift */; };
 		D29C827381628C4AF66D11E7 /* WatchLink.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = B01D383136E7D0B6E795A21D /* WatchLink.swift */; };
 		223F391BA460A2CDE4C9DF98 /* WatchTransport.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 2FA2642931C01B205A8F7D45 /* WatchTransport.swift */; };
 		CEE736B8745A48F9629DADC7 /* WebSocketTransport.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = A518902990126A92235D0710 /* WebSocketTransport.swift */; };
 		6906F45714731CBC6B8D8753 /* QueueStatusShared.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 6897941C613857FBCC154938 /* QueueStatusShared.swift */; };
+		DEB8B2D920504AA9B3854C2A /* QueueActivityWatchView.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 549B5A70375368168EFFDA7E /* QueueActivityWatchView.swift */; };
 		4573FB1577013B7B244AC279 /* QueueLiveActivityWidget.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 7A636B92BC4F8FA1BD065E82 /* QueueLiveActivityWidget.swift */; };
 		2607855639BA3E02173B8B45 /* QueueStatusWidget.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = F5851588058F90FE087A1850 /* QueueStatusWidget.swift */; };
 		3CF9775BB80742B647ABDBA4 /* QueueWidgetsBundle.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 31E0BE0496531FDCBC826E97 /* QueueWidgetsBundle.swift */; };
@@ -100,6 +103,7 @@
 		98ADC7B9BEB894CC05B34E3C /* QueueStore.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = B2992B15E0406704A64599AB /* QueueStore.swift */; };
 		A857CA606FF50156087D5BB1 /* SharedState.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 52D334DCC418B27F1E6D3DA4 /* SharedState.swift */; };
 		13ABE10BEAB6AFB71986D143 /* TimeFormatting.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 2E24E8FB55110F65457DEF89 /* TimeFormatting.swift */; };
+		F6BACD48ED477CF33214140F /* DeepLink.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 62689D9624D4CB8AAC12E01E /* DeepLink.swift */; };
 		0EE9EB98113E5B8CA2583920 /* Pairing.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = E6035E5992C05622FD60592A /* Pairing.swift */; };
 		63DA72EDE9304D368C93F2F1 /* QueueTransport.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 10EAB8B4B5CA95BCFBD5164A /* QueueTransport.swift */; };
 		E3738665E7D490FC57426B30 /* WatchLink.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = B01D383136E7D0B6E795A21D /* WatchLink.swift */; };
@@ -133,6 +137,7 @@
 		E3C3793065EB4A761784EA02 /* QueueStore.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = B2992B15E0406704A64599AB /* QueueStore.swift */; };
 		36FB15EB8B3BBE7F57B73F22 /* SharedState.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 52D334DCC418B27F1E6D3DA4 /* SharedState.swift */; };
 		78E6DAFB6F2FB56DFD59A663 /* TimeFormatting.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 2E24E8FB55110F65457DEF89 /* TimeFormatting.swift */; };
+		F5771B5762C40C6ACF5ECE25 /* DeepLink.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 62689D9624D4CB8AAC12E01E /* DeepLink.swift */; };
 		06A8F44684DF655B5EEBF531 /* Pairing.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = E6035E5992C05622FD60592A /* Pairing.swift */; };
 		6E79224953B7C67E51ECE6F1 /* QueueTransport.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 10EAB8B4B5CA95BCFBD5164A /* QueueTransport.swift */; };
 		ACF886D40377B2F8BA3D43A4 /* WatchLink.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = B01D383136E7D0B6E795A21D /* WatchLink.swift */; };
@@ -163,12 +168,14 @@
 		C4A9D201503A75D8F99921CA /* QueueStore.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = B2992B15E0406704A64599AB /* QueueStore.swift */; };
 		E4F421D8C132548CAA3DE002 /* SharedState.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 52D334DCC418B27F1E6D3DA4 /* SharedState.swift */; };
 		98799D6CE22FD0E79A98C21C /* TimeFormatting.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 2E24E8FB55110F65457DEF89 /* TimeFormatting.swift */; };
+		49BD72BB67809B5920590A6E /* DeepLink.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 62689D9624D4CB8AAC12E01E /* DeepLink.swift */; };
 		37BE08A27AB985FCD4288829 /* Pairing.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = E6035E5992C05622FD60592A /* Pairing.swift */; };
 		6590E270B203986BD9DF4D9A /* QueueTransport.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 10EAB8B4B5CA95BCFBD5164A /* QueueTransport.swift */; };
 		62CF52A1F3922E683B57697E /* WatchLink.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = B01D383136E7D0B6E795A21D /* WatchLink.swift */; };
 		5410C0F5BA5D65F9A201677A /* WatchTransport.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 2FA2642931C01B205A8F7D45 /* WatchTransport.swift */; };
 		C3BDEDD25CA31C00140184B7 /* WebSocketTransport.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = A518902990126A92235D0710 /* WebSocketTransport.swift */; };
 		1281BAF29B1FB332DC26E02B /* QueueStatusShared.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 6897941C613857FBCC154938 /* QueueStatusShared.swift */; };
+		581EBCB27826E2E23AD3EA0B /* DeepLinkTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = EC9259A65DC652AD88872EA3 /* DeepLinkTests.swift */; };
 		7974AB10858DC333A6BACEAA /* PairingTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 42A8C109434B734937E3F222 /* PairingTests.swift */; };
 		C398537B44F77B3E9C37440C /* QueueFlowTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = E6C011C75766DAFBD287BE49 /* QueueFlowTests.swift */; };
 		1F7AC518CEA70B427A1E7BB2 /* WatchTransportTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = A02A3426807971E70BEF33DE /* WatchTransportTests.swift */; };
@@ -255,6 +262,7 @@
 		B2992B15E0406704A64599AB /* QueueStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueStore.swift"; path = "Shared/Store/QueueStore.swift"; sourceTree = "<group>"; };
 		52D334DCC418B27F1E6D3DA4 /* SharedState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "SharedState.swift"; path = "Shared/Store/SharedState.swift"; sourceTree = "<group>"; };
 		2E24E8FB55110F65457DEF89 /* TimeFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "TimeFormatting.swift"; path = "Shared/Store/TimeFormatting.swift"; sourceTree = "<group>"; };
+		62689D9624D4CB8AAC12E01E /* DeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "DeepLink.swift"; path = "Shared/Transport/DeepLink.swift"; sourceTree = "<group>"; };
 		E6035E5992C05622FD60592A /* Pairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "Pairing.swift"; path = "Shared/Transport/Pairing.swift"; sourceTree = "<group>"; };
 		10EAB8B4B5CA95BCFBD5164A /* QueueTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueTransport.swift"; path = "Shared/Transport/QueueTransport.swift"; sourceTree = "<group>"; };
 		B01D383136E7D0B6E795A21D /* WatchLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchLink.swift"; path = "Shared/Transport/WatchLink.swift"; sourceTree = "<group>"; };
@@ -276,6 +284,7 @@
 		76F5D0BC4EA614EE0252E6C0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = "Assets.xcassets"; path = "iOS/Assets.xcassets"; sourceTree = "<group>"; };
 		B6C6645AE76DCF53BCBAA2C1 /* catalog-fallback.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "catalog-fallback.json"; path = "Shared/Resources/catalog-fallback.json"; sourceTree = "<group>"; };
 		3F3D700670D50849DBE7768A /* match_found.caf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "match_found.caf"; path = "Shared/Resources/match_found.caf"; sourceTree = "<group>"; };
+		549B5A70375368168EFFDA7E /* QueueActivityWatchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueActivityWatchView.swift"; path = "Widgets/QueueActivityWatchView.swift"; sourceTree = "<group>"; };
 		7A636B92BC4F8FA1BD065E82 /* QueueLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueLiveActivityWidget.swift"; path = "Widgets/QueueLiveActivityWidget.swift"; sourceTree = "<group>"; };
 		F5851588058F90FE087A1850 /* QueueStatusWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueStatusWidget.swift"; path = "Widgets/QueueStatusWidget.swift"; sourceTree = "<group>"; };
 		31E0BE0496531FDCBC826E97 /* QueueWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueWidgetsBundle.swift"; path = "Widgets/QueueWidgetsBundle.swift"; sourceTree = "<group>"; };
@@ -285,6 +294,7 @@
 		0C32EC54B7DFC1114C249079 /* WatchModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchModel.swift"; path = "Watch/WatchModel.swift"; sourceTree = "<group>"; };
 		C244CEFDB0279941691593D0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = "Assets.xcassets"; path = "Watch/Assets.xcassets"; sourceTree = "<group>"; };
 		0A9A41F77A0BF6C1852394B5 /* WatchWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchWidgetsBundle.swift"; path = "WatchWidgets/WatchWidgetsBundle.swift"; sourceTree = "<group>"; };
+		EC9259A65DC652AD88872EA3 /* DeepLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "DeepLinkTests.swift"; path = "Tests/DeepLinkTests.swift"; sourceTree = "<group>"; };
 		42A8C109434B734937E3F222 /* PairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "PairingTests.swift"; path = "Tests/PairingTests.swift"; sourceTree = "<group>"; };
 		E6C011C75766DAFBD287BE49 /* QueueFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueFlowTests.swift"; path = "Tests/QueueFlowTests.swift"; sourceTree = "<group>"; };
 		A02A3426807971E70BEF33DE /* WatchTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchTransportTests.swift"; path = "Tests/WatchTransportTests.swift"; sourceTree = "<group>"; };
@@ -446,6 +456,7 @@
 		6A1E1BCC117977F0D49F3E7B /* Transport */ = {
 			isa = PBXGroup;
 			children = (
+				62689D9624D4CB8AAC12E01E /* DeepLink.swift */,
 				E6035E5992C05622FD60592A /* Pairing.swift */,
 				10EAB8B4B5CA95BCFBD5164A /* QueueTransport.swift */,
 				B01D383136E7D0B6E795A21D /* WatchLink.swift */,
@@ -466,6 +477,7 @@
 		8AEC345AF92FEBA935540FBF /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				EC9259A65DC652AD88872EA3 /* DeepLinkTests.swift */,
 				42A8C109434B734937E3F222 /* PairingTests.swift */,
 				E6C011C75766DAFBD287BE49 /* QueueFlowTests.swift */,
 				A02A3426807971E70BEF33DE /* WatchTransportTests.swift */,
@@ -510,6 +522,7 @@
 			isa = PBXGroup;
 			children = (
 				A11F13170AC846AE2124A915 /* Info.plist */,
+				549B5A70375368168EFFDA7E /* QueueActivityWatchView.swift */,
 				7A636B92BC4F8FA1BD065E82 /* QueueLiveActivityWidget.swift */,
 				F5851588058F90FE087A1850 /* QueueStatusWidget.swift */,
 				C27F1840EE3925F3828C08CE /* QueueWidgets.entitlements */,
@@ -587,6 +600,7 @@
 				929C11131B9E4DCB7FD35C83 /* QueueStore.swift */,
 				619D18E477AB6C41D9CE7E45 /* SharedState.swift */,
 				B24BB8B7D4F078FE6EBED852 /* TimeFormatting.swift */,
+				1D031BED94DF733C99844F7B /* DeepLink.swift */,
 				44FFB125BDD0836E15FD581E /* Pairing.swift */,
 				01FF57CFF52F4F83DB638E00 /* QueueTransport.swift */,
 				17EA3D24D77C30136D9D1A68 /* WatchLink.swift */,
@@ -632,12 +646,14 @@
 				4D11C8AC14E40CC3518C28F0 /* QueueStore.swift */,
 				6C7D8CBE2A7A26F6E19B3904 /* SharedState.swift */,
 				22530CDCE8B73A9BDA53F3F0 /* TimeFormatting.swift */,
+				8AEB58B995787E4FC903F967 /* DeepLink.swift */,
 				6DA708B1E02D0FE9D3251D4F /* Pairing.swift */,
 				F4F5E673605E932506D30225 /* QueueTransport.swift */,
 				D29C827381628C4AF66D11E7 /* WatchLink.swift */,
 				223F391BA460A2CDE4C9DF98 /* WatchTransport.swift */,
 				CEE736B8745A48F9629DADC7 /* WebSocketTransport.swift */,
 				6906F45714731CBC6B8D8753 /* QueueStatusShared.swift */,
+				DEB8B2D920504AA9B3854C2A /* QueueActivityWatchView.swift */,
 				4573FB1577013B7B244AC279 /* QueueLiveActivityWidget.swift */,
 				2607855639BA3E02173B8B45 /* QueueStatusWidget.swift */,
 				3CF9775BB80742B647ABDBA4 /* QueueWidgetsBundle.swift */,
@@ -668,6 +684,7 @@
 				98ADC7B9BEB894CC05B34E3C /* QueueStore.swift */,
 				A857CA606FF50156087D5BB1 /* SharedState.swift */,
 				13ABE10BEAB6AFB71986D143 /* TimeFormatting.swift */,
+				F6BACD48ED477CF33214140F /* DeepLink.swift */,
 				0EE9EB98113E5B8CA2583920 /* Pairing.swift */,
 				63DA72EDE9304D368C93F2F1 /* QueueTransport.swift */,
 				E3738665E7D490FC57426B30 /* WatchLink.swift */,
@@ -705,6 +722,7 @@
 				E3C3793065EB4A761784EA02 /* QueueStore.swift */,
 				36FB15EB8B3BBE7F57B73F22 /* SharedState.swift */,
 				78E6DAFB6F2FB56DFD59A663 /* TimeFormatting.swift */,
+				F5771B5762C40C6ACF5ECE25 /* DeepLink.swift */,
 				06A8F44684DF655B5EEBF531 /* Pairing.swift */,
 				6E79224953B7C67E51ECE6F1 /* QueueTransport.swift */,
 				ACF886D40377B2F8BA3D43A4 /* WatchLink.swift */,
@@ -739,12 +757,14 @@
 				C4A9D201503A75D8F99921CA /* QueueStore.swift */,
 				E4F421D8C132548CAA3DE002 /* SharedState.swift */,
 				98799D6CE22FD0E79A98C21C /* TimeFormatting.swift */,
+				49BD72BB67809B5920590A6E /* DeepLink.swift */,
 				37BE08A27AB985FCD4288829 /* Pairing.swift */,
 				6590E270B203986BD9DF4D9A /* QueueTransport.swift */,
 				62CF52A1F3922E683B57697E /* WatchLink.swift */,
 				5410C0F5BA5D65F9A201677A /* WatchTransport.swift */,
 				C3BDEDD25CA31C00140184B7 /* WebSocketTransport.swift */,
 				1281BAF29B1FB332DC26E02B /* QueueStatusShared.swift */,
+				581EBCB27826E2E23AD3EA0B /* DeepLinkTests.swift */,
 				7974AB10858DC333A6BACEAA /* PairingTests.swift */,
 				C398537B44F77B3E9C37440C /* QueueFlowTests.swift */,
 				1F7AC518CEA70B427A1E7BB2 /* WatchTransportTests.swift */,

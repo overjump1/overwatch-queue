@@ -111,7 +111,8 @@ describe("sendPush", () => {
     expect(init.headers["apns-topic"]).toBe("com.tomerady.OverwatchQueue.watchkitapp");
     expect(init.headers["apns-priority"]).toBe("10");
     expect(JSON.parse(init.body)).toEqual({
-      aps: { alert: { title: "Match Found", body: "Get back to your PC." }, sound: "default" },
+      aps: { alert: { title: "Match Found", body: "Get back to your PC." }, sound: "default",
+            "interruption-level": "time-sensitive" },
       sessionID: "s2", sequence: 9,
     });
   });

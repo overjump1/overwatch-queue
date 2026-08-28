@@ -7,9 +7,9 @@ import Foundation
 /// it hangs up — so a flatmate on the same Wi-Fi can't drive your screen, and unpairing
 /// is a button on the PC rather than a reinstall here.
 public struct Pairing: Codable, Hashable, Sendable {
-    /// The custom scheme in the QR code. Nothing registers it as a URL type — the app
-    /// reads the string straight out of the camera — but it makes a scanned code
-    /// recognisable at a glance, and unmistakable for anything else.
+    /// The custom scheme in the QR code, and the app's registered URL type — so a code
+    /// scanned in the system camera offers to open the app, and the Live Activity has
+    /// something to point its tap at. See `DeepLink` for the routes it carries.
     public static let scheme = "owq"
     public static let defaultPort = 8787
 

@@ -18,6 +18,10 @@ struct OverwatchQueueWatchApp: App {
                             model.handleBackgroundPush { continuation.resume() }
                         }
                     }
+                    appDelegate.onNotificationTap = { model.handleUserOpened() }
+                    appDelegate.shouldPresentWhileForeground = {
+                        model.store.transport?.status.isLive != true
+                    }
                     model.start()
                 }
         }

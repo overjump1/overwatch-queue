@@ -65,6 +65,14 @@ class QueueServer:
         self._activity_started_at = None
         self._activity_start_last_sent_at = 0.0
         self._activity_start_retry_seconds = 20
+        # ...and when the retries don't take either, `_check_activity_fallback` gives up on
+        # the Live Activity and sends a plain notification instead. Apple accepts a
+        # push-to-start with a 200 whether or not it ever delivers one, so the only thing
+        # this side can observe is the app never coming back with a per-activity token.
+        # Wait that out, then say it the one way that demonstrably arrives.
+        self._activity_start_first_sent_at = None
+        self._activity_fallback_sent_for = None
+        self._activity_fallback_delay_seconds = 15
         self.apns = self._make_push_client()
 
         self.ws = WebSocketServer(port=pairing.port,
@@ -159,17 +167,29 @@ class QueueServer:
         A duplicate delivery is harmless: the client discards anything not newer than its
         current `sequence`.
 
-        Silent only — no visible alert push. The Live Activity below is the one thing
-        that's meant to surface a change with the app fully closed; a banner on top of it
-        would just be the same event twice."""
+        Silent for a routine change — the Live Activity below is meant to surface those on
+        the phone without a redundant banner on top. An urgent phase is different: it gets
+        a real, time-sensitive alert on both kinds, phone included, rather than trusting
+        the Live Activity alone — push-to-start (what would otherwise be the phone's only
+        route to a visible alert with the app fully closed) is best-effort in the same way
+        the comment on `_push_activity` describes, and in practice unreliable enough that
+        the alert can't be the only thing carrying an urgent phase to a closed app. The
+        watch has no Live Activity of its own at all, so this alert is its only
+        independent signal once out of the phone's WatchConnectivity range."""
         if not self.apns:
             return
         session_id, sequence, kind = self.session.session_id, self.session.sequence, self.session.kind
+        urgent = kind in protocol.URGENT_KINDS
         for client_kind, device_token, environment in list(self.push_tokens.items()):
             response = self.apns.send_background(
                 client_kind, device_token, environment, session_id, sequence)
             if self.apns.token_is_invalid(response):
                 self.push_tokens.forget(client_kind)
+                continue
+            if urgent:
+                title, body = protocol.notification_copy(kind)
+                self.apns.send_alert(client_kind, device_token, environment,
+                                     title, body, session_id, sequence)
         self._push_activity(session_id, sequence, kind)
 
     def _push_activity(self, session_id: str, sequence: int, kind: str):
@@ -192,12 +212,16 @@ class QueueServer:
         without a separate notification alongside it. Routine updates stay silent; the
         card changing is signal enough once it's already on screen.
 
-        A *start* always carries one, urgent or not — verified directly, back to back,
-        against a real push-to-start token: a silent start reliably never showed up,
-        while an identical one with an alert did, every time. Apple treats a wholly silent
-        push-to-start as low-priority best-effort in a way it doesn't for one with an
-        alert, which makes some sense — there's nothing on screen yet for a silent
-        content refresh to land on.
+        A *start* always carries one, urgent or not. A wholly silent push-to-start was
+        never once seen to arrive, while an identical one with an alert sometimes does —
+        which makes some sense, since there's nothing on screen yet for a silent content
+        refresh to land on.
+
+        "Sometimes" is the honest word. Push-to-start is accepted with a 200 and then, often
+        enough to design around, simply never delivered — with nothing on this side to say
+        so. `_check_activity_fallback` is what covers that case: when the retries here have
+        had their chance and the app still hasn't come back with a per-activity token, it
+        stops trying to conjure a card and just sends a notification the player can tap.
         """
         content_state = protocol.content_state(self.session.phase, sequence)
         timestamp = int(protocol.now().timestamp())
@@ -207,6 +231,9 @@ class QueueServer:
 
         activity = self.activity_tokens.update_token(session_id)
         if activity:
+            # There's a live card and the app is attached to it: push-to-start took, so
+            # there's nothing for the fallback to rescue.
+            self._activity_start_first_sent_at = None
             token, environment = activity
             if kind in ("idle", "cancelled"):
                 self.apns.send_activity_end(token, environment, content_state, timestamp)
@@ -219,6 +246,7 @@ class QueueServer:
 
         if kind in ("idle", "cancelled"):
             self._activity_session_id = None
+            self._activity_start_first_sent_at = None
             return
         start = self.activity_tokens.start_token()
         if not start:
@@ -228,6 +256,10 @@ class QueueServer:
             self._activity_session_id = session_id
             self._activity_started_at = protocol.reference_date_seconds(protocol.now())
             self._activity_start_last_sent_at = 0.0            # a new session always retries immediately
+            # A fresh queue gets a fresh chance at both the card and, failing that, the
+            # one fallback notification it's allowed.
+            self._activity_start_first_sent_at = None
+            self._activity_fallback_sent_for = None
 
         now = time.time()
         if now - self._activity_start_last_sent_at < self._activity_start_retry_seconds:
@@ -238,6 +270,57 @@ class QueueServer:
         attributes = {"sessionID": session_id, "startedAt": self._activity_started_at}
         self.apns.send_activity_start(token, environment, attributes, content_state,
                                       timestamp, alert=start_alert)
+        if self._activity_start_first_sent_at is None:
+            # The clock the fallback measures against: when this session *first* asked for
+            # a card, not when it last retried, so the retries all happen inside the wait
+            # rather than pushing it further out each time.
+            self._activity_start_first_sent_at = time.time()
+
+    def _check_activity_fallback(self):
+        """Once a session has asked for a Live Activity and not got one, say it plainly.
+
+        Runs on the heartbeat rather than off a state change, because the thing it's
+        waiting for is the *absence* of one: the app registering a per-activity token is
+        what proves the card exists, and that arrives (or doesn't) some seconds after the
+        push, with nothing else happening in between.
+
+        Only the phone, and only a non-urgent phase. An urgent one already sent a real
+        alert in `_push_apns`, and that alert is itself a way into the app — a second
+        notification fifteen seconds later would be the same event twice. The watch has no
+        Live Activity to be missing.
+        """
+        with self._lock:
+            if not self.apns:
+                return
+            session_id = self.session.session_id
+            sequence = self.session.sequence
+            kind = self.session.kind
+            if kind in ("idle", "cancelled") or kind in protocol.URGENT_KINDS:
+                return
+            if self._activity_start_first_sent_at is None:
+                return                                  # never asked for a card
+            if self._activity_fallback_sent_for == session_id:
+                return                                  # one per queue, not one per tick
+            if self.activity_tokens.update_token(session_id):
+                return                                  # it arrived after all
+            if time.time() - self._activity_start_first_sent_at < self._activity_fallback_delay_seconds:
+                return                                  # still might
+            phone = self.push_tokens.get("phone")
+            if not phone:
+                # Nothing to send to. Deliberately *not* latched: the phone may register a
+                # moment from now, and this queue should still get its one notification.
+                return
+            self._activity_fallback_sent_for = session_id
+            token, environment = phone
+
+        # Outside the lock on purpose, unlike `_push_apns`. This runs once a second, and
+        # `apply()` holds the same lock across every state change — waiting on Apple in
+        # here would stall the whole server for as long as APNs felt like taking. The flag
+        # above is set inside the lock, so a second tick can't double-send while this one
+        # is still in flight.
+        title, body = protocol.activity_fallback_copy()
+        self.log("No Live Activity took for this queue — telling the phone the plain way")
+        self.apns.send_alert("phone", token, environment, title, body, session_id, sequence)
 
     def _changed(self):
         if self.on_change:
@@ -345,6 +428,10 @@ class QueueServer:
         if not session_id or not token or environment not in ("sandbox", "production"):
             return
         self.activity_tokens.register_update(session_id, token, environment)
+        # Proof a card exists and the app is attached to it — whether it was pushed into
+        # being or started locally. Either way there's nothing left to fall back from.
+        with self._lock:
+            self._activity_start_first_sent_at = None
         self.log("Live Activity registered for push updates")
 
     def _register_activity_start_token(self, token, environment):
@@ -370,6 +457,7 @@ class QueueServer:
     def _heartbeat_loop(self):
         while self._running:
             time.sleep(1)
+            self._check_activity_fallback()
             beat = protocol.heartbeat()
             for client in self.ws.clients:
                 if client.authorized:

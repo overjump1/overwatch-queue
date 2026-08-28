@@ -28,7 +28,8 @@ public final class LiveActivityController {
     private var stateObserver: Task<Void, Never>?
     /// The queue session whose activity the user swiped away. Re-requesting one for the
     /// same session would put the banner straight back and read as the app arguing with
-    /// them; a genuinely new queue still gets one.
+    /// them; a genuinely new queue still gets one, and so does one the player asks for by
+    /// opening the app themselves — see `forgetDismissal`.
     private var dismissedSession: UUID?
 
     /// Floor between non-urgent updates. ActivityKit throttles a chatty app, and being
@@ -120,6 +121,7 @@ public final class LiveActivityController {
     /// run from the server's clock while the app's run from this device's.
     public func sync(to snapshot: QueueSnapshot, clock: ClockSync) {
         let phase = snapshot.phase.localized(with: clock)
+        Self.log("sync \(phase.kind) seq \(snapshot.sequence), holding \(activity == nil ? "nothing" : "an activity")")
         switch phase.kind {
         case .idle, .cancelled:
             end()
@@ -135,7 +137,16 @@ public final class LiveActivityController {
     }
 
     private func start(with state: QueueActivityAttributes.ContentState, sessionID: UUID) {
-        guard isAvailable, sessionID != dismissedSession else { return }
+        guard sessionID != dismissedSession else {
+            Self.log("not starting: this session's card was dismissed")
+            return
+        }
+        guard isAvailable else {
+            // The one failure the player can fix themselves, and the one they'd never
+            // guess: Live Activities are off for this app in Settings.
+            Self.log("not starting: Live Activities are disabled for this app")
+            return
+        }
         let attributes = QueueActivityAttributes(sessionID: sessionID, startedAt: .now)
         do {
             // `.token`, not `nil` — without a push token this activity can only ever be
@@ -149,9 +160,23 @@ public final class LiveActivityController {
             observeState(of: requested)
             observePushToken(of: requested)
             record(state)
+            Self.log("started \(requested.id)")
         } catch {
+            // Worth saying out loud rather than swallowing. Every reason `request` refuses
+            // is invisible from the outside — the card simply doesn't appear — and they
+            // are not all the app's fault: `.denied` and `.visibility` are Settings, and
+            // the two `maximumExceeded` cases mean activities have piled up elsewhere.
+            Self.log("Activity.request refused: \(error)")
             activity = nil
         }
+    }
+
+    /// Deliberately `print`, not `os_log`: this is read by attaching to the app's console
+    /// while reproducing a missing card, which is the only way to see any of it.
+    private static func log(_ message: @autoclosure () -> String) {
+        #if DEBUG
+        print("[LiveActivity] \(message())")
+        #endif
     }
 
     /// Drops the handle once the system has taken the activity away, so the next phase
@@ -209,6 +234,16 @@ public final class LiveActivityController {
             }
         }
         record(state)
+    }
+
+    /// Drops the memory of a swipe-away, so the next snapshot can put the card back.
+    ///
+    /// Only ever called for something the player did deliberately — tapping a notification
+    /// or the activity itself. Not honouring a dismissal is what stops the app arguing;
+    /// re-honouring it when they've explicitly reached for the thing would be the same
+    /// stubbornness pointed the other way.
+    public func forgetDismissal() {
+        dismissedSession = nil
     }
 
     public func end() {

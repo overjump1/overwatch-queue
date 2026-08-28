@@ -48,6 +48,19 @@ def notification_copy(kind: str):
         _NOTIFICATION_BODIES.get(kind, "Status changed.")
 
 
+def activity_fallback_copy():
+    """`(title, body)` for the notification sent when a Live Activity never appeared.
+
+    Not `notification_copy`: that copy announces an urgent phase, and this is only ever
+    sent for a routine one (an urgent phase already got a real alert of its own). It has to
+    earn the interruption on its own terms, so it says what happened and what tapping does.
+
+    Unlike the copy above there's no Swift counterpart to keep in step — nothing on the
+    device composes this text, it only ever arrives already written.
+    """
+    return "Queue started", "Tap to put it on your Lock Screen."
+
+
 # ---------------------------------------------------------------- Live Activity pushes
 #
 # A Live Activity push's `content-state` is decoded on-device with a plain `JSONDecoder`

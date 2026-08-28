@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UserNotifications
 import WatchKit
 
 /// Watch-side counterpart to `AppModel`. State arrives from the paired iPhone; votes and
@@ -20,10 +21,11 @@ public final class WatchModel {
             switch next.kind {
             case .matchFound:
                 self.matchFoundToken += 1
-                // The wrist tap is the whole reason the watch app exists — this is the
-                // signal that reaches you when the phone is in a pocket. No notification
-                // banner alongside it — the Live Activity on the phone is the only thing
-                // that surfaces this beyond a glance at the watch itself.
+                // The wrist tap is the immediate, local signal while the app is open and
+                // connected. The server also sends the watch its own time-sensitive push
+                // alert on this phase — see `registerForPushNotifications()` — so a match
+                // still surfaces on the wrist even out of the phone's WatchConnectivity
+                // range, without waiting on this in-app path at all.
                 WKInterfaceDevice.current().play(.notification)
             case .mapVote, .heroSelect:
                 WKInterfaceDevice.current().play(.directionUp)
@@ -47,7 +49,7 @@ public final class WatchModel {
     }
 
     public func start() {
-        WKApplication.shared().registerForRemoteNotifications()
+        registerForPushNotifications()
 
         #if DEBUG
         // Standalone mode: `-server <host:port> -token <uuid>` points the watch straight
@@ -78,7 +80,15 @@ public final class WatchModel {
     //
     // Independent of the phone relay on purpose: this is the token APNs uses to wake the
     // watch directly, for the case the relay is built to fail over from — the phone is
-    // out of range, asleep, or simply not carried.
+    // out of range, asleep, or simply not carried. Alert authorization is what turns that
+    // wake-up into something the wrist actually shows — without it an urgent push still
+    // arrives, but silently, the same as the routine background one.
+
+    private func registerForPushNotifications() {
+        UNUserNotificationCenter.current()
+            .requestAuthorization(options: [.alert, .sound, .timeSensitive]) { _, _ in }
+        WKApplication.shared().registerForRemoteNotifications()
+    }
 
     public func didReceive(deviceToken: Data) {
         store.registerPushToken(deviceToken.hexEncoded, environment: .current)
@@ -86,12 +96,24 @@ public final class WatchModel {
 
     /// A background push arrived: make sure a connection is live and ask for the truth.
     public func handleBackgroundPush(completion: @escaping () -> Void) {
-        if store.transport?.status.isLive != true { store.transport?.connect() }
-        store.requestRefresh()
+        catchUp()
         Task {
             try? await Task.sleep(for: .seconds(3))
             completion()
         }
+    }
+
+    /// The player tapped a notification on the wrist. There is nothing to route to:
+    /// `WatchRootView` is a switch over the phase, so arriving at all is arriving in the
+    /// right place — all this has to do is make sure the phase it's about to draw is
+    /// current rather than whatever was left over from the last connection.
+    public func handleUserOpened() {
+        catchUp()
+    }
+
+    private func catchUp() {
+        if store.transport?.status.isLive != true { store.transport?.connect() }
+        store.requestRefresh()
     }
 
     private var identity: ClientIdentity {

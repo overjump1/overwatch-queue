@@ -121,7 +121,7 @@ function payloadFor(request: PushRequest): object {
     case "alert":
       return {
         aps: { alert: { title: request.title ?? "Overwatch Queue", body: request.body ?? "Status changed." },
-              sound: "default" },
+              sound: "default", "interruption-level": "time-sensitive" },
         sessionID: request.sessionId,
         sequence: request.sequence,
       };

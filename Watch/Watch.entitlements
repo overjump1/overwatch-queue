@@ -8,5 +8,10 @@
 	</array>
 	<key>aps-environment</key>
 	<string>development</string>
+	<!-- The wrist needs this more than the phone does: it has no Live Activity of its own,
+	     so this alert is the only thing that reaches it once the phone is out of range.
+	     See the note in `iOS/OverwatchQueue.entitlements`. -->
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
 </dict>
 </plist>
