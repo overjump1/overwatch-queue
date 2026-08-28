@@ -36,13 +36,19 @@ jobs:
       # Worker. Guarded so this workflow keeps deploying the *code* even before that key
       # has been generated — see relay/README.md for the one-time Apple Developer step.
       - name: Sync app secrets
-        if: ${{ secrets.APNS_PRIVATE_KEY != '' && secrets.RELAY_API_KEY != '' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           APNS_PRIVATE_KEY: ${{ secrets.APNS_PRIVATE_KEY }}
           RELAY_API_KEY: ${{ secrets.RELAY_API_KEY }}
         run: |
+          # Guarded here, not with a step-level `if:` — GitHub Actions doesn't allow the
+          # `secrets` context in a step's `if:` condition at all (it fails the whole
+          # workflow file, not just this step, before any job even starts).
+          if [ -z "$APNS_PRIVATE_KEY" ] || [ -z "$RELAY_API_KEY" ]; then
+            echo "APNS_PRIVATE_KEY / RELAY_API_KEY not set yet — skipping secret sync, deploying code only."
+            exit 0
+          fi
           printf '%s' "$APNS_PRIVATE_KEY" | npx wrangler secret put APNS_PRIVATE_KEY
           printf '%s' "$RELAY_API_KEY" | npx wrangler secret put RELAY_API_KEY
 
