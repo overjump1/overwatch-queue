@@ -251,11 +251,14 @@ struct DebugControlPanel: View {
 
     private func jumpButton(_ title: String, _ symbol: String,
                             _ phase: @escaping () -> QueuePhase) -> some View {
-        let target = phase()
-        let allowed = store.phase.canTransition(to: target)
+        // Built twice deliberately: once here to test the transition, and again on tap.
+        // Phases carry absolute deadlines, so one built while this row was laid out has
+        // been running down ever since — leave the panel open a while and the phase would
+        // start already expired.
+        let allowed = store.phase.canTransition(to: phase())
         return Button {
             mock.cancelScenario()
-            mock.apply(target)
+            mock.apply(phase())
         } label: {
             Label(title, systemImage: symbol)
         }

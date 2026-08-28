@@ -52,7 +52,7 @@ struct MapVoteView: View {
             CountdownRing(deadline: deadline, total: 25, lineWidth: 3, tint: Palette.amber)
                 .frame(width: 40, height: 40)
                 .overlay {
-                    Text(timerInterval: Date.now...deadline, countsDown: true)
+                    Text.countdown(to: deadline)
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(Palette.white)

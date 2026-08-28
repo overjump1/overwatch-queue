@@ -75,7 +75,7 @@ struct QueueStatusWidgetView: View {
     @ViewBuilder
     private var timer: some View {
         if let deadline = phase.deadline {
-            Text(timerInterval: Date.now...deadline, countsDown: true)
+            Text.countdown(to: deadline)
         } else if case .searching(let info) = phase {
             Text(timerInterval: info.startedAt...Date.distantFuture, countsDown: false)
         } else if case .inGame(let info) = phase {

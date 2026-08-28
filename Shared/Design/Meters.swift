@@ -121,6 +121,28 @@ public struct ElapsedTimer: View {
     }
 }
 
+/// A countdown to `deadline` that the system ticks on its own.
+///
+/// `Text(timerInterval:)` takes a `ClosedRange`, and forming one whose upper bound has
+/// already passed is a trap, not an empty range — so every countdown has to be guarded
+/// against its own deadline expiring. That isn't an edge case here: hero select and the
+/// map vote both outlive their deadline whenever the player uses the whole window, and a
+/// Live Activity re-renders on its own schedule well after. Past the deadline this settles
+/// on a static zero, which is what the running timer shows at the end anyway.
+///
+/// Returns `Text` rather than `some View` so callers keep the text-only modifiers —
+/// `monospacedDigit()` above all — that the countdowns are styled with.
+public extension Text {
+    static func countdown(to deadline: Date) -> Text {
+        // One `now` for both the comparison and the range: reading the clock twice lets a
+        // deadline a hair in the future fall behind between them, which is the same trap
+        // by a narrower door.
+        let now = Date.now
+        guard deadline > now else { return Text(verbatim: "0:00") }
+        return Text(timerInterval: now...deadline, countsDown: true)
+    }
+}
+
 /// `WaitMeter` for surfaces that cannot run a timeline.
 ///
 /// A Live Activity's views are only re-rendered when the app pushes new content, so a

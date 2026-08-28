@@ -58,7 +58,7 @@ struct HeroSelectView: View {
             CountdownRing(deadline: deadline, total: 40, lineWidth: 3, tint: info.role.tint)
                 .frame(width: 40, height: 40)
                 .overlay {
-                    Text(timerInterval: Date.now...deadline, countsDown: true)
+                    Text.countdown(to: deadline)
                         .font(.system(size: 11, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(Palette.white)

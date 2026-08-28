@@ -62,7 +62,7 @@ struct QueueLiveActivityWidget: Widget {
     private func timerText(for state: QueueActivityAttributes.ContentState,
                            attributes: QueueActivityAttributes) -> some View {
         if let deadline = state.phase.deadline {
-            Text(timerInterval: Date.now...deadline, countsDown: true)
+            Text.countdown(to: deadline)
         } else if case .searching(let info) = state.phase {
             Text(timerInterval: info.startedAt...Date.distantFuture, countsDown: false)
         } else if case .inGame(let info) = state.phase {
@@ -154,7 +154,7 @@ private struct LockScreenView: View {
 
             VStack(alignment: .trailing, spacing: 2) {
                 if let deadline = state.phase.deadline {
-                    Text(timerInterval: Date.now...deadline, countsDown: true)
+                    Text.countdown(to: deadline)
                         .font(.system(size: 26, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(Palette.orange)
