@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftUI
+import UserNotifications
 
 /// Wires the store to the PC and to the platform features that react to phase changes:
 /// the Live Activity, haptics, sound, and the relay down to the watch.
@@ -106,6 +107,33 @@ public final class AppModel {
                                       name: UIDevice.current.name,
                                       appVersion: Bundle.main.appVersion)
         store.use(WebSocketTransport(pairing: pairing, identity: identity))
+    }
+
+    // MARK: - Push notifications
+    //
+    // The socket above is the golden path; this is what reaches the phone once iOS has
+    // suspended it. Registration doesn't wait on permission — a token unlocks the silent
+    // wake-up push regardless, and only a visible alert actually needs the user's okay.
+
+    public func registerForPushNotifications() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        UIApplication.shared.registerForRemoteNotifications()
+    }
+
+    public func didReceive(deviceToken: Data) {
+        store.registerPushToken(deviceToken.hexEncoded, environment: .current)
+    }
+
+    /// A background push arrived: make sure the socket is live and ask for the truth,
+    /// rather than trusting the push payload itself to carry it. The system gives a
+    /// background launch only a short window before suspending it again.
+    public func handleBackgroundPush(completion: @escaping () -> Void) {
+        if store.transport?.status.isLive != true { connect() }
+        store.requestRefresh()
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            completion()
+        }
     }
 
     // MARK: - Foregrounding / backgrounding

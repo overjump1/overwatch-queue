@@ -7,8 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		FE6AEAFEFF2DB8AE41F0CF2B /* NotificationCopy.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = D35685FC99129719119C75BC /* NotificationCopy.swift */; };
 		C4BEAAC148DFBBB9A0FBEED8 /* QueueActivityAttributes.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */; };
-		6E8DA7BB4FD6454BBA28CCFA /* NotificationCopy.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 2BF28A235EFE449140405729 /* NotificationCopy.swift */; };
 		24452E1AB941C9DA1D68631F /* CatalogService.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 4D3558CE3531693468824E62 /* CatalogService.swift */; };
 		8D29563327BF93F5EB8E5862 /* ImageCache.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 9D08D081C0EA352C2D518009 /* ImageCache.swift */; };
 		7D86550972E1B15A4C5588A9 /* ArtViews.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = D848606DD7BD711B76EA0D70 /* ArtViews.swift */; };
@@ -33,6 +33,7 @@
 		E8D721F2D4A5DAA9C4FDA2E1 /* WatchTransport.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 2FA2642931C01B205A8F7D45 /* WatchTransport.swift */; };
 		D035368F363A7C2368AAA3CF /* WebSocketTransport.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = A518902990126A92235D0710 /* WebSocketTransport.swift */; };
 		67C53318C2D9A7A71A14E659 /* QueueStatusShared.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 6897941C613857FBCC154938 /* QueueStatusShared.swift */; };
+		178A3F75CB855806FFC10F29 /* AppDelegate.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 01587191C9109C1DAC67D85D /* AppDelegate.swift */; };
 		3853D23F77FAC598649016A0 /* AppModel.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 29DF2B8BE2EF5C493858746B /* AppModel.swift */; };
 		EBC802028CB7E0A60B0C89AB /* Haptics.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 516A79586CC4845AD0460BCD /* Haptics.swift */; };
 		BABE884BA908849D6D6B8C1B /* LiveActivityController.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = A252FBF4A2314152088C54AF /* LiveActivityController.swift */; };
@@ -47,6 +48,7 @@
 		C69C3E13C1B783F81FE9583D /* Assets.xcassets in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 76F5D0BC4EA614EE0252E6C0 /* Assets.xcassets */; };
 		D64A36B6EF1C828A05E1681A /* catalog-fallback.json in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = B6C6645AE76DCF53BCBAA2C1 /* catalog-fallback.json */; };
 		A9CF1F0E954069705A077853 /* match_found.caf in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 3F3D700670D50849DBE7768A /* match_found.caf */; };
+		28733F143D73D32AA6161FFD /* NotificationCopy.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = D35685FC99129719119C75BC /* NotificationCopy.swift */; };
 		B545AA4E64275CEF17E7AC85 /* QueueActivityAttributes.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */; };
 		FBFA8CB40C9100088F981B2A /* CatalogService.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 4D3558CE3531693468824E62 /* CatalogService.swift */; };
 		8345B8C3FAAD8E4F6F2C5B9D /* ImageCache.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 9D08D081C0EA352C2D518009 /* ImageCache.swift */; };
@@ -78,8 +80,8 @@
 		193101F23D0991CC6525069A /* Assets.xcassets in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 76F5D0BC4EA614EE0252E6C0 /* Assets.xcassets */; };
 		D6224D583382EAD047CC662C /* catalog-fallback.json in QueueWidgets */ = {isa = PBXBuildFile; fileRef = B6C6645AE76DCF53BCBAA2C1 /* catalog-fallback.json */; };
 		3D63C32B5CB2CB6A074458B8 /* match_found.caf in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 3F3D700670D50849DBE7768A /* match_found.caf */; };
+		9D6FC067DC5D250C773A3DAA /* NotificationCopy.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = D35685FC99129719119C75BC /* NotificationCopy.swift */; };
 		D9BF2182013F968925952B35 /* QueueActivityAttributes.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */; };
-		C394961399503464DEBB0D66 /* NotificationCopy.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 2BF28A235EFE449140405729 /* NotificationCopy.swift */; };
 		EA9AFC70410919E529C82DCD /* CatalogService.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 4D3558CE3531693468824E62 /* CatalogService.swift */; };
 		42F93BC424939E8F79CDDB39 /* ImageCache.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 9D08D081C0EA352C2D518009 /* ImageCache.swift */; };
 		FD21BEE7CA057E2CC067FBB6 /* ArtViews.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = D848606DD7BD711B76EA0D70 /* ArtViews.swift */; };
@@ -106,10 +108,12 @@
 		B5747CFA5316F19C6C7A57BD /* QueueStatusShared.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 6897941C613857FBCC154938 /* QueueStatusShared.swift */; };
 		918FEFDCC8492CF0B6C19158 /* WatchRootView.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 424F9DEAE361BC342368A9D0 /* WatchRootView.swift */; };
 		011AC4EBD5A8833C9264BB07 /* WatchApp.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 36C42BD053D66D8FFF12B658 /* WatchApp.swift */; };
+		A302318E0885E858EA9A5331 /* WatchAppDelegate.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = C96CDB40A77D97AA651F62FC /* WatchAppDelegate.swift */; };
 		81CE451E25838B300778855A /* WatchModel.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 0C32EC54B7DFC1114C249079 /* WatchModel.swift */; };
 		2A8A4DD0DBBF0723F9BDFE86 /* Assets.xcassets in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = C244CEFDB0279941691593D0 /* Assets.xcassets */; };
 		12CC55BBAFC065C0903F7252 /* catalog-fallback.json in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = B6C6645AE76DCF53BCBAA2C1 /* catalog-fallback.json */; };
 		1FD818682D4891E49C1781CA /* match_found.caf in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 3F3D700670D50849DBE7768A /* match_found.caf */; };
+		13DD23A467612BBA0AD685B7 /* NotificationCopy.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = D35685FC99129719119C75BC /* NotificationCopy.swift */; };
 		24E796FA3638175499095035 /* QueueActivityAttributes.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */; };
 		E4F0DD61B4811C69719EF427 /* CatalogService.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 4D3558CE3531693468824E62 /* CatalogService.swift */; };
 		C56C2F1AD14AF4816E2A2FE3 /* ImageCache.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 9D08D081C0EA352C2D518009 /* ImageCache.swift */; };
@@ -139,6 +143,7 @@
 		901A0080FE4472DD5E36853D /* Assets.xcassets in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = C244CEFDB0279941691593D0 /* Assets.xcassets */; };
 		954DBEFE84DB69FC75243667 /* catalog-fallback.json in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = B6C6645AE76DCF53BCBAA2C1 /* catalog-fallback.json */; };
 		CE7C4FFA6012B425F43F282B /* match_found.caf in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 3F3D700670D50849DBE7768A /* match_found.caf */; };
+		C85BBF45F58E411C01B4031E /* NotificationCopy.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = D35685FC99129719119C75BC /* NotificationCopy.swift */; };
 		93D215152344CD9FFECF1D5B /* QueueActivityAttributes.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */; };
 		11BE56063038858C4EE91D76 /* CatalogService.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 4D3558CE3531693468824E62 /* CatalogService.swift */; };
 		076D7CF32F39D9F06E9B25A1 /* ImageCache.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 9D08D081C0EA352C2D518009 /* ImageCache.swift */; };
@@ -230,8 +235,8 @@
 /* End PBXTargetDependency section */
 
 /* Begin PBXFileReference section */
+		D35685FC99129719119C75BC /* NotificationCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "NotificationCopy.swift"; path = "Shared/Activity/NotificationCopy.swift"; sourceTree = "<group>"; };
 		6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueActivityAttributes.swift"; path = "Shared/Activity/QueueActivityAttributes.swift"; sourceTree = "<group>"; };
-		2BF28A235EFE449140405729 /* NotificationCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "NotificationCopy.swift"; path = "Shared/Activity/NotificationCopy.swift"; sourceTree = "<group>"; };
 		4D3558CE3531693468824E62 /* CatalogService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "CatalogService.swift"; path = "Shared/Catalog/CatalogService.swift"; sourceTree = "<group>"; };
 		9D08D081C0EA352C2D518009 /* ImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ImageCache.swift"; path = "Shared/Catalog/ImageCache.swift"; sourceTree = "<group>"; };
 		D848606DD7BD711B76EA0D70 /* ArtViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ArtViews.swift"; path = "Shared/Design/ArtViews.swift"; sourceTree = "<group>"; };
@@ -256,6 +261,7 @@
 		2FA2642931C01B205A8F7D45 /* WatchTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchTransport.swift"; path = "Shared/Transport/WatchTransport.swift"; sourceTree = "<group>"; };
 		A518902990126A92235D0710 /* WebSocketTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WebSocketTransport.swift"; path = "Shared/Transport/WebSocketTransport.swift"; sourceTree = "<group>"; };
 		6897941C613857FBCC154938 /* QueueStatusShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueStatusShared.swift"; path = "Shared/Widgets/QueueStatusShared.swift"; sourceTree = "<group>"; };
+		01587191C9109C1DAC67D85D /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AppDelegate.swift"; path = "iOS/AppDelegate.swift"; sourceTree = "<group>"; };
 		29DF2B8BE2EF5C493858746B /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AppModel.swift"; path = "iOS/AppModel.swift"; sourceTree = "<group>"; };
 		516A79586CC4845AD0460BCD /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "Haptics.swift"; path = "iOS/Haptics.swift"; sourceTree = "<group>"; };
 		A252FBF4A2314152088C54AF /* LiveActivityController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "LiveActivityController.swift"; path = "iOS/LiveActivityController.swift"; sourceTree = "<group>"; };
@@ -275,6 +281,7 @@
 		31E0BE0496531FDCBC826E97 /* QueueWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueWidgetsBundle.swift"; path = "Widgets/QueueWidgetsBundle.swift"; sourceTree = "<group>"; };
 		424F9DEAE361BC342368A9D0 /* WatchRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchRootView.swift"; path = "Watch/Views/WatchRootView.swift"; sourceTree = "<group>"; };
 		36C42BD053D66D8FFF12B658 /* WatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchApp.swift"; path = "Watch/WatchApp.swift"; sourceTree = "<group>"; };
+		C96CDB40A77D97AA651F62FC /* WatchAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchAppDelegate.swift"; path = "Watch/WatchAppDelegate.swift"; sourceTree = "<group>"; };
 		0C32EC54B7DFC1114C249079 /* WatchModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchModel.swift"; path = "Watch/WatchModel.swift"; sourceTree = "<group>"; };
 		C244CEFDB0279941691593D0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = "Assets.xcassets"; path = "Watch/Assets.xcassets"; sourceTree = "<group>"; };
 		0A9A41F77A0BF6C1852394B5 /* WatchWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchWidgetsBundle.swift"; path = "WatchWidgets/WatchWidgetsBundle.swift"; sourceTree = "<group>"; };
@@ -368,8 +375,8 @@
 		B1FA2DE3F8F77B6DA9EAD945 /* Activity */ = {
 			isa = PBXGroup;
 			children = (
+				D35685FC99129719119C75BC /* NotificationCopy.swift */,
 				6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */,
-				2BF28A235EFE449140405729 /* NotificationCopy.swift */,
 			);
 			name = "Activity";
 			sourceTree = "<group>";
@@ -475,6 +482,7 @@
 				B396DF4172677136B6054863 /* Views */,
 				9851A68FE2AD78D9E1FFCFEA /* Watch.entitlements */,
 				36C42BD053D66D8FFF12B658 /* WatchApp.swift */,
+				C96CDB40A77D97AA651F62FC /* WatchAppDelegate.swift */,
 				0C32EC54B7DFC1114C249079 /* WatchModel.swift */,
 			);
 			name = "Watch";
@@ -513,6 +521,7 @@
 		7B86B077DFA38B805F18FB14 /* iOS */ = {
 			isa = PBXGroup;
 			children = (
+				01587191C9109C1DAC67D85D /* AppDelegate.swift */,
 				29DF2B8BE2EF5C493858746B /* AppModel.swift */,
 				76F5D0BC4EA614EE0252E6C0 /* Assets.xcassets */,
 				516A79586CC4845AD0460BCD /* Haptics.swift */,
@@ -558,8 +567,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FE6AEAFEFF2DB8AE41F0CF2B /* NotificationCopy.swift */,
 				C4BEAAC148DFBBB9A0FBEED8 /* QueueActivityAttributes.swift */,
-				6E8DA7BB4FD6454BBA28CCFA /* NotificationCopy.swift */,
 				24452E1AB941C9DA1D68631F /* CatalogService.swift */,
 				8D29563327BF93F5EB8E5862 /* ImageCache.swift */,
 				7D86550972E1B15A4C5588A9 /* ArtViews.swift */,
@@ -584,6 +593,7 @@
 				E8D721F2D4A5DAA9C4FDA2E1 /* WatchTransport.swift */,
 				D035368F363A7C2368AAA3CF /* WebSocketTransport.swift */,
 				67C53318C2D9A7A71A14E659 /* QueueStatusShared.swift */,
+				178A3F75CB855806FFC10F29 /* AppDelegate.swift */,
 				3853D23F77FAC598649016A0 /* AppModel.swift */,
 				EBC802028CB7E0A60B0C89AB /* Haptics.swift */,
 				BABE884BA908849D6D6B8C1B /* LiveActivityController.swift */,
@@ -602,6 +612,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				28733F143D73D32AA6161FFD /* NotificationCopy.swift */,
 				B545AA4E64275CEF17E7AC85 /* QueueActivityAttributes.swift */,
 				FBFA8CB40C9100088F981B2A /* CatalogService.swift */,
 				8345B8C3FAAD8E4F6F2C5B9D /* ImageCache.swift */,
@@ -637,8 +648,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9D6FC067DC5D250C773A3DAA /* NotificationCopy.swift */,
 				D9BF2182013F968925952B35 /* QueueActivityAttributes.swift */,
-				C394961399503464DEBB0D66 /* NotificationCopy.swift */,
 				EA9AFC70410919E529C82DCD /* CatalogService.swift */,
 				42F93BC424939E8F79CDDB39 /* ImageCache.swift */,
 				FD21BEE7CA057E2CC067FBB6 /* ArtViews.swift */,
@@ -665,6 +676,7 @@
 				B5747CFA5316F19C6C7A57BD /* QueueStatusShared.swift */,
 				918FEFDCC8492CF0B6C19158 /* WatchRootView.swift */,
 				011AC4EBD5A8833C9264BB07 /* WatchApp.swift */,
+				A302318E0885E858EA9A5331 /* WatchAppDelegate.swift */,
 				81CE451E25838B300778855A /* WatchModel.swift */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -673,6 +685,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				13DD23A467612BBA0AD685B7 /* NotificationCopy.swift */,
 				24E796FA3638175499095035 /* QueueActivityAttributes.swift */,
 				E4F0DD61B4811C69719EF427 /* CatalogService.swift */,
 				C56C2F1AD14AF4816E2A2FE3 /* ImageCache.swift */,
@@ -706,6 +719,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C85BBF45F58E411C01B4031E /* NotificationCopy.swift */,
 				93D215152344CD9FFECF1D5B /* QueueActivityAttributes.swift */,
 				11BE56063038858C4EE91D76 /* CatalogService.swift */,
 				076D7CF32F39D9F06E9B25A1 /* ImageCache.swift */,

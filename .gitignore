@@ -23,3 +23,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# relay/ (Node)
+relay/node_modules/
+relay/.wrangler/
+relay/.dev.vars

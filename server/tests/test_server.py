@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from owqserver import protocol                                   # noqa: E402
 from owqserver.catalog import Catalog                            # noqa: E402
 from owqserver.pairing import Pairing                            # noqa: E402
+from owqserver.pushtokens import PushTokens                      # noqa: E402
 from owqserver.queueserver import QueueServer                    # noqa: E402
 from wsclient import TestClient                                  # noqa: E402
 
@@ -27,7 +28,7 @@ def hello(token=TOKEN):
 class ServerTests(unittest.TestCase):
     def setUp(self):
         pairing = Pairing(token=TOKEN, port=PORT, path=os.devnull)
-        self.server = QueueServer(pairing, Catalog())
+        self.server = QueueServer(pairing, Catalog(), push_tokens=PushTokens(os.devnull))
         self.server.start()
         self.clients = []
 
@@ -173,6 +174,92 @@ class ServerTests(unittest.TestCase):
             client.receive()
         self.server.apply(protocol.searching("competitive", "support", protocol.now(), 90))
         self.assertEqual(phone.receive()["body"]["data"], watch.receive()["body"]["data"])
+
+    # ------------------------------------------------------------ push tokens
+
+    def test_registering_a_push_token_is_remembered(self):
+        client = self.connect()
+        client.send(hello())
+        client.receive()
+        client.send({"v": 1, "body": {"type": "registerPushToken",
+                                      "data": {"token": "abc123", "environment": "sandbox"}}})
+        time.sleep(0.05)
+        self.assertEqual(self.server.push_tokens.get("phone"), ("abc123", "sandbox"))
+
+    def test_registering_before_hello_is_ignored(self):
+        client = self.connect()
+        client.send({"v": 1, "body": {"type": "registerPushToken",
+                                      "data": {"token": "abc123", "environment": "sandbox"}}})
+        self.assertEqual(client.receive()["body"]["data"]["code"], "unpaired")
+        self.assertIsNone(self.server.push_tokens.get("phone"))
+
+    def test_a_malformed_registration_is_ignored(self):
+        client = self.connect()
+        client.send(hello())
+        client.receive()
+        client.send({"v": 1, "body": {"type": "registerPushToken",
+                                      "data": {"token": "abc123", "environment": "staging"}}})
+        time.sleep(0.05)
+        self.assertIsNone(self.server.push_tokens.get("phone"))
+
+
+class _FakeAPNs:
+    """Records what would have gone to Apple, without a network in sight."""
+
+    def __init__(self, invalid_kinds=()):
+        self.background = []
+        self.alerts = []
+        self._invalid_kinds = set(invalid_kinds)
+
+    def send_background(self, kind, token, environment, session_id, sequence):
+        self.background.append((kind, token, environment, session_id, sequence))
+        return "invalid" if kind in self._invalid_kinds else "ok"
+
+    def send_alert(self, kind, token, environment, title, body, session_id, sequence):
+        self.alerts.append((kind, token, environment, title, body, session_id, sequence))
+        return "ok"
+
+    @staticmethod
+    def token_is_invalid(response):
+        return response == "invalid"
+
+
+class PushDispatchTests(unittest.TestCase):
+    """`_push_apns` in isolation: given some registered tokens, what does it send?"""
+
+    def setUp(self):
+        pairing = Pairing(token=TOKEN, port=PORT + 1, path=os.devnull)
+        self.server = QueueServer(pairing, Catalog(), push_tokens=PushTokens(os.devnull))
+        self.fake = _FakeAPNs()
+        self.server.apns = self.fake
+        self.server.push_tokens.register("phone", "phone-token", "sandbox")
+        self.server.push_tokens.register("watch", "watch-token", "production")
+
+    def test_no_apns_configured_sends_nothing(self):
+        self.server.apns = None
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.assertEqual(self.fake.background, [])
+
+    def test_a_routine_change_pushes_silently_to_every_registered_kind(self):
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        kinds = {entry[0] for entry in self.fake.background}
+        self.assertEqual(kinds, {"phone", "watch"})
+        self.assertEqual(self.fake.alerts, [])
+
+    def test_an_urgent_phase_also_gets_an_alert(self):
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
+        kinds = {entry[0] for entry in self.fake.alerts}
+        self.assertEqual(kinds, {"phone", "watch"})
+        self.assertEqual(self.fake.alerts[0][3], "Match Found")
+
+    def test_an_invalid_token_is_dropped_and_gets_no_alert(self):
+        self.fake._invalid_kinds = {"phone"}
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
+        self.assertIsNone(self.server.push_tokens.get("phone"))
+        self.assertEqual(self.server.push_tokens.get("watch"), ("watch-token", "production"))
+        self.assertNotIn("phone", {entry[0] for entry in self.fake.alerts})
 
 
 if __name__ == "__main__":

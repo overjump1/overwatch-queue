@@ -81,6 +81,8 @@ Watch/        The watch app
 WatchWidgets/ Smart Stack accessory
 Tests/        Wire format, pairing codes, transition rules, clock sync, catalog schema
 server/       The PC server and its control panel — Python
+relay/        Optional: the hosted push relay that lets the server wake a backgrounded
+              phone/watch via APNs without holding an Apple credential itself
 tools/        Project generator, catalog refresh
 docs/         PROTOCOL.md, ASSETS.md
 ```

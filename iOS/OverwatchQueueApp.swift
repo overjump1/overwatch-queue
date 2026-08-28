@@ -4,6 +4,7 @@ import SwiftUI
 struct OverwatchQueueApp: App {
     @State private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         WindowGroup {
@@ -12,7 +13,12 @@ struct OverwatchQueueApp: App {
                 .environment(model.store)
                 .environment(model.catalog)
                 .preferredColorScheme(.dark)
-                .task { model.start() }
+                .task {
+                    appDelegate.onDeviceToken = { model.didReceive(deviceToken: $0) }
+                    appDelegate.onRemoteNotification = { model.handleBackgroundPush(completion: $0) }
+                    model.start()
+                    model.registerForPushNotifications()
+                }
                 // Scanning the code in the system camera opens it as a URL. Handling it
                 // here means the camera app is a way in, not just the in-app scanner.
                 .onOpenURL { url in
