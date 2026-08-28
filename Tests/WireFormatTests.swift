@@ -54,7 +54,8 @@ final class WireFormatTests: XCTestCase {
 
     func testEveryCommandRoundTrips() throws {
         let commands: [ClientCommand] = [
-            .hello(client: ClientIdentity(kind: .phone, name: "iPhone", appVersion: "1.0")),
+            .hello(client: ClientIdentity(kind: .phone, name: "iPhone", appVersion: "1.0"),
+                   token: "3F2504E0-4F89-41D3-9A0C-0305E82C3301"),
             .voteMap(mapKey: "ilios"),
             .selectHero(heroKey: "ana"),
             .cancelQueue,
@@ -100,7 +101,7 @@ final class WireFormatTests: XCTestCase {
         print("SAMPLE heroSelect: \(try json(QueuePhase.heroSelect(HeroSelectInfo(mode: .competitive, role: .tank, mapKey: "havana", deadline: fixedDate, takenHeroKeys: ["orisa"], myHeroKey: "reinhardt"))))")
         print("SAMPLE inGame: \(try json(QueuePhase.inGame(InGameInfo(mode: .competitive, mapKey: "havana", heroKey: "reinhardt", startedAt: fixedDate))))")
         print("SAMPLE cancelled: \(try json(QueuePhase.cancelled(CancelInfo(reason: .matchCancelled))))")
-        print("SAMPLE hello: \(try json(ClientCommand.hello(client: ClientIdentity(kind: .phone, name: "Tomer's iPhone", appVersion: "1.0"))))")
+        print("SAMPLE hello: \(try json(ClientCommand.hello(client: ClientIdentity(kind: .phone, name: "Tomer's iPhone", appVersion: "1.0"), token: "3F2504E0-4F89-41D3-9A0C-0305E82C3301")))")
         print("SAMPLE voteMap: \(try json(ClientCommand.voteMap(mapKey: "ilios")))")
         print("SAMPLE selectHero: \(try json(ClientCommand.selectHero(heroKey: "reinhardt")))")
         print("SAMPLE cancelQueue: \(try json(ClientCommand.cancelQueue))")

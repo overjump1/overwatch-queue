@@ -105,14 +105,14 @@ extension QueueEvent {
 extension ClientCommand {
     private struct MapKey: Codable { var mapKey: String }
     private struct HeroKey: Codable { var heroKey: String }
-    private struct Hello: Codable { var client: ClientIdentity }
+    private struct Hello: Codable { var token: String?; var client: ClientIdentity }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: TaggedKeys.self)
         switch self {
-        case .hello(let identity):
+        case .hello(let identity, let token):
             try c.tag("hello")
-            try c.encode(Hello(client: identity), forKey: .data)
+            try c.encode(Hello(token: token, client: identity), forKey: .data)
         case .voteMap(let key):
             try c.tag("voteMap")
             try c.encode(MapKey(mapKey: key), forKey: .data)
@@ -130,7 +130,8 @@ extension ClientCommand {
         let c = try decoder.container(keyedBy: TaggedKeys.self)
         switch try c.decode(String.self, forKey: .type) {
         case "hello":
-            self = .hello(client: try c.decode(Hello.self, forKey: .data).client)
+            let hello = try c.decode(Hello.self, forKey: .data)
+            self = .hello(client: hello.client, token: hello.token)
         case "voteMap":
             self = .voteMap(mapKey: try c.decode(MapKey.self, forKey: .data).mapKey)
         case "selectHero":

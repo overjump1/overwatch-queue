@@ -12,8 +12,9 @@ A WebSocket:
 ws://<pc-ip>:8787/queue
 ```
 
-Text or binary frames, both accepted. The phone connects, sends `hello`, and the server
-should immediately reply with a `snapshot`. The client reconnects on its own with
+Text or binary frames, both accepted. The phone connects, sends `hello` **carrying its
+pairing token**, and the server replies with a `snapshot` — or refuses the connection.
+See [Pairing](#pairing) below. The client reconnects on its own with
 exponential backoff (capped at 30s) and treats 30 seconds of total silence as a dead
 connection, so **send a `heartbeat` at least every ~15 seconds** even when nothing changes.
 
@@ -74,6 +75,41 @@ send, and the client is built to accept it at any time.
 ```
 
 `message` is shown to the user verbatim, so write it for a human.
+
+Codes the server in `server/` uses:
+
+| Code | Meaning |
+|---|---|
+| `pairing_required` | The `hello` had no token, or the wrong one. The connection is closed straight after. |
+| `unpaired` | A command arrived before any `hello`. |
+| `no_cancel` | A `cancelQueue` that couldn't be honoured. The next `snapshot` still holds the true state. |
+| `version` | The client speaks a protocol version this server doesn't. |
+
+## Pairing
+
+The queue is on the local network, and a LAN is not a private place — a flatmate on the
+same Wi-Fi shouldn't be able to drive the screen on your wrist. So the PC generates one
+random token, shows it as a QR code, and refuses every connection that doesn't present it.
+
+1. The server generates a UUID token on first run and stores it (in
+   `~/.overwatch-queue/pairing.json`). It survives restarts, so pairing is a one-time act.
+2. It shows a QR code carrying everything the phone needs:
+
+   ```
+   owq://pair?host=192.168.1.14&port=8787&token=3f2504e0-4f89-41d3-9a0c-0305e82c3301
+   ```
+
+   `port` may be omitted, and defaults to 8787.
+3. The phone scans it, keeps it, and sends the token in every `hello`.
+4. A `hello` with a missing or wrong token gets an `error` with code `pairing_required`,
+   and then a close with status **1008**. No snapshots are ever sent to a connection that
+   hasn't presented the token.
+5. A connection that sends no `hello` within ten seconds is closed the same way.
+
+Generating a new token on the PC unpairs every device at once, which is the recovery path
+if a token leaks. There is no transport encryption: this is a token on a LAN, not a
+credential worth stealing, and adding TLS would mean certificates for a machine that has
+no name.
 
 ## Phases
 
@@ -175,14 +211,16 @@ update an estimate or a vote tally.
 Sent when the player acts on the phone or the watch.
 
 ```json
-{"v":1,"body":{"type":"hello","data":{"client":{"kind":"phone","name":"Tomer's iPhone","appVersion":"1.0"}}}}
+{"v":1,"body":{"type":"hello","data":{"token":"3f2504e0-4f89-41d3-9a0c-0305e82c3301","client":{"kind":"phone","name":"Tomer's iPhone","appVersion":"1.0"}}}}
 {"v":1,"body":{"type":"voteMap","data":{"mapKey":"ilios"}}}
 {"v":1,"body":{"type":"selectHero","data":{"heroKey":"reinhardt"}}}
 {"v":1,"body":{"type":"cancelQueue"}}
 {"v":1,"body":{"type":"requestSnapshot"}}
 ```
 
-`kind` is `phone` or `watch`.
+`kind` is `phone` or `watch`. `token` is the pairing token — see [Pairing](#pairing).
+It is optional in the schema so a server can choose not to require one, but the server
+in `server/` always does.
 
 `cancelQueue` is **best effort** — it means "leave the queue, or bail out of the match if
 you still can". Overwatch often won't let you, and the client expects that. If it doesn't
@@ -194,12 +232,14 @@ The client applies its own votes and hero picks locally for instant feedback, th
 the command. **Your next snapshot is authoritative** — if it disagrees, the client accepts
 the server's version.
 
-## Minimum viable server
+## The server
 
-The smallest thing worth writing: accept the WebSocket, keep a `sequence` counter and a
-`sessionID`, send a `snapshot` on connect and on every state change, send a `heartbeat`
-every 10 seconds, and log the commands you receive. That alone drives every screen in the
-app. Acting on `voteMap` / `selectHero` inside the game can come later.
+`server/` implements all of this, and drives it from a control panel instead of from the
+game — which is what makes every screen in the app testable before any game detection
+exists. See [server/README.md](../server/README.md).
 
-To test the client against it before any real game detection exists, hard-code a loop:
-`searching` for 15 seconds → `matchFound` → `heroSelect` → `inGame`.
+If you're writing another one, the smallest thing worth having: accept the WebSocket,
+check the token in `hello`, keep a `sequence` counter and a `sessionID`, send a `snapshot`
+on connect and on every state change, send a `heartbeat` every 10 seconds, and log the
+commands you receive. That alone drives every screen in the app. Acting on `voteMap` /
+`selectHero` inside the game can come later.

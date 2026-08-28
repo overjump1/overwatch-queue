@@ -30,9 +30,10 @@ public enum QueueEvent: Codable, Sendable {
 /// Client → server. Sent when the player acts on phone or watch; the PC side decides
 /// whether to act on them (e.g. drive the in-game selection) or merely record them.
 public enum ClientCommand: Codable, Sendable {
-    /// First message on a new connection. Lets the server address this client and
-    /// immediately push a snapshot.
-    case hello(client: ClientIdentity)
+    /// First message on a new connection. Carries the pairing token the PC handed out
+    /// as a QR code; a server that doesn't recognise it hangs up rather than streaming
+    /// someone else's queue onto this screen.
+    case hello(client: ClientIdentity, token: String?)
     case voteMap(mapKey: String)
     case selectHero(heroKey: String)
     /// Best-effort. Overwatch 2 has no accept prompt — once a match is found you are
@@ -56,6 +57,12 @@ public struct ClientIdentity: Codable, Hashable, Sendable {
         self.kind = kind
         self.name = name
         self.appVersion = appVersion
+    }
+}
+
+public extension Bundle {
+    var appVersion: String {
+        (infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.0"
     }
 }
 

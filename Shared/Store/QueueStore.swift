@@ -33,18 +33,37 @@ public final class QueueStore {
 
     // MARK: - Transport
 
-    /// Swaps the state source. Used by the debug panel to flip between the mock driver
-    /// and a live server without restarting the app.
+    /// Swaps the state source — used when a new PC is paired, without restarting the app.
     public func use(_ transport: any QueueTransport) {
-        self.transport?.disconnect()
-        self.transport?.onEvent = nil
-        self.transport?.onStatusChange = nil
+        release()
 
         self.transport = transport
         transport.onEvent = { [weak self] event in self?.handle(event) }
         transport.onStatusChange = { [weak self] status in self?.status = status }
         status = transport.status
         transport.connect()
+    }
+
+    /// Drops the transport and goes quiet. The last snapshot stays put; unpairing is
+    /// what clears the screen, and that resets the store separately.
+    public func disconnect() {
+        release()
+        transport = nil
+        status = .offline
+    }
+
+    /// Back to idle. Unpairing calls this — a screen we no longer trust the source of
+    /// shouldn't keep showing the last thing it said.
+    public func reset() {
+        snapshot = .idle
+        clock = ClockSync()
+        lastUpdate = .distantPast
+    }
+
+    private func release() {
+        transport?.disconnect()
+        transport?.onEvent = nil
+        transport?.onStatusChange = nil
     }
 
     public func handle(_ event: QueueEvent) {

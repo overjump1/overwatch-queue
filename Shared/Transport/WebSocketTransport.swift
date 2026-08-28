@@ -15,7 +15,7 @@ public final class WebSocketTransport: NSObject, QueueTransport {
     public var onEvent: ((QueueEvent) -> Void)?
     public var onStatusChange: ((TransportStatus) -> Void)?
 
-    public var endpoint: Endpoint
+    public var pairing: Pairing
     private let identity: ClientIdentity
 
     private var session: URLSession?
@@ -30,31 +30,8 @@ public final class WebSocketTransport: NSObject, QueueTransport {
     private static let silenceTimeout: TimeInterval = 30
     private var lastInbound = Date.distantPast
 
-    public struct Endpoint: Codable, Hashable, Sendable {
-        public var host: String
-        public var port: Int
-        public var path: String
-
-        public init(host: String = "192.168.1.10", port: Int = 8787, path: String = "/queue") {
-            self.host = host
-            self.port = port
-            self.path = path
-        }
-
-        public var url: URL? {
-            var c = URLComponents()
-            c.scheme = "ws"
-            c.host = host
-            c.port = port
-            c.path = path.hasPrefix("/") ? path : "/" + path
-            return c.url
-        }
-
-        public var displayText: String { "\(host):\(port)" }
-    }
-
-    public init(endpoint: Endpoint, identity: ClientIdentity) {
-        self.endpoint = endpoint
+    public init(pairing: Pairing, identity: ClientIdentity) {
+        self.pairing = pairing
         self.identity = identity
         super.init()
     }
@@ -89,8 +66,8 @@ public final class WebSocketTransport: NSObject, QueueTransport {
     // MARK: - Socket lifecycle
 
     private func openSocket() {
-        guard let url = endpoint.url else {
-            status = .failed("Bad address: \(endpoint.displayText)")
+        guard let url = pairing.socketURL else {
+            status = .failed("Bad address: \(pairing.displayText)")
             return
         }
         status = .connecting
@@ -105,7 +82,9 @@ public final class WebSocketTransport: NSObject, QueueTransport {
         task.resume()
         lastInbound = .now
         receive()
-        send(.hello(client: identity))
+        // The token goes out before anything else; an unpaired connection is closed by
+        // the server, and the reason arrives as an `error` event first.
+        send(.hello(client: identity, token: pairing.token))
         startHeartbeatWatchdog()
     }
 
@@ -177,7 +156,7 @@ public final class WebSocketTransport: NSObject, QueueTransport {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                 guard let self, self.wantsConnection else { return }
                 if Date.now.timeIntervalSince(self.lastInbound) > Self.silenceTimeout {
-                    self.status = .failed("No response from \(self.endpoint.displayText)")
+                    self.status = .failed("No response from \(self.pairing.displayText)")
                     self.scheduleReconnect()
                     return
                 }
