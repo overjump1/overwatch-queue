@@ -3,9 +3,10 @@ import SwiftUI
 
 /// The whole of setup: point the camera at the code in the server window.
 ///
-/// This is what an unpaired app shows instead of a queue. There is no manual "type the
-/// IP" as the primary path — the token can't be typed from memory anyway — but the code
-/// can be pasted, which is how you pair a Simulator that has no camera to point.
+/// This is what an unpaired app shows instead of a queue, and there is deliberately
+/// nothing else on it. An address and a token typed by hand were a second way in that
+/// had to be kept working and could be got subtly wrong; the code carries both, and
+/// scanning it cannot be mistyped.
 struct PairingView: View {
     /// Set when this is a sheet over an already-paired app, so it can close itself once
     /// a new code lands. Nil when it *is* the screen, with nothing behind it to go back to.
@@ -15,7 +16,6 @@ struct PairingView: View {
 
     @State private var scanner = ScannerModel()
     @State private var problem: String?
-    @State private var showManualEntry = false
 
     var body: some View {
         ZStack {
@@ -27,25 +27,19 @@ struct PairingView: View {
                     .frame(maxWidth: .infinity)
                     .aspectRatio(1, contentMode: .fit)
                     .padding(.horizontal, 36)
-                    .padding(.top, 8)
+                    .padding(.top, 28)
 
                 message
-                    .frame(height: 52)
+                    .frame(height: 60)
                     .padding(.horizontal, 32)
 
                 Spacer(minLength: 0)
-                actions
-                    .padding(.horizontal, 32)
-                    .padding(.bottom, onPaired == nil ? 40 : 28)
             }
         }
         .overlay(alignment: .topTrailing) { closeButton }
-        .sheet(isPresented: $showManualEntry) {
-            ManualPairingView { accept($0) }
-        }
-        .onAppear { model.clearPairingProblem() }
         .task { await scanner.start() }
         .onDisappear { scanner.stop() }
+        .onAppear { model.clearPairingProblem() }
         .onChange(of: scanner.scannedCode) { _, code in
             guard let code else { return }
             accept(code)
@@ -70,23 +64,35 @@ struct PairingView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 44)
         }
-        .padding(.top, 44)
+        .padding(.top, 56)
     }
 
     @ViewBuilder
     private var viewfinder: some View {
         ZStack {
+            // Flexible in both directions, so the square below is the frame's doing
+            // rather than whatever the message inside happens to measure.
+            Color.clear
+
             switch scanner.state {
             case .running:
                 CameraPreview(session: scanner.session)
             case .denied:
                 unavailable("Camera access is off",
-                            "Turn it on in Settings, or paste the pairing link instead.",
-                            "camera.badge.ellipsis")
+                            "Scanning the code is the only way to pair, so the app needs "
+                            + "the camera.", "camera.badge.ellipsis") {
+                    Button("Open Settings") {
+                        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                        UIApplication.shared.open(url)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Palette.orange)
+                    .padding(.top, 4)
+                }
             case .unavailable:
-                unavailable("No camera here",
-                            "Copy the pairing link from the server window and paste it below.",
-                            "desktopcomputer")
+                unavailable("No camera on this device",
+                            "Pairing reads the code from the server window, so this needs "
+                            + "a device with a camera.", "iphone.slash") { EmptyView() }
             case .starting:
                 ProgressView().tint(Palette.white)
             }
@@ -99,7 +105,8 @@ struct PairingView: View {
         }
     }
 
-    private func unavailable(_ title: String, _ detail: String, _ symbol: String) -> some View {
+    private func unavailable<Action: View>(_ title: String, _ detail: String, _ symbol: String,
+                                           @ViewBuilder action: () -> Action) -> some View {
         VStack(spacing: 12) {
             Image(systemName: symbol)
                 .font(.system(size: 34, weight: .light))
@@ -112,6 +119,7 @@ struct PairingView: View {
                 .foregroundStyle(Palette.white.opacity(0.5))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 28)
+            action()
         }
     }
 
@@ -122,52 +130,9 @@ struct PairingView: View {
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(Palette.damage)
                 .multilineTextAlignment(.center)
+                .padding(.top, 16)
                 .transition(.opacity)
         }
-    }
-
-    private var actions: some View {
-        VStack(spacing: 12) {
-            Button {
-                paste()
-            } label: {
-                Label("Paste pairing link", systemImage: "doc.on.clipboard")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Palette.orange)
-
-            Button("Enter it by hand") { showManualEntry = true }
-                .font(.footnote)
-                .foregroundStyle(Palette.white.opacity(0.55))
-        }
-    }
-
-    // MARK: - Pairing
-
-    private func paste() {
-        guard let text = UIPasteboard.general.string else {
-            report("Nothing on the clipboard yet — press Copy pairing link on the PC.")
-            return
-        }
-        accept(text)
-    }
-
-    private func accept(_ code: String) {
-        guard model.pair(with: code) else {
-            scanner.rearm()
-            report("That isn't a pairing code from the queue server.")
-            return
-        }
-        Haptics.attention()
-        scanner.stop()
-        onPaired?()
-    }
-
-    private func report(_ text: String) {
-        withAnimation { problem = text }
-        Haptics.warning()
     }
 
     /// A sheet needs its own way out; the root version has nothing to go back to.
@@ -187,76 +152,20 @@ struct PairingView: View {
             .padding(.trailing, 20)
         }
     }
-}
 
-// MARK: - Manual entry
+    // MARK: - Pairing
 
-/// The fallback when there's no camera and no clipboard: the three fields the code
-/// carries, typed out. The token is long on purpose, so this is the last resort rather
-/// than the front door.
-private struct ManualPairingView: View {
-    var onPair: (String) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var host = ""
-    @State private var port = String(Pairing.defaultPort)
-    @State private var token = ""
-
-    private var isComplete: Bool {
-        !host.trimmed.isEmpty && !token.trimmed.isEmpty && Int(port) != nil
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    LabeledContent("PC address") {
-                        TextField("192.168.1.14", text: $host)
-                            .multilineTextAlignment(.trailing)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .keyboardType(.numbersAndPunctuation)
-                    }
-                    LabeledContent("Port") {
-                        TextField("8787", text: $port)
-                            .multilineTextAlignment(.trailing)
-                            .keyboardType(.numberPad)
-                    }
-                } footer: {
-                    Text("Both are printed under the QR code in the server window.")
-                }
-
-                Section {
-                    TextField("Pairing token", text: $token, axis: .vertical)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .font(.footnote.monospaced())
-                } footer: {
-                    Text("The token is the long value in the server window's pairing link. "
-                         + "Scanning the code is far less work.")
-                }
-            }
-            .navigationTitle("Enter by hand")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Pair") {
-                        onPair("\(Pairing.scheme)://pair?host=\(host.trimmed)"
-                               + "&port=\(port)&token=\(token.trimmed)")
-                        dismiss()
-                    }
-                    .disabled(!isComplete)
-                }
-            }
+    private func accept(_ code: String) {
+        guard model.pair(with: code) else {
+            scanner.rearm()
+            withAnimation { problem = "That isn't a pairing code from the queue server." }
+            Haptics.warning()
+            return
         }
+        Haptics.attention()
+        scanner.stop()
+        onPaired?()
     }
-}
-
-private extension String {
-    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
 }
 
 // MARK: - Camera

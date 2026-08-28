@@ -48,22 +48,10 @@ struct SettingsView: View {
         Section {
             if let pairing = model.pairing {
                 LabeledContent("PC", value: pairing.displayText)
-                LabeledContent("Token", value: pairing.shortToken)
-                    .font(.callout.monospaced())
                 LabeledContent("Status") {
                     Label(store.status.displayText, systemImage: store.status.symbolName)
                         .foregroundStyle(store.status.isLive ? Palette.support : Palette.neutral)
                         .labelStyle(.titleAndIcon)
-                }
-                Button {
-                    model.connect()
-                } label: {
-                    Label("Reconnect", systemImage: "arrow.clockwise")
-                }
-                Button {
-                    showScanner = true
-                } label: {
-                    Label("Scan a code", systemImage: "qrcode.viewfinder")
                 }
                 Button(role: .destructive) {
                     confirmingUnpair = true
@@ -71,14 +59,19 @@ struct SettingsView: View {
                     Label("Unpair", systemImage: "minus.circle")
                 }
             } else {
-                Text("Not paired with a PC.")
-                    .foregroundStyle(.secondary)
+                Button {
+                    showScanner = true
+                } label: {
+                    Label("Pair with a PC", systemImage: "qrcode.viewfinder")
+                }
             }
         } header: {
             Text("Connection")
         } footer: {
-            Text("Connects to ws://\(model.pairing?.displayText ?? "your-pc")/queue over "
-                 + "your local network. See docs/PROTOCOL.md.")
+            Text(model.pairing == nil
+                 ? "Scan the code in the server window on your PC."
+                 : "Connects to ws://\(model.pairing?.displayText ?? "")/queue over your "
+                   + "local network, and reconnects on its own if the PC goes away.")
         }
     }
 

@@ -22,6 +22,9 @@ The window shows a QR code. Open the app on your phone and point it at the code;
 the whole of setup. The phone's own Camera app works too — the app registers the `owq://`
 scheme, so scanning offers **Open in "OW Queue"** and pairing happens on the way in.
 
+Scanning is the only way in: the app has no address-and-token form, so there is nothing
+to mistype. Settings offers pair and unpair, and nothing else.
+
 Behind it is a random token, generated once and kept in `~/.overwatch-queue/pairing.json`.
 Every device sends it back in its first message, and a connection that doesn't present it
 is closed — a LAN is not a private place, and nobody else on your Wi-Fi should be able to
@@ -55,18 +58,18 @@ unpairs everything.
 
 ## Pairing a Simulator
 
-A Simulator has no camera. Two ways in:
+A Simulator has no camera, so there is no code to point it at. Press **Copy pairing
+link** and hand the link over directly — iOS asks once, and **Open** finishes it:
 
-- Press **Copy pairing link** and paste it into the app's pairing screen.
-- Or hand it to the app at launch:
+```bash
+xcrun simctl openurl booted "owq://pair?host=127.0.0.1&port=8787&token=<token>"
+```
 
-  ```bash
-  xcrun simctl launch booted com.tomerady.OverwatchQueue \
-      -pair "owq://pair?host=127.0.0.1&port=8787&token=<token>"
-  ```
+Use `127.0.0.1` rather than the LAN address the window shows: a Simulator shares the
+Mac's network stack, so the server is already local to it.
 
-The watch app takes `-server <host:port> -token <uuid>` for the same reason —
-WatchConnectivity between paired *simulators* is unreliable, so pointing the watch
+The watch app takes `-server <host:port> -token <uuid>` at launch, because
+WatchConnectivity between paired *simulators* is unreliable and pointing the watch
 straight at the PC is the only way to test it without hardware.
 
 ## Layout

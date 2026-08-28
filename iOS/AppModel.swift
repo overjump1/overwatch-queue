@@ -25,7 +25,7 @@ public final class AppModel {
     public var isPaired: Bool { pairing != nil }
 
     public init() {
-        pairing = Self.launchPairing() ?? Pairing.load()
+        pairing = Pairing.load()
 
         store.onPhaseChange = { [weak self] previous, next in
             self?.react(from: previous, to: next)
@@ -59,25 +59,6 @@ public final class AppModel {
 
     // MARK: - Pairing
 
-    /// Pairs from a launch argument, so a Simulator with no camera can be pointed at a
-    /// server in one command:
-    ///
-    ///     xcrun simctl launch booted com.tomerady.OverwatchQueue \
-    ///         -pair "owq://pair?host=192.168.1.14&port=8787&token=…"
-    ///
-    /// Not persisted: this is for a run, not for the device.
-    private static func launchPairing() -> Pairing? {
-        #if DEBUG
-        let arguments = ProcessInfo.processInfo.arguments
-        guard let flag = arguments.firstIndex(of: "-pair"), arguments.count > flag + 1
-        else { return nil }
-        return Pairing(pairingCode: arguments[flag + 1])
-        #else
-        return nil
-        #endif
-    }
-
-    /// Accepts a scanned or pasted pairing code and connects to that PC.
     @discardableResult
     public func pair(with code: String) -> Bool {
         guard let scanned = Pairing(pairingCode: code) else {
