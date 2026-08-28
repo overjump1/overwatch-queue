@@ -187,17 +187,23 @@ class QueueServer:
           above, since only that wake-up gives the app a chance to attach to the activity
           and register a real per-activity token for every update after this one.
 
-        An urgent phase carries a real alert — sound, haptic, a brief peek — the same way
-        a delivery app's Live Activity announces "your order is on the way" without a
-        separate notification alongside it. Routine changes stay silent; the card
-        updating is signal enough.
+        An urgent phase's *update* carries a real alert — sound, haptic, a brief peek —
+        the same way a delivery app's Live Activity announces "your order is on the way"
+        without a separate notification alongside it. Routine updates stay silent; the
+        card changing is signal enough once it's already on screen.
+
+        A *start* always carries one, urgent or not — verified directly, back to back,
+        against a real push-to-start token: a silent start reliably never showed up,
+        while an identical one with an alert did, every time. Apple treats a wholly silent
+        push-to-start as low-priority best-effort in a way it doesn't for one with an
+        alert, which makes some sense — there's nothing on screen yet for a silent
+        content refresh to land on.
         """
         content_state = protocol.content_state(self.session.phase, sequence)
         timestamp = int(protocol.now().timestamp())
-        alert = None
-        if kind in protocol.URGENT_KINDS:
-            title, body = protocol.notification_copy(kind)
-            alert = {"title": title, "body": body}
+        title, body = protocol.notification_copy(kind)
+        start_alert = {"title": title, "body": body}
+        update_alert = start_alert if kind in protocol.URGENT_KINDS else None
 
         activity = self.activity_tokens.update_token(session_id)
         if activity:
@@ -208,7 +214,7 @@ class QueueServer:
                 self._activity_session_id = None
             else:
                 self.apns.send_activity_update(token, environment, content_state,
-                                               timestamp, alert=alert)
+                                               timestamp, alert=update_alert)
             return
 
         if kind in ("idle", "cancelled"):
@@ -231,7 +237,7 @@ class QueueServer:
         token, environment = start
         attributes = {"sessionID": session_id, "startedAt": self._activity_started_at}
         self.apns.send_activity_start(token, environment, attributes, content_state,
-                                      timestamp, alert=alert)
+                                      timestamp, alert=start_alert)
 
     def _changed(self):
         if self.on_change:
