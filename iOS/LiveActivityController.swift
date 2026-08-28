@@ -35,14 +35,31 @@ public final class LiveActivityController {
     /// throttled during a match-found alert is the one failure that actually matters.
     private static let minimumInterval: TimeInterval = 2
 
+    // MARK: - Push
+
+    /// Fires once this activity's own push token is known — `AppModel` forwards it to the
+    /// PC as `registerActivityPushToken`, which is what lets a background wake-up push
+    /// keep this exact activity current without the app process being alive at all.
+    public var onActivityPushToken: ((_ sessionID: UUID, _ token: String) -> Void)?
+    /// Fires once the app-level push-to-start token is known — forwarded as
+    /// `registerActivityStartToken`. Independent of any running activity: this is what
+    /// lets the PC create the *next* one from nothing.
+    public var onPushToStartToken: ((String) -> Void)?
+
+    private var pushTokenObserver: Task<Void, Never>?
+    private var pushToStartTokenObserver: Task<Void, Never>?
+
     private init() {}
 
     public var isAvailable: Bool {
         ActivityAuthorizationInfo().areActivitiesEnabled
     }
 
-    /// Takes over an activity left running by a previous launch. Call once at startup,
-    /// before any snapshot can arrive.
+    /// Takes over an activity left running by a previous launch — including one this
+    /// process never started at all, because a push-to-start created it directly while
+    /// nothing local was running. Safe to call more than once (a background wake calls
+    /// it again on every launch, on the chance a push-to-start happened since the last
+    /// one), and a no-op if the activity already adopted is still the newest one.
     ///
     /// A Live Activity deliberately outlives the process that started it, but the
     /// in-memory handle doesn't. Without this, relaunching mid-queue finds `activity ==
@@ -59,6 +76,8 @@ public final class LiveActivityController {
             Task { await stale.end(nil, dismissalPolicy: .immediate) }
         }
 
+        guard activity?.id != newest.id else { return }        // already adopted this one
+
         activity = newest
         lastPushedKind = newest.content.state.phase.kind
         lastPushedState = newest.content.state
@@ -66,7 +85,34 @@ public final class LiveActivityController {
         // snapshot of this launch through the rate limit to correct it.
         lastPushedAt = .distantPast
         observeState(of: newest)
+        observePushToken(of: newest)
         scheduleOverdueRefresh(for: newest.content.state.phase)
+    }
+
+    /// Starts listening for the app-level push-to-start token. Call once, independent of
+    /// any particular queue — this is what lets the PC create the *next* Live Activity
+    /// from nothing, even on a launch that never opens this session's own.
+    public func observePushToStartToken() {
+        guard pushToStartTokenObserver == nil else { return }
+        pushToStartTokenObserver = Task { [weak self] in
+            for await tokenData in Activity<QueueActivityAttributes>.pushToStartTokenUpdates {
+                guard !Task.isCancelled else { return }
+                self?.onPushToStartToken?(tokenData.hexEncoded)
+            }
+        }
+    }
+
+    /// Starts listening for `activity`'s own push token — the async sequence yields
+    /// again if the token ever rotates, not just once.
+    private func observePushToken(of activity: Activity<QueueActivityAttributes>) {
+        pushTokenObserver?.cancel()
+        let sessionID = activity.attributes.sessionID
+        pushTokenObserver = Task { [weak self] in
+            for await tokenData in activity.pushTokenUpdates {
+                guard !Task.isCancelled else { return }
+                self?.onActivityPushToken?(sessionID, tokenData.hexEncoded)
+            }
+        }
     }
 
     /// Reconciles the Live Activity with a snapshot: starts, updates, or ends as needed.
@@ -92,12 +138,16 @@ public final class LiveActivityController {
         guard isAvailable, sessionID != dismissedSession else { return }
         let attributes = QueueActivityAttributes(sessionID: sessionID, startedAt: .now)
         do {
+            // `.token`, not `nil` — without a push token this activity can only ever be
+            // updated by this process while it's alive, which is exactly the case this
+            // whole push path exists to cover.
             let requested = try Activity.request(
                 attributes: attributes,
                 content: .init(state: state, staleDate: staleDate(for: state.phase)),
-                pushType: nil)
+                pushType: .token)
             activity = requested
             observeState(of: requested)
+            observePushToken(of: requested)
             record(state)
         } catch {
             activity = nil
@@ -134,6 +184,8 @@ public final class LiveActivityController {
         lastPushedState = nil
         overdueTask?.cancel()
         overdueTask = nil
+        pushTokenObserver?.cancel()
+        pushTokenObserver = nil
     }
 
     private func update(with state: QueueActivityAttributes.ContentState) {
@@ -162,6 +214,8 @@ public final class LiveActivityController {
         overdueTask = nil
         stateObserver?.cancel()
         stateObserver = nil
+        pushTokenObserver?.cancel()
+        pushTokenObserver = nil
         lastPushedState = nil
         guard let activity else { return }
         self.activity = nil

@@ -45,6 +45,15 @@ public enum ClientCommand: Codable, Sendable {
     /// Hands over this device's APNs token, so the PC can wake it with a push once it's
     /// no longer holding this socket open. Sent once per launch, right after `hello`.
     case registerPushToken(token: String, environment: PushEnvironment)
+    /// The push token for one running Live Activity — lets the PC update or end that
+    /// specific activity directly, without the phone process needing to be alive. Sent
+    /// once per activity, the moment `Activity.pushTokenUpdates` first yields one.
+    case registerActivityPushToken(sessionID: UUID, token: String, environment: PushEnvironment)
+    /// The app-level push-to-start token — lets the PC create a Live Activity from
+    /// nothing via push, even on a launch that's never opened this queue's activity
+    /// itself. Independent of any one session; sent once it's available and again
+    /// whenever the system hands over a new one.
+    case registerActivityStartToken(token: String, environment: PushEnvironment)
 }
 
 /// Which of Apple's two push environments a device token is valid against — a debug

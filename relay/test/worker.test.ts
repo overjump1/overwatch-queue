@@ -85,6 +85,36 @@ describe("worker", () => {
     expect(response.status).toBe(200);
   });
 
+  it("forwards a Live Activity start push end to end", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await worker.fetch(request({
+      token: "a".repeat(64), environment: "sandbox", pushType: "liveActivityStart",
+      timestamp: 1700000000,
+      attributes: { sessionID: "abc", startedAt: 721692800.0 },
+      contentState: { phase: { type: "idle" }, sequence: 0 },
+    }), ENV);
+
+    expect(response.status).toBe(200);
+    const [appleUrl, appleInit] = fetchMock.mock.calls[0];
+    expect(appleUrl).toContain("/3/device/" + "a".repeat(64));
+    expect(appleInit.headers["apns-topic"]).toBe(ENV.APNS_BUNDLE_ID_IOS + ".push-type.liveactivity.start");
+  });
+
+  it("rejects a Live Activity push missing its content-state before ever calling Apple", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await worker.fetch(request({
+      token: "a".repeat(64), environment: "sandbox", pushType: "liveActivityUpdate",
+      timestamp: 1700000000,
+    }), ENV);
+
+    expect(response.status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("proxies an Apple error verbatim", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
       new Response('{"reason":"Unregistered"}', { status: 410 })

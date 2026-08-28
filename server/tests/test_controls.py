@@ -14,6 +14,7 @@ from owqserver import protocol                                   # noqa: E402
 from owqserver.catalog import Catalog                            # noqa: E402
 from owqserver.controls import Controls                          # noqa: E402
 from owqserver.pairing import Pairing                            # noqa: E402
+from owqserver.activitytokens import ActivityTokens              # noqa: E402
 from owqserver.pushtokens import PushTokens                      # noqa: E402
 from owqserver.queueserver import SCENARIOS, QueueServer         # noqa: E402
 
@@ -51,7 +52,8 @@ def _deadline_of(phase):
 
 def make_controls():
     server = QueueServer(Pairing(token="t", port=0, path=os.devnull), CATALOG,
-                        push_tokens=PushTokens(os.devnull))
+                        push_tokens=PushTokens(os.devnull),
+                        activity_tokens=ActivityTokens(os.devnull))
     return Controls(server), server
 
 

@@ -42,12 +42,20 @@ public final class AppModel {
             LiveActivityController.shared.sync(to: snapshot, clock: store.clock)
             SharedState.write(snapshot)
         }
+        LiveActivityController.shared.onActivityPushToken = { [weak self] sessionID, token in
+            self?.store.registerActivityPushToken(sessionID: sessionID, token: token, environment: .current)
+        }
+        LiveActivityController.shared.onPushToStartToken = { [weak self] token in
+            self?.store.registerActivityStartToken(token, environment: .current)
+        }
     }
 
     public func start() {
         // Before anything can push: take over the activity a previous launch left on the
-        // Lock Screen, rather than stacking a new one on top of it.
+        // Lock Screen, rather than stacking a new one on top of it. Covers a push-to-start
+        // activity too — the OS may have created one while nothing local was running.
         LiveActivityController.shared.adoptRunningActivity()
+        LiveActivityController.shared.observePushToStartToken()
         WatchLink.shared.activate()
         WatchLink.shared.onCommand = { [weak self] command in
             // A vote or hero pick made on the wrist is handled exactly as if it had been
@@ -127,7 +135,13 @@ public final class AppModel {
     /// A background push arrived: make sure the socket is live and ask for the truth,
     /// rather than trusting the push payload itself to carry it. The system gives a
     /// background launch only a short window before suspending it again.
+    ///
+    /// Also re-checks for a Live Activity this process doesn't know about yet — a
+    /// push-to-start push can create one entirely OS-side while nothing local was
+    /// running, and this is the first chance any app code gets to notice, attach to it,
+    /// and register its per-activity push token for every update after this one.
     public func handleBackgroundPush(completion: @escaping () -> Void) {
+        LiveActivityController.shared.adoptRunningActivity()
         if store.transport?.status.isLive != true { connect() }
         store.requestRefresh()
         Task {

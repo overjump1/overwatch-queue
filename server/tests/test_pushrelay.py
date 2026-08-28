@@ -75,6 +75,48 @@ class PushRelayClientTests(unittest.TestCase):
             "title": "Match Found", "body": "Get back to your PC.",
         })
 
+    def test_sends_a_live_activity_start_with_attributes(self):
+        self.client.send_activity_start(
+            "start-token", "sandbox",
+            attributes={"sessionID": "abc", "startedAt": 721692800.0},
+            content_state={"phase": {"type": "idle"}, "sequence": 0},
+            timestamp=1700000000)
+        self.assertEqual(_FakeRelay.last_body, {
+            "pushType": "liveActivityStart", "token": "start-token", "environment": "sandbox",
+            "timestamp": 1700000000,
+            "attributes": {"sessionID": "abc", "startedAt": 721692800.0},
+            "contentState": {"phase": {"type": "idle"}, "sequence": 0},
+        })
+
+    def test_live_activity_start_includes_an_alert_when_given_one(self):
+        self.client.send_activity_start(
+            "start-token", "sandbox", attributes={}, content_state={}, timestamp=1,
+            alert={"title": "Match Found", "body": "Get back to your PC."})
+        self.assertEqual(_FakeRelay.last_body["alert"],
+                         {"title": "Match Found", "body": "Get back to your PC."})
+
+    def test_sends_a_live_activity_update(self):
+        self.client.send_activity_update(
+            "activity-token", "production",
+            content_state={"phase": {"type": "searching"}, "sequence": 3}, timestamp=5)
+        self.assertEqual(_FakeRelay.last_body, {
+            "pushType": "liveActivityUpdate", "token": "activity-token", "environment": "production",
+            "timestamp": 5, "contentState": {"phase": {"type": "searching"}, "sequence": 3},
+        })
+
+    def test_live_activity_update_includes_a_stale_date_when_given_one(self):
+        self.client.send_activity_update(
+            "activity-token", "production", content_state={}, timestamp=1, stale_date=1700000500)
+        self.assertEqual(_FakeRelay.last_body["staleDate"], 1700000500)
+
+    def test_sends_a_live_activity_end(self):
+        self.client.send_activity_end(
+            "activity-token", "production", content_state={"phase": {"type": "idle"}}, timestamp=9)
+        self.assertEqual(_FakeRelay.last_body, {
+            "pushType": "liveActivityEnd", "token": "activity-token", "environment": "production",
+            "timestamp": 9, "contentState": {"phase": {"type": "idle"}},
+        })
+
     def test_a_successful_response_is_not_treated_as_an_invalid_token(self):
         response = self.client.send_background("phone", "t", "sandbox", "s", 1)
         self.assertFalse(PushRelayClient.token_is_invalid(response))

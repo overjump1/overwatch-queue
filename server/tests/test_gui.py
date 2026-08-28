@@ -17,6 +17,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from owqserver import protocol                                   # noqa: E402
 from owqserver.catalog import Catalog                            # noqa: E402
 from owqserver.pairing import Pairing                            # noqa: E402
+from owqserver.activitytokens import ActivityTokens              # noqa: E402
 from owqserver.pushtokens import PushTokens                      # noqa: E402
 from owqserver.queueserver import SCENARIOS, QueueServer         # noqa: E402
 
@@ -33,7 +34,8 @@ class PanelTests(unittest.TestCase):
     def setUp(self):
         pairing = Pairing(token="3f2504e0-4f89-41d3-9a0c-0305e82c3301",
                           port=8902, path=os.devnull)
-        self.server = QueueServer(pairing, Catalog(), push_tokens=PushTokens(os.devnull))
+        self.server = QueueServer(pairing, Catalog(), push_tokens=PushTokens(os.devnull),
+                        activity_tokens=ActivityTokens(os.devnull))
         self.panel = ControlPanel(self.server)     # no start(): no socket needed here
 
     def tearDown(self):

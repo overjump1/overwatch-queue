@@ -25,6 +25,18 @@ def _generate_p8() -> str:
     return pem.decode(), key
 
 
+class _FakeHTTPXClient:
+    """Stands in for `self._client` so a test can inspect exactly what would have gone
+    to Apple without any network involved."""
+
+    def __init__(self):
+        self.calls = []
+
+    def post(self, url, headers=None, json=None):
+        self.calls.append({"url": url, "headers": headers, "json": json})
+        return _FakeResponse(200)
+
+
 class _FakeResponse:
     def __init__(self, status_code, reason=None):
         self.status_code = status_code
@@ -105,6 +117,75 @@ class APNsClientTests(unittest.TestCase):
 
     def test_no_response_is_not_treated_as_an_invalid_token(self):
         self.assertFalse(APNsClient.token_is_invalid(None))
+
+
+class LiveActivityPushTests(unittest.TestCase):
+    """The three Live Activity push shapes — always the iOS bundle ID, always
+    `liveactivity`/priority 10, regardless of which of the two happens to be sending."""
+
+    def setUp(self):
+        pem, _ = _generate_p8()
+        self.config = APNsConfig("TEAM1234", "ABC123", "com.tomerady.OverwatchQueue",
+                                 "com.tomerady.OverwatchQueue.watchkitapp", pem)
+        self.client = APNsClient(self.config)
+        self.fake = _FakeHTTPXClient()
+        self.client._client = self.fake
+
+    def test_start_uses_the_dot_start_topic_and_carries_attributes(self):
+        self.client.send_activity_start(
+            "start-token", "sandbox",
+            attributes={"sessionID": "abc", "startedAt": 721692800.0},
+            content_state={"phase": {"type": "idle"}, "sequence": 0},
+            timestamp=1700000000)
+        call = self.fake.calls[0]
+        self.assertEqual(call["url"], "https://api.sandbox.push.apple.com/3/device/start-token")
+        self.assertEqual(call["headers"]["apns-topic"],
+                         "com.tomerady.OverwatchQueue.push-type.liveactivity.start")
+        self.assertEqual(call["headers"]["apns-push-type"], "liveactivity")
+        self.assertEqual(call["headers"]["apns-priority"], "10")
+        aps = call["json"]["aps"]
+        self.assertEqual(aps["event"], "start")
+        self.assertEqual(aps["attributes-type"], "QueueActivityAttributes")
+        self.assertEqual(aps["attributes"]["sessionID"], "abc")
+        self.assertNotIn("alert", aps)
+
+    def test_start_includes_an_alert_when_given_one(self):
+        self.client.send_activity_start(
+            "start-token", "sandbox", attributes={}, content_state={}, timestamp=1,
+            alert={"title": "Match Found", "body": "Get back to your PC."})
+        aps = self.fake.calls[0]["json"]["aps"]
+        self.assertEqual(aps["alert"], {"title": "Match Found", "body": "Get back to your PC."})
+
+    def test_update_uses_the_plain_topic_no_dot_start(self):
+        self.client.send_activity_update(
+            "activity-token", "production",
+            content_state={"phase": {"type": "searching"}, "sequence": 3}, timestamp=1)
+        call = self.fake.calls[0]
+        self.assertEqual(call["headers"]["apns-topic"],
+                         "com.tomerady.OverwatchQueue.push-type.liveactivity")
+        self.assertEqual(call["json"]["aps"]["event"], "update")
+        self.assertNotIn("stale-date", call["json"]["aps"])
+
+    def test_update_carries_a_stale_date_when_given_one(self):
+        self.client.send_activity_update(
+            "activity-token", "production", content_state={}, timestamp=1, stale_date=1700000500)
+        self.assertEqual(self.fake.calls[0]["json"]["aps"]["stale-date"], 1700000500)
+
+    def test_end_uses_the_plain_topic_and_the_end_event(self):
+        self.client.send_activity_end(
+            "activity-token", "production", content_state={"phase": {"type": "idle"}}, timestamp=1)
+        call = self.fake.calls[0]
+        self.assertEqual(call["headers"]["apns-topic"],
+                         "com.tomerady.OverwatchQueue.push-type.liveactivity")
+        self.assertEqual(call["json"]["aps"]["event"], "end")
+
+    def test_start_and_update_never_target_the_watch_bundle_id(self):
+        self.client.send_activity_start("t", "sandbox", attributes={}, content_state={}, timestamp=1)
+        self.client.send_activity_update("t", "sandbox", content_state={}, timestamp=1)
+        self.client.send_activity_end("t", "sandbox", content_state={}, timestamp=1)
+        for call in self.fake.calls:
+            self.assertIn("com.tomerady.OverwatchQueue.push-type.liveactivity", call["headers"]["apns-topic"])
+            self.assertNotIn("watchkitapp", call["headers"]["apns-topic"])
 
 
 if __name__ == "__main__":

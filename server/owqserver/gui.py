@@ -374,6 +374,7 @@ class ControlPanel(QMainWindow):
             return
         self.pairing.regenerate()
         self.server.push_tokens.clear()
+        self.server.activity_tokens.clear()
         for client in self.server.ws.clients:
             client.close(reason="unpaired")
         self._refresh_qr()

@@ -107,6 +107,9 @@ extension ClientCommand {
     private struct HeroKey: Codable { var heroKey: String }
     private struct Hello: Codable { var token: String?; var client: ClientIdentity }
     private struct PushToken: Codable { var token: String; var environment: PushEnvironment }
+    private struct ActivityPushToken: Codable {
+        var sessionID: UUID; var token: String; var environment: PushEnvironment
+    }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: TaggedKeys.self)
@@ -126,6 +129,13 @@ extension ClientCommand {
             try c.tag("requestSnapshot")
         case .registerPushToken(let token, let environment):
             try c.tag("registerPushToken")
+            try c.encode(PushToken(token: token, environment: environment), forKey: .data)
+        case .registerActivityPushToken(let sessionID, let token, let environment):
+            try c.tag("registerActivityPushToken")
+            try c.encode(ActivityPushToken(sessionID: sessionID, token: token, environment: environment),
+                        forKey: .data)
+        case .registerActivityStartToken(let token, let environment):
+            try c.tag("registerActivityStartToken")
             try c.encode(PushToken(token: token, environment: environment), forKey: .data)
         }
     }
@@ -147,6 +157,13 @@ extension ClientCommand {
         case "registerPushToken":
             let push = try c.decode(PushToken.self, forKey: .data)
             self = .registerPushToken(token: push.token, environment: push.environment)
+        case "registerActivityPushToken":
+            let push = try c.decode(ActivityPushToken.self, forKey: .data)
+            self = .registerActivityPushToken(sessionID: push.sessionID, token: push.token,
+                                              environment: push.environment)
+        case "registerActivityStartToken":
+            let push = try c.decode(PushToken.self, forKey: .data)
+            self = .registerActivityStartToken(token: push.token, environment: push.environment)
         case let other:
             throw DecodingError.dataCorruptedError(
                 forKey: .type, in: c,
