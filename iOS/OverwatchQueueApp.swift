@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct OverwatchQueueApp: App {
     @State private var model = AppModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -17,6 +18,13 @@ struct OverwatchQueueApp: App {
                 .onOpenURL { url in
                     if model.pair(with: url.absoluteString) { Haptics.attention() }
                 }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .background: model.didEnterBackground()
+            case .active: model.didBecomeActive()
+            default: break
+            }
         }
     }
 }
