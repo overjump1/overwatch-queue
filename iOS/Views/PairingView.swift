@@ -7,6 +7,10 @@ import SwiftUI
 /// IP" as the primary path — the token can't be typed from memory anyway — but the code
 /// can be pasted, which is how you pair a Simulator that has no camera to point.
 struct PairingView: View {
+    /// Set when this is a sheet over an already-paired app, so it can close itself once
+    /// a new code lands. Nil when it *is* the screen, with nothing behind it to go back to.
+    var onPaired: (() -> Void)?
+
     @Environment(AppModel.self) private var model
 
     @State private var scanner = ScannerModel()
@@ -32,12 +36,14 @@ struct PairingView: View {
                 Spacer(minLength: 0)
                 actions
                     .padding(.horizontal, 32)
-                    .padding(.bottom, 40)
+                    .padding(.bottom, onPaired == nil ? 40 : 28)
             }
         }
+        .overlay(alignment: .topTrailing) { closeButton }
         .sheet(isPresented: $showManualEntry) {
             ManualPairingView { accept($0) }
         }
+        .onAppear { model.clearPairingProblem() }
         .task { await scanner.start() }
         .onDisappear { scanner.stop() }
         .onChange(of: scanner.scannedCode) { _, code in
@@ -111,7 +117,7 @@ struct PairingView: View {
 
     @ViewBuilder
     private var message: some View {
-        if let problem {
+        if let problem = problem ?? model.pairingProblem {
             Label(problem, systemImage: "exclamationmark.triangle.fill")
                 .font(.footnote.weight(.medium))
                 .foregroundStyle(Palette.damage)
@@ -156,11 +162,30 @@ struct PairingView: View {
         }
         Haptics.attention()
         scanner.stop()
+        onPaired?()
     }
 
     private func report(_ text: String) {
         withAnimation { problem = text }
         Haptics.warning()
+    }
+
+    /// A sheet needs its own way out; the root version has nothing to go back to.
+    @ViewBuilder
+    private var closeButton: some View {
+        if let onPaired {
+            Button {
+                onPaired()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Palette.white.opacity(0.8))
+                    .padding(10)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .padding(.top, 12)
+            .padding(.trailing, 20)
+        }
     }
 }
 

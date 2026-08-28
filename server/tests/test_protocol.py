@@ -12,6 +12,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, os.path.join(ROOT, "server"))
 
 from owqserver import protocol                                   # noqa: E402
+from owqserver.pairing import Pairing                            # noqa: E402
 
 ISO = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 
@@ -45,6 +46,33 @@ class EnvelopeTests(unittest.TestCase):
         body = json.loads(protocol.error("no_game", "Overwatch isn't running"))["body"]
         self.assertEqual(body["type"], "error")
         self.assertEqual(body["data"], {"code": "no_game", "message": "Overwatch isn't running"})
+
+
+class PairingURLTests(unittest.TestCase):
+    """The exact string the QR carries. `Tests/PairingTests.swift` parses this shape, and
+    `iOS/Info.plist` registers the scheme so the system camera can open it — three places
+    that have to agree, in two languages, with a camera in between."""
+
+    def url(self):
+        return Pairing(token="3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+                       port=8787, path=os.devnull).url("192.168.1.14")
+
+    def test_shape(self):
+        self.assertEqual(
+            self.url(),
+            "owq://pair?host=192.168.1.14&port=8787"
+            "&token=3f2504e0-4f89-41d3-9a0c-0305e82c3301")
+
+    def test_scheme_is_the_one_the_app_registers(self):
+        # Changing this means changing CFBundleURLTypes in iOS/Info.plist, or the camera
+        # decodes the code and then has nothing to open.
+        self.assertTrue(self.url().startswith("owq://pair?"))
+
+    def test_every_field_the_app_needs_is_present(self):
+        query = self.url().split("?", 1)[1]
+        fields = dict(pair.split("=", 1) for pair in query.split("&"))
+        self.assertEqual(set(fields), {"host", "port", "token"})
+        self.assertTrue(all(fields.values()))
 
 
 class PhaseTests(unittest.TestCase):

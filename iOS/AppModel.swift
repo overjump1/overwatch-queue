@@ -14,6 +14,10 @@ public final class AppModel {
     /// other source of state, so an unpaired app shows the pairing screen and nothing else.
     public private(set) var pairing: Pairing?
 
+    /// Why the last code was refused, if it was. Shown on the pairing screen — a code
+    /// that arrives from the system camera has no other way to report that it wasn't ours.
+    public private(set) var pairingProblem: String?
+
     /// Bumped every time a match lands. Views observe it to fire one-shot animations
     /// without having to diff the phase themselves.
     public private(set) var matchFoundToken = 0
@@ -76,9 +80,17 @@ public final class AppModel {
     /// Accepts a scanned or pasted pairing code and connects to that PC.
     @discardableResult
     public func pair(with code: String) -> Bool {
-        guard let scanned = Pairing(pairingCode: code) else { return false }
+        guard let scanned = Pairing(pairingCode: code) else {
+            pairingProblem = "That isn't a pairing code from the queue server."
+            return false
+        }
+        pairingProblem = nil
         pair(scanned)
         return true
+    }
+
+    public func clearPairingProblem() {
+        pairingProblem = nil
     }
 
     public func pair(_ pairing: Pairing) {

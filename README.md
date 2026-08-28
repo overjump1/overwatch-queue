@@ -34,7 +34,10 @@ xcodebuild -project OverwatchQueue.xcodeproj -scheme OverwatchQueue -destination
 
 ## Pairing
 
-The server window shows a QR code. Point the app at it — that's the whole of setup.
+The server window shows a QR code. Point the app at it — that's the whole of setup. The
+system Camera works too: the app registers the `owq://` scheme, so a scan offers
+**Open in "OW Queue"** and pairs on the way in. Already paired and want a different PC?
+**Scan a code** in the app's settings, no unpairing first.
 
 Behind the code is a random token the PC keeps. Every device sends it back on connect, and
 a connection that doesn't present it is closed: a LAN is not a private place, and nobody

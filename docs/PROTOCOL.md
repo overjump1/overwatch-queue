@@ -99,7 +99,9 @@ random token, shows it as a QR code, and refuses every connection that doesn't p
    owq://pair?host=192.168.1.14&port=8787&token=3f2504e0-4f89-41d3-9a0c-0305e82c3301
    ```
 
-   `port` may be omitted, and defaults to 8787.
+   `port` may be omitted, and defaults to 8787. The iOS app registers `owq` in
+   `CFBundleURLTypes`, so the system camera can hand the code straight to it rather than
+   decoding a string with nowhere to go.
 3. The phone scans it, keeps it, and sends the token in every `hello`.
 4. A `hello` with a missing or wrong token gets an `error` with code `pairing_required`,
    and then a close with status **1008**. No snapshots are ever sent to a connection that

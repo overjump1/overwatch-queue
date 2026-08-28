@@ -19,7 +19,8 @@ library, including the QR encoder. Python 3.8 or newer.
 ## Pairing
 
 The window shows a QR code. Open the app on your phone and point it at the code; that's
-the whole of setup.
+the whole of setup. The phone's own Camera app works too — the app registers the `owq://`
+scheme, so scanning offers **Open in "OW Queue"** and pairing happens on the way in.
 
 Behind it is a random token, generated once and kept in `~/.overwatch-queue/pairing.json`.
 Every device sends it back in its first message, and a connection that doesn't present it

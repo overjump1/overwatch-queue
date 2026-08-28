@@ -10,6 +10,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var confirmingUnpair = false
+    @State private var showScanner = false
 
     var body: some View {
         NavigationStack {
@@ -24,6 +25,10 @@ struct SettingsView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
+            }
+            .fullScreenCover(isPresented: $showScanner) {
+                PairingView { showScanner = false }
+                    .environment(model)
             }
             .alert("Unpair from this PC?", isPresented: $confirmingUnpair) {
                 Button("Unpair", role: .destructive) {
@@ -54,6 +59,11 @@ struct SettingsView: View {
                     model.connect()
                 } label: {
                     Label("Reconnect", systemImage: "arrow.clockwise")
+                }
+                Button {
+                    showScanner = true
+                } label: {
+                    Label("Scan a code", systemImage: "qrcode.viewfinder")
                 }
                 Button(role: .destructive) {
                     confirmingUnpair = true
