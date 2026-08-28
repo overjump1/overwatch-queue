@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		FE6AEAFEFF2DB8AE41F0CF2B /* NotificationCopy.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = D35685FC99129719119C75BC /* NotificationCopy.swift */; };
 		C4BEAAC148DFBBB9A0FBEED8 /* QueueActivityAttributes.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */; };
 		24452E1AB941C9DA1D68631F /* CatalogService.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 4D3558CE3531693468824E62 /* CatalogService.swift */; };
 		8D29563327BF93F5EB8E5862 /* ImageCache.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 9D08D081C0EA352C2D518009 /* ImageCache.swift */; };
@@ -47,6 +48,7 @@
 		C69C3E13C1B783F81FE9583D /* Assets.xcassets in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 76F5D0BC4EA614EE0252E6C0 /* Assets.xcassets */; };
 		D64A36B6EF1C828A05E1681A /* catalog-fallback.json in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = B6C6645AE76DCF53BCBAA2C1 /* catalog-fallback.json */; };
 		A9CF1F0E954069705A077853 /* match_found.caf in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 3F3D700670D50849DBE7768A /* match_found.caf */; };
+		28733F143D73D32AA6161FFD /* NotificationCopy.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = D35685FC99129719119C75BC /* NotificationCopy.swift */; };
 		B545AA4E64275CEF17E7AC85 /* QueueActivityAttributes.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */; };
 		FBFA8CB40C9100088F981B2A /* CatalogService.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 4D3558CE3531693468824E62 /* CatalogService.swift */; };
 		8345B8C3FAAD8E4F6F2C5B9D /* ImageCache.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 9D08D081C0EA352C2D518009 /* ImageCache.swift */; };
@@ -78,6 +80,7 @@
 		193101F23D0991CC6525069A /* Assets.xcassets in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 76F5D0BC4EA614EE0252E6C0 /* Assets.xcassets */; };
 		D6224D583382EAD047CC662C /* catalog-fallback.json in QueueWidgets */ = {isa = PBXBuildFile; fileRef = B6C6645AE76DCF53BCBAA2C1 /* catalog-fallback.json */; };
 		3D63C32B5CB2CB6A074458B8 /* match_found.caf in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 3F3D700670D50849DBE7768A /* match_found.caf */; };
+		9D6FC067DC5D250C773A3DAA /* NotificationCopy.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = D35685FC99129719119C75BC /* NotificationCopy.swift */; };
 		D9BF2182013F968925952B35 /* QueueActivityAttributes.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */; };
 		EA9AFC70410919E529C82DCD /* CatalogService.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 4D3558CE3531693468824E62 /* CatalogService.swift */; };
 		42F93BC424939E8F79CDDB39 /* ImageCache.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 9D08D081C0EA352C2D518009 /* ImageCache.swift */; };
@@ -110,6 +113,7 @@
 		2A8A4DD0DBBF0723F9BDFE86 /* Assets.xcassets in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = C244CEFDB0279941691593D0 /* Assets.xcassets */; };
 		12CC55BBAFC065C0903F7252 /* catalog-fallback.json in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = B6C6645AE76DCF53BCBAA2C1 /* catalog-fallback.json */; };
 		1FD818682D4891E49C1781CA /* match_found.caf in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 3F3D700670D50849DBE7768A /* match_found.caf */; };
+		13DD23A467612BBA0AD685B7 /* NotificationCopy.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = D35685FC99129719119C75BC /* NotificationCopy.swift */; };
 		24E796FA3638175499095035 /* QueueActivityAttributes.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */; };
 		E4F0DD61B4811C69719EF427 /* CatalogService.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 4D3558CE3531693468824E62 /* CatalogService.swift */; };
 		C56C2F1AD14AF4816E2A2FE3 /* ImageCache.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 9D08D081C0EA352C2D518009 /* ImageCache.swift */; };
@@ -139,6 +143,7 @@
 		901A0080FE4472DD5E36853D /* Assets.xcassets in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = C244CEFDB0279941691593D0 /* Assets.xcassets */; };
 		954DBEFE84DB69FC75243667 /* catalog-fallback.json in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = B6C6645AE76DCF53BCBAA2C1 /* catalog-fallback.json */; };
 		CE7C4FFA6012B425F43F282B /* match_found.caf in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 3F3D700670D50849DBE7768A /* match_found.caf */; };
+		C85BBF45F58E411C01B4031E /* NotificationCopy.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = D35685FC99129719119C75BC /* NotificationCopy.swift */; };
 		93D215152344CD9FFECF1D5B /* QueueActivityAttributes.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */; };
 		11BE56063038858C4EE91D76 /* CatalogService.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 4D3558CE3531693468824E62 /* CatalogService.swift */; };
 		076D7CF32F39D9F06E9B25A1 /* ImageCache.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 9D08D081C0EA352C2D518009 /* ImageCache.swift */; };
@@ -230,6 +235,7 @@
 /* End PBXTargetDependency section */
 
 /* Begin PBXFileReference section */
+		D35685FC99129719119C75BC /* NotificationCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "NotificationCopy.swift"; path = "Shared/Activity/NotificationCopy.swift"; sourceTree = "<group>"; };
 		6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueActivityAttributes.swift"; path = "Shared/Activity/QueueActivityAttributes.swift"; sourceTree = "<group>"; };
 		4D3558CE3531693468824E62 /* CatalogService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "CatalogService.swift"; path = "Shared/Catalog/CatalogService.swift"; sourceTree = "<group>"; };
 		9D08D081C0EA352C2D518009 /* ImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "ImageCache.swift"; path = "Shared/Catalog/ImageCache.swift"; sourceTree = "<group>"; };
@@ -369,6 +375,7 @@
 		B1FA2DE3F8F77B6DA9EAD945 /* Activity */ = {
 			isa = PBXGroup;
 			children = (
+				D35685FC99129719119C75BC /* NotificationCopy.swift */,
 				6B2AEB873F060228E13F4B9B /* QueueActivityAttributes.swift */,
 			);
 			name = "Activity";
@@ -560,6 +567,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FE6AEAFEFF2DB8AE41F0CF2B /* NotificationCopy.swift */,
 				C4BEAAC148DFBBB9A0FBEED8 /* QueueActivityAttributes.swift */,
 				24452E1AB941C9DA1D68631F /* CatalogService.swift */,
 				8D29563327BF93F5EB8E5862 /* ImageCache.swift */,
@@ -604,6 +612,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				28733F143D73D32AA6161FFD /* NotificationCopy.swift */,
 				B545AA4E64275CEF17E7AC85 /* QueueActivityAttributes.swift */,
 				FBFA8CB40C9100088F981B2A /* CatalogService.swift */,
 				8345B8C3FAAD8E4F6F2C5B9D /* ImageCache.swift */,
@@ -639,6 +648,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				9D6FC067DC5D250C773A3DAA /* NotificationCopy.swift */,
 				D9BF2182013F968925952B35 /* QueueActivityAttributes.swift */,
 				EA9AFC70410919E529C82DCD /* CatalogService.swift */,
 				42F93BC424939E8F79CDDB39 /* ImageCache.swift */,
@@ -675,6 +685,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				13DD23A467612BBA0AD685B7 /* NotificationCopy.swift */,
 				24E796FA3638175499095035 /* QueueActivityAttributes.swift */,
 				E4F0DD61B4811C69719EF427 /* CatalogService.swift */,
 				C56C2F1AD14AF4816E2A2FE3 /* ImageCache.swift */,
@@ -708,6 +719,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C85BBF45F58E411C01B4031E /* NotificationCopy.swift */,
 				93D215152344CD9FFECF1D5B /* QueueActivityAttributes.swift */,
 				11BE56063038858C4EE91D76 /* CatalogService.swift */,
 				076D7CF32F39D9F06E9B25A1 /* ImageCache.swift */,

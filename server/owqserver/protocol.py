@@ -22,6 +22,32 @@ ROLE_QUEUE_MODES = {"quickPlay", "competitive", "stadium"}
 # Mystery Heroes assigns your hero, so it goes straight from matchFound to inGame.
 NO_HERO_SELECT_MODES = {"mysteryHeroes"}
 
+# Mirrors `QueuePhase.isUrgent` — the phases that get a real alert (sound, haptic, a brief
+# peek) on their Live Activity push, the way a delivery app announces a status change
+# without a separate notification alongside it. Routine changes stay silent.
+URGENT_KINDS = {"matchFound", "mapVote", "heroSelect"}
+
+_NOTIFICATION_TITLES = {
+    "matchFound": "Match Found",
+    "mapVote": "Map Vote",
+    "heroSelect": "Hero Select",
+}
+_NOTIFICATION_BODIES = {
+    "matchFound": "You're being pulled into the game — get back to your PC.",
+    "mapVote": "Pick where you want to play.",
+    "heroSelect": "Choose your hero.",
+}
+
+
+def notification_copy(kind: str):
+    """`(title, body)` for an urgent phase's Live Activity alert. Duplicated against the
+    Swift side on purpose, the same way the phase builders below mirror `QueuePhase` —
+    kept in step by eye rather than by a shared source, since the two live in different
+    languages."""
+    return _NOTIFICATION_TITLES.get(kind, "Overwatch Queue"), \
+        _NOTIFICATION_BODIES.get(kind, "Status changed.")
+
+
 # ---------------------------------------------------------------- Live Activity pushes
 #
 # A Live Activity push's `content-state` is decoded on-device with a plain `JSONDecoder`
