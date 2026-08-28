@@ -166,12 +166,15 @@ export interface ApnsResult {
 }
 
 /** A Live Activity push always targets the iOS app specifically — the watch has no Live
- * Activities — under a topic Apple derives from the bundle ID, with `.start` appended
- * only for the push that creates the activity from nothing. */
+ * Activities — under one topic shared by all three events, start included.
+ *
+ * Not `<bundle-id>.push-type.liveactivity.start` for the start push — that suffix is
+ * commonly repeated but wrong, at least for this account: verified directly against a
+ * live push-to-start token, which Apple rejects on the `.start` topic with
+ * `TopicDisallowed` and accepts on the plain topic below, unchanged. */
 function topicFor(config: ApnsConfig, request: PushRequest): string {
   if (LIVE_ACTIVITY_TYPES.includes(request.pushType)) {
-    const suffix = request.pushType === "liveActivityStart" ? ".start" : "";
-    return `${config.bundleIdIOS}.push-type.liveactivity${suffix}`;
+    return `${config.bundleIdIOS}.push-type.liveactivity`;
   }
   return request.kind === "phone" ? config.bundleIdIOS : config.bundleIdWatch;
 }

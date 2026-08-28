@@ -99,7 +99,8 @@ describe("worker", () => {
     expect(response.status).toBe(200);
     const [appleUrl, appleInit] = fetchMock.mock.calls[0];
     expect(appleUrl).toContain("/3/device/" + "a".repeat(64));
-    expect(appleInit.headers["apns-topic"]).toBe(ENV.APNS_BUNDLE_ID_IOS + ".push-type.liveactivity.start");
+    // Not `.push-type.liveactivity.start` — see the comment on `topicFor` in src/apns.ts.
+    expect(appleInit.headers["apns-topic"]).toBe(ENV.APNS_BUNDLE_ID_IOS + ".push-type.liveactivity");
   });
 
   it("rejects a Live Activity push missing its content-state before ever calling Apple", async () => {

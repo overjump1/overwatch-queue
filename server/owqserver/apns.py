@@ -140,6 +140,15 @@ class APNsClient:
     # under the iOS bundle ID — the watch has no Live Activities — and always at
     # immediate priority, which Apple requires for this push type. See
     # `protocol.content_state` for the content-state shape these carry.
+    #
+    # All three — start, update, end — share the same topic. A push-to-start token sent
+    # to `<bundle-id>.push-type.liveactivity.start` gets a real, reproducible
+    # `TopicDisallowed` from Apple; the exact same token against the plain
+    # `.push-type.liveactivity` topic below is what Apple actually accepts. Verified
+    # directly against a live push-to-start token before trusting it over the more
+    # commonly repeated (and wrong, at least for this account) `.start`-suffix claim.
+
+    _LIVE_ACTIVITY_TOPIC_SUFFIX = ".push-type.liveactivity"
 
     def send_activity_start(self, push_to_start_token: str, environment: str,
                             attributes: dict, content_state: dict, timestamp: int,
@@ -148,7 +157,7 @@ class APNsClient:
                "attributes-type": "QueueActivityAttributes", "attributes": attributes}
         if alert:
             aps["alert"] = alert
-        topic = "%s.push-type.liveactivity.start" % self.config.bundle_id_ios
+        topic = self.config.bundle_id_ios + self._LIVE_ACTIVITY_TOPIC_SUFFIX
         return self._send("activity-start", topic, push_to_start_token, environment,
                           {"aps": aps}, push_type="liveactivity", priority="10")
 
@@ -160,7 +169,7 @@ class APNsClient:
             aps["alert"] = alert
         if stale_date is not None:
             aps["stale-date"] = stale_date
-        topic = "%s.push-type.liveactivity" % self.config.bundle_id_ios
+        topic = self.config.bundle_id_ios + self._LIVE_ACTIVITY_TOPIC_SUFFIX
         return self._send("activity-update", topic, activity_token, environment,
                           {"aps": aps}, push_type="liveactivity", priority="10")
 
@@ -169,7 +178,7 @@ class APNsClient:
         aps = {"timestamp": timestamp, "event": "end", "content-state": content_state}
         if dismissal_date is not None:
             aps["dismissal-date"] = dismissal_date
-        topic = "%s.push-type.liveactivity" % self.config.bundle_id_ios
+        topic = self.config.bundle_id_ios + self._LIVE_ACTIVITY_TOPIC_SUFFIX
         return self._send("activity-end", topic, activity_token, environment,
                           {"aps": aps}, push_type="liveactivity", priority="10")
 

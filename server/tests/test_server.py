@@ -210,7 +210,6 @@ class _FakeAPNs:
 
     def __init__(self, invalid_kinds=()):
         self.background = []
-        self.alerts = []
         self.activity_starts = []
         self.activity_updates = []
         self.activity_ends = []
@@ -219,10 +218,6 @@ class _FakeAPNs:
     def send_background(self, kind, token, environment, session_id, sequence):
         self.background.append((kind, token, environment, session_id, sequence))
         return "invalid" if kind in self._invalid_kinds else "ok"
-
-    def send_alert(self, kind, token, environment, title, body, session_id, sequence):
-        self.alerts.append((kind, token, environment, title, body, session_id, sequence))
-        return "ok"
 
     def send_activity_start(self, token, environment, attributes, content_state, timestamp, alert=None):
         self.activity_starts.append((token, environment, attributes, content_state, timestamp, alert))
@@ -258,26 +253,17 @@ class PushDispatchTests(unittest.TestCase):
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.assertEqual(self.fake.background, [])
 
-    def test_a_routine_change_pushes_silently_to_every_registered_kind(self):
+    def test_a_change_pushes_silently_to_every_registered_kind(self):
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
         kinds = {entry[0] for entry in self.fake.background}
         self.assertEqual(kinds, {"phone", "watch"})
-        self.assertEqual(self.fake.alerts, [])
 
-    def test_an_urgent_phase_also_gets_an_alert(self):
-        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
-        kinds = {entry[0] for entry in self.fake.alerts}
-        self.assertEqual(kinds, {"phone", "watch"})
-        self.assertEqual(self.fake.alerts[0][3], "Match Found")
-
-    def test_an_invalid_token_is_dropped_and_gets_no_alert(self):
+    def test_an_invalid_token_is_dropped(self):
         self.fake._invalid_kinds = {"phone"}
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
         self.assertIsNone(self.server.push_tokens.get("phone"))
         self.assertEqual(self.server.push_tokens.get("watch"), ("watch-token", "production"))
-        self.assertNotIn("phone", {entry[0] for entry in self.fake.alerts})
 
 
 class LiveActivityPushDispatchTests(unittest.TestCase):
@@ -312,27 +298,25 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.server.apply(protocol.match_found("quickPlay", "damage", 30))
         self.assertEqual(len(self.fake.activity_starts), 1)
 
-    def test_a_start_token_registered_mid_session_still_gets_an_urgent_start(self):
+    def test_a_start_token_registered_mid_session_still_gets_the_current_phase(self):
         # The start token can arrive late (the app only just got its first chance to run
-        # since installing) — if the phase has since moved to something urgent, the very
-        # first push-to-start should already carry that phase and its alert.
+        # since installing) — the very first push-to-start should carry whatever phase
+        # is current by then, not the one from when the session began.
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.server.activity_tokens.register_start("start-token", "sandbox")
         self.server.apply(protocol.match_found("quickPlay", "damage", 30))
         self.assertEqual(len(self.fake.activity_starts), 1)
         content_state, alert = self.fake.activity_starts[0][3], self.fake.activity_starts[0][5]
         self.assertEqual(content_state["phase"]["type"], "matchFound")
-        self.assertEqual(alert, {"title": "Match Found",
-                                 "body": "You're being pulled into the game — get back to your PC."})
+        self.assertIsNone(alert)              # no banner — the card's content is the signal
 
-    def test_an_urgent_update_carries_an_alert(self):
+    def test_updates_never_carry_an_alert_even_for_an_urgent_phase(self):
         self.server.activity_tokens.register_update(
             self.server.session.session_id, "activity-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.server.apply(protocol.match_found("quickPlay", "damage", 30))
         alert = self.fake.activity_updates[-1][4]
-        self.assertEqual(alert, {"title": "Match Found",
-                                 "body": "You're being pulled into the game — get back to your PC."})
+        self.assertIsNone(alert)
 
     def test_a_registered_update_token_is_used_instead_of_starting_again(self):
         self.server.activity_tokens.register_start("start-token", "sandbox")
@@ -345,7 +329,6 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         token, environment, content_state, _timestamp, alert, _stale = self.fake.activity_updates[0]
         self.assertEqual(token, "activity-token")
         self.assertEqual(content_state["phase"]["type"], "matchFound")
-        self.assertIsNotNone(alert)
 
     def test_an_update_token_from_a_previous_session_is_not_reused(self):
         self.server.activity_tokens.register_update("some-other-session", "stale-token", "sandbox")
