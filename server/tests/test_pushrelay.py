@@ -57,6 +57,10 @@ class PushRelayClientTests(unittest.TestCase):
         self.client.send_background("phone", "device-token", "sandbox", "session-1", 5)
         self.assertEqual(_FakeRelay.last_path, "/v1/push")
         self.assertEqual(_FakeRelay.last_headers["Authorization"], "Bearer secret-key")
+        # `urllib`'s default User-Agent ("Python-urllib/x.y") gets a 403 from
+        # Cloudflare's bot protection before the request ever reaches the Worker —
+        # caught in the field once already, so it's pinned here.
+        self.assertNotIn("python-urllib", _FakeRelay.last_headers["User-Agent"].lower())
         self.assertEqual(_FakeRelay.last_body, {
             "kind": "phone", "token": "device-token", "environment": "sandbox",
             "pushType": "background", "sessionId": "session-1", "sequence": 5,

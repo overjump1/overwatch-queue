@@ -64,7 +64,12 @@ class PushRelayClient:
             "%s/v1/push" % self.config.url,
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json",
-                    "Authorization": "Bearer %s" % self.config.api_key},
+                    "Authorization": "Bearer %s" % self.config.api_key,
+                    # `urllib`'s default "Python-urllib/x.y" User-Agent gets caught by
+                    # Cloudflare's automated bot protection (a 403 with error code 1010)
+                    # before the request ever reaches the Worker — a real client name
+                    # sails through the same check curl or a browser would pass.
+                    "User-Agent": "OverwatchQueueServer/1.0"},
             method="POST",
         )
         try:
