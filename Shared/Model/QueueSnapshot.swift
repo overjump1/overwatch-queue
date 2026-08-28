@@ -49,14 +49,55 @@ public struct ClockSync: Sendable {
     /// re-anchoring on them makes timers visibly stutter.
     public static let deadband: TimeInterval = 1.5
 
+    /// How long a good sample is trusted before a worse one may replace it. Long enough
+    /// that no plausible delivery delay outlasts it, short enough that a server whose
+    /// clock genuinely moved is believed before anyone notices.
+    public static let anchorLifetime: TimeInterval = 120
+
+    /// When the sample currently anchoring `offset` arrived. `nil` until the first one.
+    private var anchoredAt: Date?
+
     public init(offset: TimeInterval = 0) {
         self.offset = offset
     }
 
+    /// Folds in one observation of the server's clock.
+    ///
+    /// Not simply "believe the newest", which is what this used to do and what made a
+    /// queue read differently on each device. `serverTime` is stamped before the message
+    /// travels and `receivedAt` is taken after, so every sample is understated by exactly
+    /// however long delivery took: `measured = true − latency`. Latency is never negative,
+    /// so **the largest sample seen is the truest one**, and the newest is merely the
+    /// most recent — a distinction that costs nothing on a socket answering in
+    /// milliseconds and everything the moment something buffers.
+    ///
+    /// Both things that surface a queue do buffer. iOS suspends a backgrounded app and
+    /// hands it the socket's backlog on resume, and WatchConnectivity coalesces and
+    /// delivers on its own schedule; measured here, a snapshot thirteen seconds stale is
+    /// indistinguishable from a PC thirteen seconds slow, and the old code took it at
+    /// face value and re-anchored every timer onto it.
+    ///
+    /// So a sample is adopted when it's *better* — less latency, a larger offset — and
+    /// otherwise only once the current anchor has aged out, which is what still lets a
+    /// server whose clock really did change be believed eventually.
     public mutating func observe(serverTime: Date, receivedAt: Date = .now) {
         let candidate = serverTime.timeIntervalSince(receivedAt)
-        if abs(candidate - offset) > Self.deadband {
+
+        guard let anchoredAt else {
+            // Nothing has anchored yet, so there's no "better" to measure against —
+            // take this one, unless it agrees with where we already are.
+            if abs(candidate - offset) > Self.deadband { offset = candidate }
+            self.anchoredAt = receivedAt
+            return
+        }
+
+        let isBetter = candidate > offset + Self.deadband
+        let isWorse = candidate < offset - Self.deadband
+        let anchorHasAgedOut = receivedAt.timeIntervalSince(anchoredAt) > Self.anchorLifetime
+
+        if isBetter || (isWorse && anchorHasAgedOut) {
             offset = candidate
+            self.anchoredAt = receivedAt
         }
     }
 

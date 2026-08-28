@@ -79,6 +79,22 @@ public final class QueueStore {
         sendPendingRegistrations()
     }
 
+    /// Re-anchors the clock, and says so when the anchor actually moves.
+    ///
+    /// The offset is measured as `serverTime - now`, so it silently absorbs however long
+    /// the message took to arrive. Over a socket that's milliseconds and beneath the
+    /// deadband; over WatchConnectivity — which coalesces and delivers on the system's
+    /// own schedule — it need not be, and every timer on that device then runs from an
+    /// origin that far out. Reporting the value is how you tell the two apart.
+    private func observeClock(serverTime: Date, from source: String) {
+        let before = clock.offset
+        clock.observe(serverTime: serverTime)
+        if clock.offset != before {
+            report(String(format: "clock re-anchored from %@: offset %+.1fs (was %+.1fs)",
+                          source, clock.offset, before))
+        }
+    }
+
     /// Writes a line into the server's log — see `ClientCommand.diagnostic`.
     ///
     /// Dropped rather than queued when nothing is connected: a diagnostic is only worth
@@ -132,7 +148,7 @@ public final class QueueStore {
         case .snapshot(let incoming):
             ingest(incoming)
         case .heartbeat(let serverTime):
-            clock.observe(serverTime: serverTime)
+            observeClock(serverTime: serverTime, from: "heartbeat")
             lastUpdate = .now
         case .error(_, let message):
             status = .failed(message)
@@ -145,7 +161,7 @@ public final class QueueStore {
     public func ingest(_ incoming: QueueSnapshot) {
         guard snapshot.supersededBy(incoming) || snapshot.sequence == 0 else { return }
         let previous = snapshot.phase
-        clock.observe(serverTime: incoming.serverTime)
+        observeClock(serverTime: incoming.serverTime, from: "snapshot")
         snapshot = incoming
         lastUpdate = .now
 

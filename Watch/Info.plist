@@ -26,10 +26,22 @@
 	<string>com.tomerady.OverwatchQueue</string>
 	<key>WKRunsIndependentlyOfCompanionApp</key>
 	<true/>
-	<!-- The same `owq` scheme the iPhone registers, claimed here too. The mirrored Live
-	     Activity carries one `widgetURL` for both platforms, and whichever device the tap
-	     happens on resolves it locally — without this the watch can't, so it offers to
-	     open the app on the iPhone instead of just opening itself. -->
+	<!-- Opting in to being opened by a tap on the mirrored Live Activity. Without this
+	     watchOS assumes a Live Activity belongs to the phone and offers "Open on iPhone",
+	     even with a watch app installed and running — it is an opt-in, not a default, and
+	     nothing about the activity itself can grant it.
+
+	     Named explicitly rather than left as an empty array (which is documented to mean
+	     "all of them"): empty is reported not to take, and being explicit says which
+	     activity this app actually knows how to show. The string is the `ActivityAttributes`
+	     type name from `Shared/Activity/QueueActivityAttributes.swift`, and matching it is
+	     by eye — a rename there silently turns this back off. -->
+	<key>WKSupportsLiveActivityLaunchAttributeTypes</key>
+	<array>
+		<string>QueueActivityAttributes</string>
+	</array>
+	<!-- The same `owq` scheme the iPhone registers, claimed here too, so a URL that does
+	     reach the wrist is answered here rather than handed back to the phone. -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
