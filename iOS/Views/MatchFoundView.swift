@@ -92,7 +92,7 @@ struct MatchFoundView: View {
                         .foregroundStyle(Palette.orange)
                         .symbolEffect(.bounce, options: .repeating.speed(0.6))
 
-                    Text(timerInterval: Date.now...deadline, countsDown: true)
+                    Text.countdown(to: deadline)
                         .font(.system(size: 40, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(Palette.white)

@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 
 final class QueueFlowTests: XCTestCase {
 
@@ -82,5 +83,36 @@ final class QueueFlowTests: XCTestCase {
         let noEstimate = SearchInfo(mode: .quickPlay, role: .damage, startedAt: Date())
         XCTAssertNil(noEstimate.progress(), "no estimate means no progress to show")
         XCTAssertFalse(noEstimate.isOverdue())
+    }
+
+    /// The hero-select crash. `Text(timerInterval:)` takes a `ClosedRange`, and forming
+    /// one whose upper bound has already passed traps rather than yielding an empty
+    /// range — so a countdown used to kill the process the moment its own deadline went
+    /// by. Hero select reaches that state on any run where the player uses the whole
+    /// window, and the Live Activity re-renders well past it.
+    func testCountdownOutlivesItsDeadline() {
+        _ = Text.countdown(to: Date().addingTimeInterval(-3600))
+        _ = Text.countdown(to: Date().addingTimeInterval(-0.001))
+        _ = Text.countdown(to: Date())
+        _ = Text.countdown(to: Date().addingTimeInterval(40))
+    }
+
+    /// A scenario is compiled in one go but plays out over minutes, so a phase built up
+    /// front carries a deadline that has been running down ever since — `fastQuickPlay`
+    /// used to reach hero select a full six seconds after that phase's deadline expired.
+    /// Each phase has to be built when its own step is applied.
+    func testScenarioDeadlinesStartWhenTheStepDoes() throws {
+        for scenario in MockTransport.Scenario.allCases {
+            let steps = scenario.steps(mapKeys: [], heroKeys: [])
+            for (index, step) in steps.enumerated() {
+                guard let early = step.makePhase().deadline else { continue }
+                Thread.sleep(forTimeInterval: 0.02)
+                let late = try XCTUnwrap(step.makePhase().deadline)
+                XCTAssertGreaterThan(late, early,
+                                     "\(scenario.rawValue) step \(index) bakes its deadline in at compile time")
+                XCTAssertGreaterThan(late, Date(),
+                                     "\(scenario.rawValue) step \(index) starts a phase that has already expired")
+            }
+        }
     }
 }

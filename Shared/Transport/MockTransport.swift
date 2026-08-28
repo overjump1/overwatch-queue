@@ -119,7 +119,7 @@ public final class MockTransport: QueueTransport {
             guard let self else { return }
             for step in scenario.steps(mapKeys: catalog, heroKeys: heroes) {
                 if Task.isCancelled { return }
-                self.apply(step.phase)
+                self.apply(step.makePhase())
                 try? await Task.sleep(nanoseconds: UInt64(step.hold * 1_000_000_000))
             }
             self.scenarioTask = nil
@@ -127,7 +127,11 @@ public final class MockTransport: QueueTransport {
     }
 
     public struct Step: Sendable {
-        public var phase: QueuePhase
+        /// Built when the step is applied, not when the timeline is compiled. Phases carry
+        /// absolute deadlines and the whole scenario is laid out in one go, so a deadline
+        /// computed up front has already been running down — by the time a later step came
+        /// up its own deadline had passed, and the phase started expired.
+        public var makePhase: @Sendable () -> QueuePhase
         /// Seconds to hold before moving to the next step.
         public var hold: TimeInterval
     }
@@ -159,66 +163,67 @@ public final class MockTransport: QueueTransport {
         }
 
         func steps(mapKeys: [String], heroKeys: [String]) -> [Step] {
+            // Chosen once so every step of a run agrees on the map, but each phase is
+            // built at the moment it is applied so its deadline starts from then.
             let maps = mapKeys.isEmpty
                 ? ["kings-row", "circuit-royal", "ilios"]
                 : Array(mapKeys.shuffled().prefix(3))
-            let now = Date.now
 
             switch self {
             case .fastQuickPlay:
                 return [
-                    Step(phase: .searching(SearchInfo(mode: .quickPlay, role: .damage,
-                                                      startedAt: now, estimatedWait: 45)), hold: 12),
-                    Step(phase: .matchFound(MatchFoundInfo(mode: .quickPlay, role: .damage,
-                                                           waited: 12,
-                                                           lockInAt: .now + 10)), hold: 4),
-                    Step(phase: .mapVote(MapVoteInfo(options: maps.map { MapOption(mapKey: $0, votes: .random(in: 0...3)) },
-                                                     deadline: .now + 20)), hold: 20),
-                    Step(phase: .heroSelect(HeroSelectInfo(mode: .quickPlay, role: .damage,
-                                                           mapKey: maps.first,
-                                                           deadline: .now + 30,
-                                                           takenHeroKeys: Array(heroKeys.shuffled().prefix(2)))), hold: 30),
-                    Step(phase: .inGame(InGameInfo(mode: .quickPlay, mapKey: maps.first,
-                                                   heroKey: heroKeys.first, startedAt: .now)), hold: 60),
+                    Step(makePhase: { .searching(SearchInfo(mode: .quickPlay, role: .damage,
+                                                            startedAt: .now, estimatedWait: 45)) }, hold: 12),
+                    Step(makePhase: { .matchFound(MatchFoundInfo(mode: .quickPlay, role: .damage,
+                                                                 waited: 12,
+                                                                 lockInAt: .now + 10)) }, hold: 4),
+                    Step(makePhase: { .mapVote(MapVoteInfo(options: maps.map { MapOption(mapKey: $0, votes: .random(in: 0...3)) },
+                                                           deadline: .now + 20)) }, hold: 20),
+                    Step(makePhase: { .heroSelect(HeroSelectInfo(mode: .quickPlay, role: .damage,
+                                                                 mapKey: maps.first,
+                                                                 deadline: .now + 30,
+                                                                 takenHeroKeys: Array(heroKeys.shuffled().prefix(2)))) }, hold: 30),
+                    Step(makePhase: { .inGame(InGameInfo(mode: .quickPlay, mapKey: maps.first,
+                                                         heroKey: heroKeys.first, startedAt: .now)) }, hold: 60),
                 ]
 
             case .longCompTank:
                 return [
-                    Step(phase: .searching(SearchInfo(mode: .competitive, role: .tank,
-                                                      startedAt: now.addingTimeInterval(-360),
-                                                      estimatedWait: 240)), hold: 25),
-                    Step(phase: .matchFound(MatchFoundInfo(mode: .competitive, role: .tank,
-                                                           waited: 385,
-                                                           lockInAt: .now + 10)), hold: 5),
-                    Step(phase: .heroSelect(HeroSelectInfo(mode: .competitive, role: .tank,
-                                                           mapKey: maps.first,
-                                                           deadline: .now + 40)), hold: 40),
-                    Step(phase: .inGame(InGameInfo(mode: .competitive, mapKey: maps.first,
-                                                   startedAt: .now)), hold: 60),
+                    Step(makePhase: { .searching(SearchInfo(mode: .competitive, role: .tank,
+                                                            startedAt: .now.addingTimeInterval(-360),
+                                                            estimatedWait: 240)) }, hold: 25),
+                    Step(makePhase: { .matchFound(MatchFoundInfo(mode: .competitive, role: .tank,
+                                                                 waited: 385,
+                                                                 lockInAt: .now + 10)) }, hold: 5),
+                    Step(makePhase: { .heroSelect(HeroSelectInfo(mode: .competitive, role: .tank,
+                                                                 mapKey: maps.first,
+                                                                 deadline: .now + 40)) }, hold: 40),
+                    Step(makePhase: { .inGame(InGameInfo(mode: .competitive, mapKey: maps.first,
+                                                         startedAt: .now)) }, hold: 60),
                 ]
 
             case .matchFellApart:
                 return [
-                    Step(phase: .searching(SearchInfo(mode: .quickPlay, role: .support,
-                                                      startedAt: now, estimatedWait: 30)), hold: 8),
-                    Step(phase: .matchFound(MatchFoundInfo(mode: .quickPlay, role: .support,
-                                                           waited: 8,
-                                                           lockInAt: .now + 10)), hold: 6),
-                    Step(phase: .cancelled(CancelInfo(reason: .matchCancelled)), hold: 3),
-                    Step(phase: .searching(SearchInfo(mode: .quickPlay, role: .support,
-                                                      startedAt: .now, estimatedWait: 40)), hold: 30),
+                    Step(makePhase: { .searching(SearchInfo(mode: .quickPlay, role: .support,
+                                                            startedAt: .now, estimatedWait: 30)) }, hold: 8),
+                    Step(makePhase: { .matchFound(MatchFoundInfo(mode: .quickPlay, role: .support,
+                                                                 waited: 8,
+                                                                 lockInAt: .now + 10)) }, hold: 6),
+                    Step(makePhase: { .cancelled(CancelInfo(reason: .matchCancelled)) }, hold: 3),
+                    Step(makePhase: { .searching(SearchInfo(mode: .quickPlay, role: .support,
+                                                            startedAt: .now, estimatedWait: 40)) }, hold: 30),
                 ]
 
             case .mysteryHeroes:
                 return [
-                    Step(phase: .searching(SearchInfo(mode: .mysteryHeroes, role: .open,
-                                                      startedAt: now, estimatedWait: 20)), hold: 10),
-                    Step(phase: .matchFound(MatchFoundInfo(mode: .mysteryHeroes, role: .open,
-                                                           waited: 10,
-                                                           lockInAt: .now + 10)), hold: 4),
-                    Step(phase: .inGame(InGameInfo(mode: .mysteryHeroes, mapKey: maps.first,
-                                                   heroKey: heroKeys.randomElement(),
-                                                   startedAt: .now)), hold: 60),
+                    Step(makePhase: { .searching(SearchInfo(mode: .mysteryHeroes, role: .open,
+                                                            startedAt: .now, estimatedWait: 20)) }, hold: 10),
+                    Step(makePhase: { .matchFound(MatchFoundInfo(mode: .mysteryHeroes, role: .open,
+                                                                 waited: 10,
+                                                                 lockInAt: .now + 10)) }, hold: 4),
+                    Step(makePhase: { .inGame(InGameInfo(mode: .mysteryHeroes, mapKey: maps.first,
+                                                         heroKey: heroKeys.randomElement(),
+                                                         startedAt: .now)) }, hold: 60),
                 ]
             }
         }

@@ -117,7 +117,7 @@ struct WatchMatchFoundView: View {
                 .font(.system(size: 15, weight: .black))
                 .foregroundStyle(Palette.white)
 
-            Text(timerInterval: Date.now...deadline, countsDown: true)
+            Text.countdown(to: deadline)
                 .font(.system(size: 24, weight: .bold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(Palette.amber)
