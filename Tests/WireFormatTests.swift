@@ -65,6 +65,7 @@ final class WireFormatTests: XCTestCase {
                                        token: "activity-token", environment: .sandbox),
             .registerActivityStartToken(token: "start-token", environment: .production),
             .diagnostic("Live Activity: started 24C67173-AADE"),
+            .ping(clientTime: 1_700_000_000.123),
         ]
         for command in commands {
             let text = try json(command)
@@ -100,6 +101,7 @@ final class WireFormatTests: XCTestCase {
 
         print("SAMPLE snapshot: \(try json(QueueEvent.snapshot(snapshot)))")
         print("SAMPLE heartbeat: \(try json(QueueEvent.heartbeat(serverTime: fixedDate)))")
+        print("SAMPLE pong: \(try json(QueueEvent.pong(clientTime: 1_700_000_000.123, serverTime: 1_700_000_000.456)))")
         print("SAMPLE error: \(try json(QueueEvent.error(code: "no_game", message: "Overwatch isn't running")))")
         print("SAMPLE matchFound: \(try json(QueuePhase.matchFound(MatchFoundInfo(mode: .competitive, role: .tank, waited: 137, lockInAt: fixedDate))))")
         print("SAMPLE mapVote: \(try json(QueuePhase.mapVote(MapVoteInfo(options: [MapOption(mapKey: "ilios", votes: 2), MapOption(mapKey: "havana", votes: 1)], deadline: fixedDate, myVote: "ilios"))))")

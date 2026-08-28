@@ -23,6 +23,15 @@ public enum QueueEvent: Codable, Sendable {
     /// Liveness only — carries the server clock so `ClockSync` keeps tracking drift
     /// during a long quiet queue.
     case heartbeat(serverTime: Date)
+    /// The reply to `ping`, and the only message a clock offset is ever measured from.
+    ///
+    /// Echoes the client's own send time back untouched so the client can work out how
+    /// long the round trip took, and states the server's clock at the moment of replying.
+    /// Both are epoch seconds as a plain number rather than the ISO-8601 strings used
+    /// everywhere else on this wire: those are written to whole seconds, and a
+    /// half-second of rounding is a large error in the one message whose entire job is
+    /// measuring time.
+    case pong(clientTime: TimeInterval, serverTime: TimeInterval)
     /// The server rejected or couldn't fulfil a command.
     case error(code: String, message: String)
 }
@@ -54,6 +63,10 @@ public enum ClientCommand: Codable, Sendable {
     /// itself. Independent of any one session; sent once it's available and again
     /// whenever the system hands over a new one.
     case registerActivityStartToken(token: String, environment: PushEnvironment)
+    /// Asks the server to say what time it is, carrying this device's own clock so the
+    /// reply can be timed. See `pong`, and `ClockSync.observe(offset:roundTrip:)` for why
+    /// a measured round trip is the only honest way to do this.
+    case ping(clientTime: TimeInterval)
     /// Something the device wants written into the server's log.
     ///
     /// Almost everything interesting about a Live Activity happens where nobody can see

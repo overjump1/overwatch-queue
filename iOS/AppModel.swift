@@ -204,7 +204,13 @@ public final class AppModel {
 
     public func didBecomeActive() {
         endBackgroundTask()
-        if store.transport?.status.isLive != true { connect() }
+        if store.transport?.status.isLive != true {
+            connect()      // a fresh connection syncs the clock on its own
+        } else {
+            // Coming back from suspension is exactly where a stale reading used to take
+            // hold, and the socket that survived it never re-measured.
+            store.syncClock()
+        }
     }
 
     private func endBackgroundTask() {

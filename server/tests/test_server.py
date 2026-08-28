@@ -195,6 +195,29 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(client.receive()["body"]["data"]["code"], "unpaired")
         self.assertIsNone(self.server.push_tokens.get("phone"))
 
+    def test_ping_is_answered_with_the_clients_own_time_untouched(self):
+        client = self.connect()
+        client.send(hello())
+        client.receive()
+        sent = 1700000000.123
+        client.send({"v": 1, "body": {"type": "ping", "data": {"clientTime": sent}}})
+        reply = client.receive()
+        self.assertEqual(reply["body"]["type"], "pong")
+        # Echoed exactly: the client subtracts this from its own clock to get the round
+        # trip, so any change here would be charged to the offset it derives.
+        self.assertEqual(reply["body"]["data"]["clientTime"], sent)
+        # Sub-second precision, unlike every other time on this wire.
+        self.assertIsInstance(reply["body"]["data"]["serverTime"], float)
+
+    def test_a_ping_without_a_usable_time_is_ignored(self):
+        client = self.connect()
+        client.send(hello())
+        client.receive()
+        client.send({"v": 1, "body": {"type": "ping", "data": {"clientTime": "soon"}}})
+        client.send({"v": 1, "body": {"type": "requestSnapshot"}})
+        # The next thing back is the snapshot, so nothing was sent for the bad ping.
+        self.assertEqual(client.receive()["body"]["type"], "snapshot")
+
     def test_a_malformed_registration_is_ignored(self):
         client = self.connect()
         client.send(hello())

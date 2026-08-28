@@ -375,6 +375,12 @@ class QueueServer:
                 data.get("sessionID"), data.get("token"), data.get("environment"))
         elif kind == "registerActivityStartToken":
             self._register_activity_start_token(data.get("token"), data.get("environment"))
+        elif kind == "ping":
+            # Answered inline and immediately: anything this end waits on is time the
+            # client can only read as distance to the server.
+            client_time = data.get("clientTime")
+            if isinstance(client_time, (int, float)):
+                client.send(protocol.pong(float(client_time)))
         elif kind == "diagnostic":
             self._log_diagnostic(client, data.get("message"))
         else:

@@ -194,6 +194,21 @@ def heartbeat() -> str:
     return envelope({"type": "heartbeat", "data": {"serverTime": iso(now())}})
 
 
+def pong(client_time: float) -> str:
+    """The reply to `ping`, for measuring the clock offset with a known margin of error.
+
+    `client_time` goes back exactly as it arrived — the client needs its own send time to
+    work out how long the round trip took, and anything this end did to it would be
+    charged to the answer. Both times are epoch seconds as numbers rather than the
+    whole-second ISO strings used elsewhere here: rounding to the second would be a
+    half-second error in the one message whose whole purpose is measuring time.
+    """
+    return envelope({"type": "pong", "data": {
+        "clientTime": client_time,
+        "serverTime": now().timestamp(),
+    }})
+
+
 def error(code: str, message: str) -> str:
     return envelope({"type": "error", "data": {"code": code, "message": message}})
 

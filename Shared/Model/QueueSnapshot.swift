@@ -54,8 +54,48 @@ public struct ClockSync: Sendable {
     /// clock genuinely moved is believed before anyone notices.
     public static let anchorLifetime: TimeInterval = 120
 
+    /// A round trip longer than this says nothing useful: half of it is the most the
+    /// offset could be wrong by, and past a couple of seconds that's worse than the drift
+    /// being corrected for.
+    public static let maximumRoundTrip: TimeInterval = 2
+
     /// When the sample currently anchoring `offset` arrived. `nil` until the first one.
     private var anchoredAt: Date?
+
+    /// How long the round trip behind the current anchor took — its margin of error.
+    /// `.infinity` for an anchor measured the old, unverified way.
+    public private(set) var uncertainty: TimeInterval = .infinity
+
+    /// Whether the offset rests on a real round-trip measurement rather than a guess.
+    public var isVerified: Bool { uncertainty.isFinite }
+
+    /// Folds in a `pong`: a measured round trip, and therefore a *known* margin of error.
+    ///
+    /// This is the honest version of `observe(serverTime:)` below. There, the delay
+    /// between the server stamping a time and this device reading it is invisible and
+    /// gets silently charged to the offset. Here the client's own send time comes back
+    /// untouched, so the round trip is known — the server's reply is assumed to sit
+    /// halfway through it, which is wrong only by however lopsided the trip was.
+    ///
+    /// Being able to state the error is what makes this verification rather than
+    /// observation: a slow trip is *rejected* instead of quietly believed, and a better
+    /// measurement always wins over a worse one.
+    public mutating func verify(clientTime: TimeInterval, serverTime: TimeInterval,
+                                receivedAt: Date = .now) {
+        let roundTrip = receivedAt.timeIntervalSince1970 - clientTime
+        guard roundTrip >= 0, roundTrip <= Self.maximumRoundTrip else { return }
+
+        let candidate = serverTime - (clientTime + roundTrip / 2)
+        let isSharper = roundTrip <= uncertainty
+        let anchorHasAgedOut = anchoredAt.map {
+            receivedAt.timeIntervalSince($0) > Self.anchorLifetime
+        } ?? true
+
+        guard isSharper || anchorHasAgedOut else { return }
+        if abs(candidate - offset) > Self.deadband || !isVerified { offset = candidate }
+        uncertainty = roundTrip
+        anchoredAt = receivedAt
+    }
 
     public init(offset: TimeInterval = 0) {
         self.offset = offset
@@ -81,6 +121,12 @@ public struct ClockSync: Sendable {
     /// otherwise only once the current anchor has aged out, which is what still lets a
     /// server whose clock really did change be believed eventually.
     public mutating func observe(serverTime: Date, receivedAt: Date = .now) {
+        // A measured round trip beats an unmeasured one-way reading every time, so once
+        // `verify` has anchored, this only fills the gaps — and only after that anchor
+        // has aged out entirely.
+        if isVerified, let anchoredAt,
+           receivedAt.timeIntervalSince(anchoredAt) <= Self.anchorLifetime { return }
+
         let candidate = serverTime.timeIntervalSince(receivedAt)
 
         guard let anchoredAt else {
