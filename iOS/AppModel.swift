@@ -2,69 +2,33 @@ import Foundation
 import Observation
 import SwiftUI
 
-/// Wires the store to a transport and to the platform features that react to phase
-/// changes: the Live Activity, haptics, sound, and the relay down to the watch.
+/// Wires the store to the PC and to the platform features that react to phase changes:
+/// the Live Activity, haptics, sound, and the relay down to the watch.
 @MainActor
 @Observable
 public final class AppModel {
     public let store = QueueStore()
     public let catalog = CatalogService.shared
 
-    /// Which state source is in use. Persisted so a relaunch comes back the same way.
-    public enum Source: String, CaseIterable, Identifiable, Sendable {
-        case mock, server
-        public var id: String { rawValue }
-        public var displayName: String { self == .mock ? "Mock" : "PC Server" }
-    }
-
-    public var source: Source {
-        didSet {
-            guard source != oldValue else { return }
-            UserDefaults.standard.set(source.rawValue, forKey: Keys.source)
-            connect()
-        }
-    }
-
-    public var endpoint: WebSocketTransport.Endpoint {
-        didSet {
-            guard endpoint != oldValue else { return }
-            if let data = try? Wire.encoder.encode(endpoint) {
-                UserDefaults.standard.set(data, forKey: Keys.endpoint)
-            }
-            if source == .server { connect() }
-        }
-    }
-
-    /// The mock driver, kept alive across transport swaps so the debug panel can always
-    /// reach it.
-    public let mock = MockTransport()
+    /// Which PC this phone is paired with. Nil until a code is scanned — there is no
+    /// other source of state, so an unpaired app shows the pairing screen and nothing else.
+    public private(set) var pairing: Pairing?
 
     /// Bumped every time a match lands. Views observe it to fire one-shot animations
     /// without having to diff the phase themselves.
     public private(set) var matchFoundToken = 0
 
-    private enum Keys {
-        static let source = "transport.source"
-        static let endpoint = "transport.endpoint"
-    }
+    public var isPaired: Bool { pairing != nil }
 
     public init() {
-        let raw = UserDefaults.standard.string(forKey: Keys.source) ?? Source.mock.rawValue
-        source = Source(rawValue: raw) ?? .mock
-
-        if let data = UserDefaults.standard.data(forKey: Keys.endpoint),
-           let saved = try? Wire.decoder.decode(WebSocketTransport.Endpoint.self, from: data) {
-            endpoint = saved
-        } else {
-            endpoint = .init()
-        }
+        pairing = Self.launchPairing() ?? Pairing.load()
 
         store.onPhaseChange = { [weak self] previous, next in
             self?.react(from: previous, to: next)
         }
         store.onSnapshot = { [weak self] snapshot in
             guard let self else { return }
-            // The watch mirrors whatever the phone is showing, mock or real.
+            // The watch mirrors whatever the phone is showing.
             WatchLink.shared.send(snapshot: snapshot)
             // The activity gets the store's drift correction too, so its timers and its
             // wait bar run from the same origin as the ones on screen.
@@ -86,83 +50,65 @@ public final class AppModel {
             if case .selectHero(let key) = command { self?.store.select(hero: key) }
         }
         connect()
-        Task {
-            await catalog.load()
-            applyLaunchPhaseIfRequested()
-        }
+        Task { await catalog.load() }
     }
 
-    /// Jumps straight to a phase from a launch argument, e.g.
-    /// `xcrun simctl launch <device> <bundle-id> -demoPhase mapVote`.
+    // MARK: - Pairing
+
+    /// Pairs from a launch argument, so a Simulator with no camera can be pointed at a
+    /// server in one command:
     ///
-    /// Exists so a phase can be put on screen deterministically — for screenshots, for
-    /// checking a layout without playing through a queue, and for demoing the app
-    /// without a server. Waits for the catalog so map and hero phases have real content.
-    private func applyLaunchPhaseIfRequested() {
+    ///     xcrun simctl launch booted com.tomerady.OverwatchQueue \
+    ///         -pair "owq://pair?host=192.168.1.14&port=8787&token=…"
+    ///
+    /// Not persisted: this is for a run, not for the device.
+    private static func launchPairing() -> Pairing? {
         #if DEBUG
-        let args = ProcessInfo.processInfo.arguments
-        guard let flag = args.firstIndex(of: "-demoPhase"), args.count > flag + 1,
-              let kind = QueuePhase.Kind(rawValue: args[flag + 1]) else { return }
-
-        source = .mock
-        mock.reset()
-        let mode = QueueMode.competitive
-        let role = Role.tank
-
-        func searching(_ ago: TimeInterval) -> QueuePhase {
-            .searching(SearchInfo(mode: mode, role: role,
-                                  startedAt: .now.addingTimeInterval(-ago), estimatedWait: 240))
-        }
-
-        // Each jump replays the legal path to that phase, so the state machine is
-        // exercised rather than bypassed.
-        switch kind {
-        case .idle:
-            break
-        case .searching:
-            mock.apply(searching(137))
-        case .matchFound:
-            mock.apply(searching(137))
-            mock.apply(.matchFound(MatchFoundInfo(mode: mode, role: role, waited: 137,
-                                                  lockInAt: .now + 15)))
-        case .mapVote:
-            mock.apply(searching(137))
-            mock.apply(.matchFound(MatchFoundInfo(mode: mode, role: role, waited: 137,
-                                                  lockInAt: .now + 15)))
-            mock.apply(.mapVote(MapVoteInfo(options: catalog.mapVoteOptions(for: mode),
-                                            deadline: .now + 25)))
-        case .heroSelect:
-            mock.apply(searching(137))
-            mock.apply(.matchFound(MatchFoundInfo(mode: mode, role: role, waited: 137,
-                                                  lockInAt: .now + 15)))
-            mock.apply(.heroSelect(HeroSelectInfo(mode: mode, role: role,
-                                                  mapKey: catalog.maps(for: mode).randomElement()?.key,
-                                                  deadline: .now + 40)))
-        case .inGame:
-            mock.apply(searching(137))
-            mock.apply(.matchFound(MatchFoundInfo(mode: mode, role: role, waited: 137,
-                                                  lockInAt: .now + 15)))
-            mock.apply(.inGame(InGameInfo(mode: mode,
-                                          mapKey: catalog.maps(for: mode).randomElement()?.key,
-                                          heroKey: catalog.heroes(role: role, mode: mode).randomElement()?.key,
-                                          startedAt: .now.addingTimeInterval(-95))))
-        case .cancelled:
-            mock.apply(.cancelled(CancelInfo(reason: .matchCancelled)))
-        }
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let flag = arguments.firstIndex(of: "-pair"), arguments.count > flag + 1
+        else { return nil }
+        return Pairing(pairingCode: arguments[flag + 1])
+        #else
+        return nil
         #endif
     }
 
-    public func connect() {
-        switch source {
-        case .mock:
-            store.use(mock)
-        case .server:
-            let identity = ClientIdentity(kind: .phone,
-                                          name: UIDevice.current.name,
-                                          appVersion: Bundle.main.appVersion)
-            store.use(WebSocketTransport(endpoint: endpoint, identity: identity))
-        }
+    /// Accepts a scanned or pasted pairing code and connects to that PC.
+    @discardableResult
+    public func pair(with code: String) -> Bool {
+        guard let scanned = Pairing(pairingCode: code) else { return false }
+        pair(scanned)
+        return true
     }
+
+    public func pair(_ pairing: Pairing) {
+        self.pairing = pairing
+        pairing.save()
+        connect()
+    }
+
+    /// Drops the pairing and everything it was showing. The PC keeps its token, so
+    /// re-scanning the same code pairs again.
+    public func unpair() {
+        store.disconnect()
+        store.reset()
+        Pairing.forget()
+        pairing = nil
+        LiveActivityController.shared.end()
+    }
+
+    public func connect() {
+        guard let pairing else {
+            store.disconnect()
+            return
+        }
+        let identity = ClientIdentity(kind: .phone,
+                                      name: UIDevice.current.name,
+                                      appVersion: Bundle.main.appVersion)
+        store.use(WebSocketTransport(pairing: pairing, identity: identity))
+    }
+
+    // MARK: - Reactions
 
     /// Pulls the art for a phase into the cache the moment that phase starts, so tiles
     /// are already decoded by the time they animate in — the vote and hero-select windows
@@ -192,11 +138,5 @@ public final class AppModel {
         default:
             break
         }
-    }
-}
-
-public extension Bundle {
-    var appVersion: String {
-        (infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.0"
     }
 }

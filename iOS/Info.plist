@@ -39,6 +39,8 @@
 	<true/>
 	<key>NSSupportsLiveActivitiesFrequentUpdates</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Scans the pairing code shown by the queue server on your PC. The camera is used for nothing else.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Connects to the queue server running on your PC over your local network to read your Overwatch queue status.</string>
 	<key>NSAppTransportSecurity</key>

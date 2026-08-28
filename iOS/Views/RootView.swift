@@ -6,9 +6,19 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(QueueStore.self) private var store
-    @State private var showDebug = false
+    @State private var showSettings = false
 
     var body: some View {
+        if model.isPaired {
+            queue
+        } else {
+            // Nothing to show until a PC is paired: it is the only source of state.
+            PairingView()
+                .transition(.opacity)
+        }
+    }
+
+    private var queue: some View {
         ZStack {
             MeshBackground(phase: store.phase,
                            intensity: store.phase.kind == .matchFound ? 3.5 : 1)
@@ -22,9 +32,9 @@ struct RootView: View {
                 .allowsHitTesting(false)
         }
         .animation(.smooth(duration: 0.55), value: store.phase.kind)
-        .overlay(alignment: .top) { StatusBar(showDebug: $showDebug) }
-        .sheet(isPresented: $showDebug) {
-            DebugControlPanel().environment(model)
+        .overlay(alignment: .top) { StatusBar(showSettings: $showSettings) }
+        .sheet(isPresented: $showSettings) {
+            SettingsView().environment(model)
         }
     }
 
@@ -32,7 +42,7 @@ struct RootView: View {
     private var content: some View {
         switch store.phase {
         case .idle:
-            IdleView(showDebug: $showDebug)
+            IdleView()
         case .searching(let info):
             SearchingView(info: info)
         case .matchFound(let info):
@@ -49,12 +59,11 @@ struct RootView: View {
     }
 }
 
-/// A thin always-present header: where state is coming from, and the way into the
-/// debug controls.
+/// A thin always-present header: whether the PC is talking, and the way into settings.
 private struct StatusBar: View {
     @Environment(AppModel.self) private var model
     @Environment(QueueStore.self) private var store
-    @Binding var showDebug: Bool
+    @Binding var showSettings: Bool
 
     var body: some View {
         HStack(spacing: 8) {
@@ -62,14 +71,14 @@ private struct StatusBar: View {
                 .foregroundStyle(store.status.isLive ? Palette.support : Palette.neutral)
                 .font(.caption)
 
-            Text(model.source == .mock ? "Mock" : store.status.displayText)
+            Text(store.status.displayText)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(Palette.white.opacity(0.65))
 
             Spacer()
 
             Button {
-                showDebug = true
+                showSettings = true
             } label: {
                 Image(systemName: "slider.horizontal.3")
                     .font(.footnote.weight(.semibold))
@@ -86,7 +95,7 @@ private struct StatusBar: View {
 // MARK: - Idle
 
 struct IdleView: View {
-    @Binding var showDebug: Bool
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         VStack(spacing: 20) {
@@ -105,10 +114,12 @@ struct IdleView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 48)
 
-            Button("Open Controls") { showDebug = true }
-                .buttonStyle(.borderedProminent)
-                .tint(Palette.orange)
-                .padding(.top, 8)
+            if let pairing = model.pairing {
+                Label(pairing.displayText, systemImage: "desktopcomputer")
+                    .font(.footnote)
+                    .foregroundStyle(Palette.white.opacity(0.35))
+                    .padding(.top, 6)
+            }
         }
     }
 }

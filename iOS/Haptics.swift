@@ -75,4 +75,9 @@ public enum Haptics {
     public static func selection() {
         UISelectionFeedbackGenerator().selectionChanged()
     }
+
+    /// Something didn't work — a code that isn't ours, an empty clipboard.
+    public static func warning() {
+        UINotificationFeedbackGenerator().notificationOccurred(.warning)
+    }
 }

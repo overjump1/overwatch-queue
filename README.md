@@ -4,11 +4,20 @@ Your Overwatch queue on your iPhone and Apple Watch: which mode you're in, how l
 waited, and a loud, unmissable moment when a match lands — then map vote and hero pick from
 the phone or the wrist.
 
-A server on your Windows PC will eventually report the real state. It doesn't exist yet, so
-the app ships with a **mock driver you control by hand**, and a WebSocket driver already
-wired behind the same interface for when the PC side is ready.
+The state comes from a server on your PC. Reading it out of the running game is still to
+come — until then the same server hands you a control panel and you drive the queue by
+hand, over the real socket, into the real app.
 
 ## Running it
+
+Start the server on your PC:
+
+```bash
+pip install -r server/requirements.txt
+python3 server/run.py
+```
+
+Then the app:
 
 ```bash
 open OverwatchQueue.xcodeproj
@@ -23,52 +32,54 @@ From the command line:
 xcodebuild -project OverwatchQueue.xcodeproj -scheme OverwatchQueue -destination 'platform=iOS Simulator,name=iPhone 16 Pro' CODE_SIGNING_ALLOWED=NO build
 ```
 
-## Driving it by hand
+## Pairing
 
-Tap the slider icon, top right. The debug panel pushes real events through the real
-transport into the real store — what you see is exactly what the app will do when those
-events arrive from a socket instead.
+The server window shows a QR code. Point the app at it — that's the whole of setup.
 
-- **Queue** — mode, role, estimated wait, and *Skip ahead 1/5 minutes* to see a long wait
-  without waiting for one
-- **Jump to phase** — Match Found → Map Vote → Hero Select → In Game. Steps that aren't
-  legal from the current phase are greyed out, using the same transition rules the real
-  server has to follow
-- **Scenarios** — scripted timelines that play out on a timer, so you can watch the real
-  transitions and animations end to end
-- **Sent upstream** — the commands your PC server would have received
-- **Art cache** — how much art is cached, and a button to clear it
+Behind the code is a random token the PC keeps. Every device sends it back on connect, and
+a connection that doesn't present it is closed: a LAN is not a private place, and nobody
+else on your Wi-Fi should be able to drive the screen on your wrist.
 
-Everything you trigger mirrors to the watch and to the Live Activity.
-
-There's also a launch argument for jumping straight to a phase, on both platforms:
+A Simulator has no camera, so press **Copy pairing link** and paste it in the app — or
+hand it over at launch:
 
 ```bash
-xcrun simctl launch booted com.tomerady.OverwatchQueue -demoPhase heroSelect
+xcrun simctl launch booted com.tomerady.OverwatchQueue \
+    -pair "owq://pair?host=127.0.0.1&port=8787&token=<token>"
 ```
 
-`idle` · `searching` · `matchFound` · `mapVote` · `heroSelect` · `inGame` · `cancelled`.
+## Driving it by hand
 
-## Connecting it to your PC
+Everything that used to be an in-app debug panel now lives in the server window, at the
+end of the wire where the real thing will be: mode and role, estimated wait, *Skip ahead*
+to see a long queue without waiting for one, jumps between phases, and scripted scenarios
+that play out on a timer. Illegal steps are greyed out, using the same transition rules
+the app enforces on the way in.
 
-Switch **State from** to *PC Server* in the debug panel and enter your PC's LAN address.
+Everything you trigger reaches the phone, the watch, the Live Activity and the widgets
+together. See **[server/README.md](server/README.md)**.
+
+## The wire
+
 The client connects to `ws://<host>:<port>/queue`, reconnects on its own with backoff, and
 corrects every timer for clock drift between your PC and your phone.
 
-Write the server against **[docs/PROTOCOL.md](docs/PROTOCOL.md)** — it documents every
-message with samples taken directly from the app's encoder, and `Tests/WireFormatTests.swift`
-fails if the format ever drifts from that document.
+**[docs/PROTOCOL.md](docs/PROTOCOL.md)** documents every message with samples taken
+directly from the app's encoder. `Tests/WireFormatTests.swift` fails if the Swift side
+ever drifts from that document, and `server/tests/test_protocol.py` fails if the Python
+side does.
 
 ## Layout
 
 ```
-Shared/       Model, wire protocol, transports, catalog, store, design components
+Shared/       Model, wire protocol, transport, pairing, catalog, store, design components
               — compiled into every target
-iOS/          The phone app, Live Activity controller, haptics, sound, debug panel
+iOS/          The phone app, Live Activity controller, haptics, sound, pairing screen
 Widgets/      Live Activity (Lock Screen + Dynamic Island), Home Screen / StandBy widget
 Watch/        The watch app
 WatchWidgets/ Smart Stack accessory
-Tests/        Wire format, transition rules, clock sync, catalog schema
+Tests/        Wire format, pairing codes, transition rules, clock sync, catalog schema
+server/       The PC server and its control panel — Python
 tools/        Project generator, catalog refresh
 docs/         PROTOCOL.md, ASSETS.md
 ```
@@ -96,6 +107,11 @@ allowed to rewind the UI.
 
 **Art is referenced, not bundled** — and cached in memory and on disk so it loads once.
 See [docs/ASSETS.md](docs/ASSETS.md), including how to drop in your own images per hero or map.
+
+**One token, no transport security.** The socket carries which mode you queued for, and
+it never leaves your LAN. A token in a QR code is enough to stop a flatmate driving your
+watch; TLS would mean issuing certificates for a machine with no name, to protect
+something nobody wants.
 
 **There is no Accept button.** Overwatch 2 has no accept prompt — it just puts you in. The
 only real action is a best-effort cancel, offered quietly rather than as a primary button
