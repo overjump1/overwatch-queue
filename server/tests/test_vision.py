@@ -152,6 +152,75 @@ class ClickConfidenceTests(unittest.TestCase):
         self.assertLess(weak.score, vision.CLICK_MIN_SCORE)
 
 
+@unittest.skipUnless(vision.VISION_AVAILABLE, "vision extras aren't installed")
+class SlotIdentityTests(unittest.TestCase):
+    """A slot names a hero only when one wins it clearly.
+
+    The bug this guards: a slot showing Wuyang read as Junker Queen at 0.62, with
+    Brigitte 0.04 behind and the right answer nowhere near the top. Score alone accepted
+    it; the gap is what gives it away.
+    """
+
+    class _Store:
+        """Templates that are whatever the test says they are."""
+
+        def __init__(self, templates):
+            self._templates = templates
+
+        def template(self, key):
+            return self._templates.get(key)
+
+    # Catalog portraits are 256 square, and `best_match` shrinks them by SLOT_SCALES
+    # before searching, so a fixture only behaves like the real thing at that size.
+    TEMPLATE_SIZE = 256
+
+    def _noise(self, seed, size=TEMPLATE_SIZE, cells=8):
+        """A portrait stand-in built from big blocks rather than per-pixel noise.
+
+        Slot matching shrinks the template before comparing, and fine noise simply does
+        not survive that — a template scored 0.04 against a resized copy of itself, and
+        the averaging flattened the patch below the empty-slot variance test too. Coarse
+        blocks behave the way real art does under the same resize.
+        """
+        import cv2
+        import numpy as np
+        blocks = np.random.default_rng(seed).integers(0, 255, (cells, cells), dtype=np.uint8)
+        return cv2.resize(blocks, (size, size), interpolation=cv2.INTER_NEAREST)
+
+    def _screen_with(self, template):
+        """A full-size screen showing `template` in the first slot, sized the way a real
+        slot portrait is relative to its catalog art."""
+        import cv2
+        import numpy as np
+        screen = np.zeros((1440, 2560), dtype=np.uint8)
+        x0, y0, x1, y1 = vision.slot_region(0, screen)
+        side = min(x1 - x0, y1 - y0)
+        drawn = cv2.resize(template, (side, side), interpolation=cv2.INTER_AREA)
+        screen[y0:y0 + side, x0:x0 + side] = drawn
+        return screen
+
+    def test_a_clear_winner_is_reported(self):
+        hero = self._noise(seed=1)
+        screen = self._screen_with(hero)
+        store = self._Store({"tracer": hero, "bastion": self._noise(seed=2)})
+        picks = vision.scan_player_slots(screen, store, ["tracer", "bastion"])
+        self.assertEqual([(p.slot, p.hero_key) for p in picks], [(1, "tracer")])
+
+    def test_a_near_tie_is_reported_as_empty(self):
+        """Two templates that score alike on the same patch is the shape of nothing
+        matching. Naming either one would be a guess."""
+        hero = self._noise(seed=3)
+        store = self._Store({"a": hero, "b": hero})       # identical: a dead heat
+        picks = vision.scan_player_slots(self._screen_with(hero), store, ["a", "b"])
+        self.assertEqual(picks, [])
+
+    def test_the_margin_is_wide_enough_to_matter(self):
+        """0.04 was the measured gap on every wrong reading; the threshold has to sit
+        above it, and below the 0.235 a correct one produced."""
+        self.assertGreater(vision.SLOT_MARGIN, 0.04)
+        self.assertLess(vision.SLOT_MARGIN, 0.235)
+
+
 class WireFormatTests(unittest.TestCase):
     def test_a_scan_free_phase_carries_neither_new_field(self):
         """Absent, not empty. Empty would tell the app the roster is genuinely empty and

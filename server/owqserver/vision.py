@@ -34,6 +34,8 @@ are expected to check it and fall back to driving the queue by hand.
 """
 from __future__ import annotations
 
+import ctypes
+import os
 import time
 
 try:                                    # pragma: no cover - trivial import guard
@@ -49,6 +51,9 @@ except ImportError:                     # pragma: no cover - the Mac dev path
 
 WINDOW_TITLE = "Overwatch"
 FOCUS_SETTLE_SECONDS = 0.5
+# A window doesn't always come forward first time — the game may be mid-frame, or the
+# panel may still be releasing focus. Worth a couple of tries before giving up on it.
+FOCUS_ATTEMPTS = 3
 
 # Fractions of the monitor rather than pixels, so a different resolution doesn't need a
 # different build. Calibrated against a 2560x1440 capture of the hero-select screen.
@@ -110,10 +115,28 @@ EMPTY_STD_THRESHOLD = 50.0
 # names go straight to the watch, so a slot we can't read confidently is better reported
 # as empty than as somebody.
 SLOT_MIN_SCORE = 0.55
+# ...and one hero has to win the slot clearly, not narrowly.
+#
+# A score on its own turned out to be the wrong question. Reading a slot showing Wuyang,
+# the best match was Junker Queen at 0.62 — over any sane threshold — with Brigitte right
+# behind at 0.58, and the correct hero nowhere in the top three. What separates that from
+# a real reading isn't the score, it's the gap: a genuine identification wins by a mile
+# (Tracer, correctly read, scored 0.69 with the runner-up at 0.46) while every wrong one
+# measured here won by about 0.04, because nothing actually matched and the field was a
+# pile of near-ties.
+#
+# The own slot is the hard case — it carries a coloured frame, a rank badge and a name
+# over the portrait — and it is also the one whose hero the server usually knows anyway.
+# So an ambiguous slot is reported as empty. A missing teammate is a gap on the watch; a
+# wrongly-named one is a lie about the team you're about to play with.
+SLOT_MARGIN = 0.10
 
 NUDGE_PRESSES = 3
 NUDGE_SETTLE_SECONDS = 0.35
-MENU_SETTLE_SECONDS = 0.6
+# The hero list animates in, and a slot read during that animation is a read of a
+# half-drawn portrait. The margin check below makes such a read come back empty rather
+# than wrong, so this is about not wasting the look, not about safety.
+MENU_SETTLE_SECONDS = 0.9
 CLICK_SETTLE_SECONDS = 0.4
 # The click only highlights; space confirms. Long enough for the game to paint the
 # highlight before the key lands, or the confirm applies to whoever was highlighted before.
@@ -190,32 +213,78 @@ class ScanResult:
 
 # ---------------------------------------------------------------- the window
 
+def _game_window():
+    """The game's window — specifically not this server's own.
+
+    `getWindowsWithTitle` matches on substring, and the control panel is called "Overwatch
+    Queue Server", so asking for "Overwatch" cheerfully returns the panel too. Taking the
+    first match meant sometimes "focusing" our own window and then reading it: the panel
+    covers the middle of the screen, the player-slot row lands squarely on its buttons, and
+    the matcher dutifully reported a lobby full of heroes that were really list items. Only
+    an exact title will do, and nothing rather than a guess.
+    """
+    try:
+        candidates = pygetwindow.getWindowsWithTitle(WINDOW_TITLE)
+    except Exception:                   # pragma: no cover - platform-specific failure
+        return None
+    for window in candidates:
+        if (window.title or "").strip() == WINDOW_TITLE:
+            return window
+    return None
+
+
+def _foreground_is_game() -> bool:
+    try:
+        active = pygetwindow.getActiveWindow()
+    except Exception:                   # pragma: no cover - platform-specific failure
+        return False
+    return active is not None and (active.title or "").strip() == WINDOW_TITLE
+
+
+def _raise_window(window):
+    """`activate()` reports success on Windows while quietly doing nothing — measured
+    returning True with the panel still frontmost. Going through user32 directly does
+    work, and is allowed here because the process asking already owns the foreground."""
+    if os.name == "nt":
+        user32 = ctypes.windll.user32
+        user32.ShowWindow(window._hWnd, 9)          # SW_RESTORE
+        user32.SetForegroundWindow(window._hWnd)
+    else:                                           # pragma: no cover - not the target OS
+        window.activate()
+
+
 def focus_game_window(log=None) -> bool:
-    """Brings Overwatch to the front. Everything below reads the screen and sends real
-    clicks and keystrokes, so they land wherever the focus is — which is the terminal or
-    the control panel unless this has run first."""
+    """Brings Overwatch to the front, and says so honestly.
+
+    Everything below reads the screen and sends real clicks and keystrokes, so they land
+    on whatever is actually in front. Returning True while the game is still buried is
+    how a scan ends up describing the control panel and a click ends up in it, so this
+    checks that the game really came forward and returns False when it didn't — leaving
+    callers to decline rather than act on a covered screen.
+    """
     if not VISION_AVAILABLE:
         return False
     log = log or (lambda message: None)
-    try:
-        matches = pygetwindow.getWindowsWithTitle(WINDOW_TITLE)
-    except Exception as problem:        # pragma: no cover - platform-specific failure
-        log("Couldn't look for the Overwatch window: %s" % problem)
-        return False
-    if not matches:
+
+    window = _game_window()
+    if window is None:
         log("No Overwatch window is open.")
         return False
 
-    window = matches[0]
-    try:
-        if window.isMinimized:
-            window.restore()
-        window.activate()
-    except Exception as problem:        # pragma: no cover - platform-specific failure
-        log("Couldn't focus the Overwatch window: %s" % problem)
-        return False
-    time.sleep(FOCUS_SETTLE_SECONDS)
-    return True
+    for _ in range(FOCUS_ATTEMPTS):
+        try:
+            if window.isMinimized:
+                window.restore()
+            _raise_window(window)
+        except Exception as problem:    # pragma: no cover - platform-specific failure
+            log("Couldn't focus the Overwatch window: %s" % problem)
+            return False
+        time.sleep(FOCUS_SETTLE_SECONDS)
+        if _foreground_is_game():
+            return True
+
+    log("Overwatch wouldn't come to the front — nothing read from here would be the game.")
+    return False
 
 
 def capture():
@@ -323,16 +392,26 @@ def scan_player_slots(gray, templates, hero_keys) -> list:
         if patch.size == 0 or float(patch.std()) < EMPTY_STD_THRESHOLD:
             continue
 
-        best_key, best_score = None, -1.0
+        best_key, best_score, runner_up = None, -1.0, -1.0
         for key in hero_keys:
             template = templates.template(key)
             if template is None:
                 continue
             hit = best_match(patch, template, scales=SLOT_SCALES, downscale=1.0)
-            if hit and hit[0] > best_score:
-                best_key, best_score = key, hit[0]
-        if best_key and best_score >= SLOT_MIN_SCORE:
-            picks.append(SlotPick(index + 1, best_key, best_score))
+            if not hit:
+                continue
+            if hit[0] > best_score:
+                best_key, best_score, runner_up = key, hit[0], best_score
+            elif hit[0] > runner_up:
+                runner_up = hit[0]
+
+        if best_key is None or best_score < SLOT_MIN_SCORE:
+            continue
+        if best_score - runner_up < SLOT_MARGIN:
+            # A near-tie is the shape of nothing matching, not of a close call between two
+            # heroes who happen to look alike. Leaving the slot empty is the honest read.
+            continue
+        picks.append(SlotPick(index + 1, best_key, best_score))
     return picks
 
 
