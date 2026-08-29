@@ -34,6 +34,15 @@ public final class QueueStore {
     private var pendingActivityPushToken: (sessionID: UUID, token: String, environment: PushEnvironment)?
     /// The app-level push-to-start token — independent of any one session.
     private var pendingActivityStartToken: (token: String, environment: PushEnvironment)?
+    /// Commands that arrived with no live socket to carry them. The case this exists for
+    /// is the watch: `transferUserInfo` wakes the phone in the background, long after the
+    /// socket was torn down, so a pick made on the wrist would otherwise be handed to a
+    /// dead transport and vanish. Unlike the registrations above these are sent once and
+    /// cleared, not re-offered on every connect.
+    private var pendingCommands: [ClientCommand] = []
+    /// A pick the player has since replaced isn't worth delivering, and a queue that only
+    /// ever grows is worse than a dropped command. Only the newest few survive.
+    private static let maxPendingCommands = 8
 
     public var phase: QueuePhase { snapshot.phase }
 
@@ -53,6 +62,7 @@ public final class QueueStore {
             self?.status = status
             if status.isLive {
                 self?.sendPendingRegistrations()
+                self?.sendPendingCommands()
                 self?.syncClock()
             }
         }
@@ -141,6 +151,30 @@ public final class QueueStore {
         guard status.isLive else { return }
         transport?.send(.diagnostic(message()))
         #endif
+    }
+
+    /// Sends now if there's a live socket, and otherwise holds on to it until there is.
+    ///
+    /// Callers that reach the store from a background wake-up should ask for a connection
+    /// first — this only promises the command won't be dropped on the floor, not that
+    /// anything is currently trying to reconnect.
+    public func send(_ command: ClientCommand) {
+        guard status.isLive else {
+            pendingCommands.append(command)
+            if pendingCommands.count > Self.maxPendingCommands {
+                pendingCommands.removeFirst(pendingCommands.count - Self.maxPendingCommands)
+            }
+            return
+        }
+        transport?.send(command)
+    }
+
+    private func sendPendingCommands() {
+        guard status.isLive, !pendingCommands.isEmpty else { return }
+        // Cleared before sending, so a status change re-entering this can't send them twice.
+        let commands = pendingCommands
+        pendingCommands = []
+        for command in commands { transport?.send(command) }
     }
 
     private func sendPendingRegistrations() {
@@ -232,7 +266,7 @@ public final class QueueStore {
             info.myVote = key
             snapshot = snapshot.advanced(to: .mapVote(info), now: clock.remoteNow())
         }
-        transport?.send(.voteMap(mapKey: key))
+        send(.voteMap(mapKey: key))
     }
 
     public func select(hero key: String) {
@@ -240,12 +274,12 @@ public final class QueueStore {
             info.myHeroKey = key
             snapshot = snapshot.advanced(to: .heroSelect(info), now: clock.remoteNow())
         }
-        transport?.send(.selectHero(heroKey: key))
+        send(.selectHero(heroKey: key))
     }
 
     /// Leaves the queue, or tries to bail out of a match that's already been found.
     /// The latter is not guaranteed to work — see `ClientCommand.cancelQueue`.
-    public func cancelQueue() { transport?.send(.cancelQueue) }
+    public func cancelQueue() { send(.cancelQueue) }
     public func requestRefresh() { transport?.send(.requestSnapshot) }
 
     // MARK: - Derived values
