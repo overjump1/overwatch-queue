@@ -28,7 +28,7 @@ public final class QueueStore {
     /// Set once this device has an APNs token to offer. Kept here, not in the transport,
     /// because it has to survive a transport being swapped out (relay → direct, or a
     /// fresh pairing) and resent to whichever one connects next.
-    private var pendingPushToken: (token: String, environment: PushEnvironment)?
+    private var pendingPushToken: (token: String, environment: PushEnvironment, kind: ClientIdentity.Kind)?
     /// The push token for whichever Live Activity is currently running, if any — one per
     /// session, replaced wholesale when a new activity starts.
     private var pendingActivityPushToken: (sessionID: UUID, token: String, environment: PushEnvironment)?
@@ -63,8 +63,9 @@ public final class QueueStore {
     /// Registers this device's APNs token with whichever transport is live — resent
     /// automatically on every future (re)connect, since a relay swap or a fresh pairing
     /// means a new socket that has never heard about it.
-    public func registerPushToken(_ token: String, environment: PushEnvironment) {
-        pendingPushToken = (token, environment)
+    public func registerPushToken(_ token: String, environment: PushEnvironment,
+                                 kind: ClientIdentity.Kind) {
+        pendingPushToken = (token, environment, kind)
         sendPendingRegistrations()
     }
 
@@ -145,7 +146,9 @@ public final class QueueStore {
     private func sendPendingRegistrations() {
         guard status.isLive else { return }
         if let pending = pendingPushToken {
-            transport?.send(.registerPushToken(token: pending.token, environment: pending.environment))
+            transport?.send(.registerPushToken(token: pending.token,
+                                              environment: pending.environment,
+                                              kind: pending.kind))
         }
         if let pending = pendingActivityPushToken {
             transport?.send(.registerActivityPushToken(sessionID: pending.sessionID, token: pending.token,

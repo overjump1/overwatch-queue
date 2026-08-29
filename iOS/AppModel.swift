@@ -134,7 +134,7 @@ public final class AppModel {
     }
 
     public func didReceive(deviceToken: Data) {
-        store.registerPushToken(deviceToken.hexEncoded, environment: .current)
+        store.registerPushToken(deviceToken.hexEncoded, environment: .current, kind: .phone)
     }
 
     /// A background push arrived. The system gives a background launch only a short window

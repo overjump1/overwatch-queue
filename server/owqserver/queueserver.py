@@ -369,7 +369,8 @@ class QueueServer:
         elif kind == "cancelQueue":
             self._cancel(client)
         elif kind == "registerPushToken":
-            self._register_push_token(client, data.get("token"), data.get("environment"))
+            self._register_push_token(client, data.get("token"), data.get("environment"),
+                                      data.get("kind"))
         elif kind == "registerActivityPushToken":
             self._register_activity_push_token(
                 data.get("sessionID"), data.get("token"), data.get("environment"))
@@ -425,12 +426,19 @@ class QueueServer:
         self.log("%s picked %s" % (client.name, self.catalog.name_for_hero(hero_key)))
         self._changed()
 
-    def _register_push_token(self, client, token, environment):
-        kind = (client.identity or {}).get("kind")
+    def _register_push_token(self, client, token, environment, kind=None):
+        # The device says which it is, and that is believed over the identity of the
+        # socket it arrived on. A watch with no connection of its own registers through
+        # the paired iPhone, so the socket here is the phone's — reading the kind from it
+        # would file the watch's token under `phone`, on top of the phone's own, and leave
+        # both devices unreachable. `kind` is absent from older clients, which only ever
+        # registered over their own socket, so falling back to the identity is right.
+        if kind not in ("phone", "watch"):
+            kind = (client.identity or {}).get("kind")
         if kind not in ("phone", "watch") or not token or environment not in ("sandbox", "production"):
             return
         self.push_tokens.register(kind, token, environment)
-        self.log("%s registered for push notifications" % client.name)
+        self.log("%s registered %s for push notifications" % (client.name, kind))
 
     def _register_activity_push_token(self, session_id, token, environment):
         if not session_id or not token or environment not in ("sandbox", "production"):

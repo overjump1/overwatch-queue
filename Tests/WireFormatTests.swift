@@ -60,7 +60,7 @@ final class WireFormatTests: XCTestCase {
             .selectHero(heroKey: "ana"),
             .cancelQueue,
             .requestSnapshot,
-            .registerPushToken(token: "5fceb98...", environment: .sandbox),
+            .registerPushToken(token: "5fceb98...", environment: .sandbox, kind: .watch),
             .registerActivityPushToken(sessionID: UUID(uuidString: "3F2504E0-4F89-41D3-9A0C-0305E82C3301")!,
                                        token: "activity-token", environment: .sandbox),
             .registerActivityStartToken(token: "start-token", environment: .production),
@@ -112,6 +112,6 @@ final class WireFormatTests: XCTestCase {
         print("SAMPLE voteMap: \(try json(ClientCommand.voteMap(mapKey: "ilios")))")
         print("SAMPLE selectHero: \(try json(ClientCommand.selectHero(heroKey: "reinhardt")))")
         print("SAMPLE cancelQueue: \(try json(ClientCommand.cancelQueue))")
-        print("SAMPLE registerPushToken: \(try json(ClientCommand.registerPushToken(token: "5fceb98...", environment: .sandbox)))")
+        print("SAMPLE registerPushToken: \(try json(ClientCommand.registerPushToken(token: "5fceb98...", environment: .sandbox, kind: .watch)))")
     }
 }

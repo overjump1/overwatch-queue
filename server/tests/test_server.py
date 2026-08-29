@@ -195,6 +195,34 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(client.receive()["body"]["data"]["code"], "unpaired")
         self.assertIsNone(self.server.push_tokens.get("phone"))
 
+    def test_a_relayed_watch_token_is_not_filed_under_the_phone(self):
+        # The watch has no socket of its own, so this arrives over the iPhone's. Reading
+        # the kind from the connection would put the watch's token on top of the phone's
+        # and leave both unreachable.
+        client = self.connect()
+        client.send(hello())
+        client.receive()
+        client.send({"v": 1, "body": {"type": "registerPushToken",
+                                      "data": {"token": "phone-token",
+                                               "environment": "sandbox", "kind": "phone"}}})
+        client.send({"v": 1, "body": {"type": "registerPushToken",
+                                      "data": {"token": "watch-token",
+                                               "environment": "sandbox", "kind": "watch"}}})
+        time.sleep(0.05)
+        self.assertEqual(self.server.push_tokens.get("phone"), ("phone-token", "sandbox"))
+        self.assertEqual(self.server.push_tokens.get("watch"), ("watch-token", "sandbox"))
+
+    def test_a_token_without_a_kind_falls_back_to_the_connection(self):
+        # Older clients only ever registered over their own socket, so the identity there
+        # is the right answer for them.
+        client = self.connect()
+        client.send(hello())
+        client.receive()
+        client.send({"v": 1, "body": {"type": "registerPushToken",
+                                      "data": {"token": "abc123", "environment": "sandbox"}}})
+        time.sleep(0.05)
+        self.assertEqual(self.server.push_tokens.get("phone"), ("abc123", "sandbox"))
+
     def test_ping_is_answered_with_the_clients_own_time_untouched(self):
         client = self.connect()
         client.send(hello())

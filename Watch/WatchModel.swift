@@ -91,7 +91,7 @@ public final class WatchModel {
     }
 
     public func didReceive(deviceToken: Data) {
-        store.registerPushToken(deviceToken.hexEncoded, environment: .current)
+        store.registerPushToken(deviceToken.hexEncoded, environment: .current, kind: .watch)
     }
 
     /// A background push arrived: make sure a connection is live and ask for the truth.

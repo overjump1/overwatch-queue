@@ -237,7 +237,7 @@ Sent when the player acts on the phone or the watch.
 {"v":1,"body":{"type":"selectHero","data":{"heroKey":"reinhardt"}}}
 {"v":1,"body":{"type":"cancelQueue"}}
 {"v":1,"body":{"type":"requestSnapshot"}}
-{"v":1,"body":{"type":"registerPushToken","data":{"token":"5fceb98...","environment":"sandbox"}}}
+{"v":1,"body":{"type":"registerPushToken","data":{"token":"5fceb98...","environment":"sandbox","kind":"watch"}}}
 {"v":1,"body":{"type":"registerActivityPushToken","data":{"sessionID":"3F2504E0-4F89-41D3-9A0C-0305E82C3301","token":"activity-token...","environment":"sandbox"}}}
 {"v":1,"body":{"type":"registerActivityStartToken","data":{"token":"start-token...","environment":"sandbox"}}}
 {"v":1,"body":{"type":"ping","data":{"clientTime":1700000000.123}}}
@@ -264,6 +264,12 @@ the server's version.
 separate push hosts for each, and a token is only valid against the one it was issued for.
 Sent once per launch, right after `hello`; re-sending overwrites whatever this `kind`
 registered before.
+
+`kind` says which device the token belongs to, and is **not** the same as the identity in
+this connection's `hello`. A watch with no socket of its own registers through the paired
+iPhone, so the arriving connection is the phone's — trust `kind` over it, or the watch's
+token lands under `phone`, on top of the phone's own, and neither device can be reached.
+Fall back to the connection's identity when `kind` is absent.
 
 `registerActivityPushToken` hands over the push token for one running Live Activity —
 what `Activity.pushTokenUpdates` yields once the phone starts it with `pushType: .token`.
