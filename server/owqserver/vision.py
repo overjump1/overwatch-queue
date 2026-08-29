@@ -3,7 +3,7 @@
 This is the first piece of the server that looks at the real game rather than waiting for
 someone to press a button. It answers two questions about the "Select a Hero" screen —
 which heroes are on the roster and where each one sits, and what every player has picked
-so far — and it can act on the first answer by double-clicking a hero into place.
+so far — and it can act on the first answer by clicking a hero and confirming it.
 
 How it recognises a hero: `cv2.matchTemplate` with `TM_CCOEFF_NORMED`, sliding each
 hero's catalog portrait over the screenshot and scoring how well the pixels line up. That
@@ -98,6 +98,9 @@ NUDGE_PRESSES = 3
 NUDGE_SETTLE_SECONDS = 0.35
 MENU_SETTLE_SECONDS = 0.6
 CLICK_SETTLE_SECONDS = 0.4
+# The click only highlights; space confirms. Long enough for the game to paint the
+# highlight before the key lands, or the confirm applies to whoever was highlighted before.
+HIGHLIGHT_SETTLE_SECONDS = 0.25
 
 
 class RosterHit:
@@ -392,14 +395,23 @@ def reopen_hero_menu():
 
 # ---------------------------------------------------------------- acting
 
-def double_click(point: tuple):
+def click_and_confirm(point: tuple):
+    """Highlights the hero with a click, then locks it in with space.
+
+    A synthetic double-click is the obvious way to do this and it doesn't take: the game
+    reads the two presses as separate clicks rather than one gesture, so the icon is left
+    highlighted and never confirmed. Clicking once and pressing the confirm key is the same
+    two steps the menu offers a person, and each half lands on its own terms.
+    """
     pyautogui.moveTo(point[0], point[1])
-    pyautogui.doubleClick()
+    pyautogui.click()
+    time.sleep(HIGHLIGHT_SETTLE_SECONDS)
+    pyautogui.press("space")
     time.sleep(CLICK_SETTLE_SECONDS)
 
 
 def select_hero(templates, hero_keys, hero_key: str, roster=None, log=None) -> bool:
-    """Puts the player on `hero_key` by double-clicking its icon.
+    """Puts the player on `hero_key` by clicking its icon and confirming.
 
     `roster` is the last scan's positions, reused when it has what we need so a pick
     doesn't pay for a fresh scan. When it doesn't — most often because a hero is already
@@ -428,5 +440,5 @@ def select_hero(templates, hero_keys, hero_key: str, roster=None, log=None) -> b
         log("Couldn't find %s on screen" % hero_key)
         return False
 
-    double_click(hit.center)
+    click_and_confirm(hit.center)
     return True

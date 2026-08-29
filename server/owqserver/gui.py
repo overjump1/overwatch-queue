@@ -327,7 +327,7 @@ class ControlPanel(QMainWindow):
 
         if vision.VISION_AVAILABLE:
             note = ("Hero select scans the roster and everyone's pick, and a pick from the "
-                    "phone double-clicks it in-game. Both take the mouse.")
+                    "phone clicks it in-game and confirms. Both take the mouse.")
         else:
             note = ("Not installed here — see server/requirements.txt. Hero select stays "
                     "hand-driven.")

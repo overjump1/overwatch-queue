@@ -401,7 +401,7 @@ class QueueServer:
         """Puts the game on `hero_key`, then re-reads the slots to see if it took.
 
         Runs on its own thread — see `_select_hero`. The re-scan is the honest part: the
-        double-click is a guess that the icon is where we last saw it, and looking again
+        click is a guess that the icon is where we last saw it, and looking again
         is what turns that into something worth telling the phone.
         """
         if not vision.focus_game_window(log=lambda message: self.log(message)):
