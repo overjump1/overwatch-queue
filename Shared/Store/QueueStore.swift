@@ -280,10 +280,34 @@ public final class QueueStore {
     }
 
     /// Heroes offered in the current hero-select, minus ones teammates already locked.
+    ///
+    /// When the server has actually read the roster off the screen, that reading wins over
+    /// the catalog: it is the only source that knows what this particular queue is
+    /// offering. `availableHeroKeys` being nil means nobody looked — not that the roster
+    /// is empty — so the catalog is used unfiltered in that case.
     public func selectableHeroes() -> [Hero] {
         guard case .heroSelect(let info) = phase else { return [] }
         let taken = Set(info.takenHeroKeys)
-        return catalog.heroes(role: info.role, mode: info.mode)
+        let heroes = catalog.heroes(role: info.role, mode: info.mode)
             .filter { !taken.contains($0.key) }
+        guard let available = info.availableHeroKeys else { return heroes }
+        let onScreen = Set(available)
+        let seen = heroes.filter { onScreen.contains($0.key) }
+        // A scan that recognised nothing shouldn't blank the screen — better the full
+        // catalog than an empty grid the player can't pick from.
+        return seen.isEmpty ? heroes : seen
+    }
+
+    /// Everyone's pick, as the server last read it off the screen, in slot order.
+    ///
+    /// Empty when the server hasn't looked. Slot numbers are screen positions, not roles:
+    /// role queue orders them by role, so the player isn't reliably first — `isSelf` is
+    /// what marks our own pick, and nothing marks it when the scan couldn't tell.
+    public func teamPicks() -> [(pick: TeamPick, hero: Hero)] {
+        guard case .heroSelect(let info) = phase, let picks = info.teamPicks else { return [] }
+        return picks.sorted { $0.slot < $1.slot }.compactMap { pick in
+            guard let hero = catalog.hero(pick.heroKey) else { return nil }
+            return (pick, hero)
+        }
     }
 }

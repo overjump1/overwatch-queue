@@ -65,14 +65,34 @@ class Controls:
         if kind == "mapVote":
             return protocol.map_vote(catalog.map_vote_options(mode), 25)
         if kind == "heroSelect":
-            heroes = [hero["key"] for hero in catalog.heroes_for(role, mode)]
-            taken = random.sample(heroes, min(3, len(heroes)))
-            return protocol.hero_select(mode, role, self.map_key(), 40, taken)
+            return self.hero_select_phase()
         if kind == "inGame":
             return protocol.in_game(mode, self.map_key(), self.hero_key())
         if kind == "cancelled":
             return protocol.cancelled("matchCancelled")
         raise ValueError("no such phase: %s" % kind)
+
+    def hero_select_phase(self) -> dict:
+        """Hero select, read off the screen when the game is there to be read.
+
+        This is the one phase that has a real answer available: the roster is on screen,
+        and so is everyone's pick. `QueueServer.scan_hero_select` looks, and returns None
+        when it can't — no game, no window, or a machine without the vision extras — in
+        which case we fall back to the old behaviour of naming a few plausible heroes so
+        the panel still demonstrates the phase.
+        """
+        mode, role = self.mode, self.effective_role
+        scan = self.server.scan_hero_select()
+        if scan:
+            return protocol.hero_select(
+                mode, role, self.map_key(), 40,
+                taken=scan.taken_hero_keys(self.hero_key()),
+                available=scan.available_hero_keys,
+                team_picks=[pick.as_wire() for pick in scan.picks])
+
+        heroes = [hero["key"] for hero in self.server.catalog.heroes_for(role, mode)]
+        return protocol.hero_select(mode, role, self.map_key(), 40,
+                                    random.sample(heroes, min(3, len(heroes))))
 
     # ------------------------------------------------------------ carry-over
 

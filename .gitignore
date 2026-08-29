@@ -24,6 +24,9 @@ __pycache__/
 .venv/
 venv/
 
+# Hero portraits downloaded for template matching — re-fetched from the catalog on demand
+server/.cache/
+
 # relay/ (Node)
 relay/node_modules/
 relay/.wrangler/

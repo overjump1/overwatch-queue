@@ -6,6 +6,10 @@
 
 PyQt6 is the only dependency, and only for the window — `--headless` runs the server
 without it, printing the pairing code into the terminal instead.
+
+Hero select reads the real screen where the optional vision extras are installed, which
+also means it focuses Overwatch and drives the mouse. `--no-vision` turns that off and
+leaves the panel driving the queue entirely by hand.
 """
 from __future__ import annotations
 
@@ -35,6 +39,8 @@ def main():
                         help="no window; prints the pairing code in the terminal")
     parser.add_argument("--new-token", action="store_true",
                         help="generate a new pairing token, unpairing every device")
+    parser.add_argument("--no-vision", action="store_true",
+                        help="never read the game screen or move the mouse")
     options = parser.parse_args()
 
     pairing = Pairing.load()
@@ -45,7 +51,7 @@ def main():
         pairing.regenerate()
         print("New pairing token. Every device has to scan again.")
 
-    server = QueueServer(pairing, Catalog())
+    server = QueueServer(pairing, Catalog(), vision_enabled=not options.no_vision)
 
     if options.headless:
         return run_headless(server)

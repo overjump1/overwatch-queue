@@ -10,6 +10,8 @@ way to reach a widget from another thread.
 """
 from __future__ import annotations
 
+import threading
+
 from PyQt6.QtCore import Qt, QObject, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QImage, QPixmap
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout, QGroupBox,
@@ -17,7 +19,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout, QGroupBo
                              QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy,
                              QSlider, QVBoxLayout, QWidget)
 
-from . import protocol, qr
+from . import protocol, qr, vision
 from .controls import Controls
 from .pairing import local_addresses
 from .queueserver import SCENARIOS
@@ -149,8 +151,8 @@ class ControlPanel(QMainWindow):
 
         right = QVBoxLayout()
         right.setSpacing(14)
-        for panel in (self._queue_box(), self._jump_box(),
-                      self._scenario_box(), self._options_row()):
+        for panel in (self._queue_box(), self._jump_box(), self._scenario_box(),
+                      self._options_row(), self._vision_row()):
             panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
             right.addWidget(panel)
         right.addWidget(self._log_box(), 1)      # only the log takes the slack
@@ -263,7 +265,7 @@ class ControlPanel(QMainWindow):
         self.jump_buttons = {}
         for title, kind in JUMPS:
             button = QPushButton(title)
-            button.clicked.connect(lambda _, k=kind: self.controls.jump(k))
+            button.clicked.connect(lambda _, k=kind: self._jump(k))
             row.addWidget(button)
             self.jump_buttons[kind] = button
         reset = QPushButton("Reset to idle")
@@ -311,6 +313,27 @@ class ControlPanel(QMainWindow):
         layout.addStretch(1)
         return row
 
+    def _vision_row(self) -> QWidget:
+        row = QFrame()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(4, 0, 4, 0)
+        layout.setSpacing(12)
+
+        self.read_screen = QCheckBox("Read the game screen")
+        self.read_screen.setChecked(self.server.vision_enabled)
+        self.read_screen.setEnabled(vision.VISION_AVAILABLE)
+        self.read_screen.toggled.connect(self._vision_changed)
+        layout.addWidget(self.read_screen)
+
+        if vision.VISION_AVAILABLE:
+            note = ("Hero select scans the roster and everyone's pick, and a pick from the "
+                    "phone double-clicks it in-game. Both take the mouse.")
+        else:
+            note = ("Not installed here — see server/requirements.txt. Hero select stays "
+                    "hand-driven.")
+        layout.addWidget(_muted(note, wrap=True), 1)
+        return row
+
     def _log_box(self) -> QGroupBox:
         box = QGroupBox("Traffic")
         layout = QVBoxLayout(box)
@@ -337,10 +360,40 @@ class ControlPanel(QMainWindow):
     def _honour_cancel_changed(self, checked: bool):
         self.server.honour_cancel = checked
 
+    def _vision_changed(self, checked: bool):
+        self.server.vision_enabled = checked and vision.VISION_AVAILABLE
+        self.server.log("Screen reading %s" % ("on" if self.server.vision_enabled else "off"))
+
     def _stop_scenario(self):
         self.server.stop_scenario()
         self.server.log("Scenario stopped")
         self._refresh()
+
+    # ------------------------------------------------------------ jumps
+
+    def _jump(self, kind: str):
+        """Hero select is the one jump that reads the screen first, and reading it takes a
+        couple of seconds — during which it also brings Overwatch to the front, taking the
+        focus off this window. Doing that on the GUI thread would freeze the panel mid-jump
+        and look like a crash, so it goes to a worker and the phase is applied when the
+        answer comes back. Every other jump is instant and stays inline."""
+        if kind != "heroSelect" or not self.server.vision_enabled:
+            self.controls.jump(kind)
+            return
+
+        button = self.jump_buttons[kind]
+        button.setEnabled(False)
+        self.server.log("Reading the hero-select screen…")
+
+        def work():
+            try:
+                self.controls.jump(kind)
+            finally:
+                # Back onto the GUI thread to re-enable the button; `_refresh` is already
+                # wired through the bridge and will settle its real state from the session.
+                self._bridge.changed.emit()
+
+        threading.Thread(target=work, daemon=True, name="hero-select-scan").start()
 
     # ------------------------------------------------------------ pairing
 

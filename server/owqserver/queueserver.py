@@ -13,9 +13,10 @@ import random
 import threading
 import time
 
-from . import protocol
+from . import protocol, vision
 from .activitytokens import ActivityTokens
 from .apns import APNsClient, APNsConfig
+from .heroimages import TemplateStore
 from .protocol import QueueSession
 from .pushrelay import PushRelayClient, PushRelayConfig
 from .pushtokens import PushTokens
@@ -27,7 +28,8 @@ HELLO_TIMEOUT_SECONDS = 10
 
 
 class QueueServer:
-    def __init__(self, pairing, catalog, log=None, push_tokens=None, activity_tokens=None):
+    def __init__(self, pairing, catalog, log=None, push_tokens=None, activity_tokens=None,
+                 vision_enabled=False):
         self.pairing = pairing
         self.catalog = catalog
         self.session = QueueSession()
@@ -41,6 +43,20 @@ class QueueServer:
         self._scenario = None
         self._scenario_stop = threading.Event()
         self.on_change = None            # called (on any thread) after state moves
+
+        # Reading the game is opt-in, and off by default even where it would work.
+        #
+        # Defaulting to "on wherever the libraries import" was tried and is a trap: the
+        # test suite constructs a real server, and on a machine with the extras installed
+        # a single `phase_for("heroSelect")` reached out, focused whatever Overwatch was
+        # running and typed arrow keys into it. Nothing that merely *builds* a server
+        # should be able to take the mouse. `run.py` turns it on for the actual app.
+        self.vision_enabled = bool(vision_enabled) and vision.VISION_AVAILABLE
+        self.templates = TemplateStore(catalog, log=lambda message: self.log(message))
+        # Where each hero sat the last time we looked, so picking one doesn't have to pay
+        # for a fresh scan. Cleared whenever the phase moves, since the roster is only on
+        # screen during hero select and stale coordinates would click on nothing.
+        self._roster = {}
 
         # Pushing is entirely optional: with neither of these configured, a backgrounded
         # phone or watch just won't be woken until it reconnects on its own.
@@ -127,6 +143,10 @@ class QueueServer:
                 self.log("Refused %s → %s (the app would refuse it too)"
                          % (self.session.kind, phase["type"]))
                 return False
+            if phase["type"] != "heroSelect":
+                # The roster is only on screen during hero select; anywhere else those
+                # coordinates point at whatever has replaced it.
+                self._roster = {}
             self._broadcast_snapshot()
         self._changed()
         return True
@@ -326,6 +346,86 @@ class QueueServer:
         if self.on_change:
             self.on_change()
 
+    # ------------------------------------------------------------ reading the game
+
+    @property
+    def hero_keys(self) -> list:
+        """Every hero the catalog knows, unfiltered by role — the roster on screen shows
+        all three roles at once, so a scan restricted to the queued role would be looking
+        for two-thirds of what's in front of it."""
+        return [hero["key"] for hero in self.catalog.heroes if hero.get("key")]
+
+    def scan_hero_select(self):
+        """Looks at the hero-select screen. `None` when there's nothing to look at.
+
+        Deliberately outside `self._lock`: this takes a couple of seconds, and every state
+        change in the server waits on that same lock. Holding it across a scan would stall
+        the heartbeat and every broadcast for the duration. Nothing here touches session
+        state — the caller decides what to do with the answer.
+        """
+        if not self.vision_enabled:
+            return None
+        if not vision.focus_game_window(log=lambda message: self.log(message)):
+            return None
+
+        started = time.time()
+        try:
+            result = vision.scan(self.templates, self.hero_keys,
+                                 my_hero_key=self._my_hero_key(),
+                                 log=lambda message: self.log(message))
+        except Exception as problem:     # pragma: no cover - depends on a live screen
+            # A scan is a convenience over driving by hand, never a reason to take the
+            # server down with it.
+            self.log("Screen scan failed: %s" % problem)
+            return None
+
+        if not result.on_hero_select:
+            # Looked, and the roster wasn't there. The caller falls back to building the
+            # phase from the catalog rather than reporting a roster that isn't on screen.
+            return None
+
+        self._roster = result.roster
+        self.log("Scanned in %.1fs — %d heroes on screen, %d slot%s filled"
+                 % (time.time() - started, len(result.roster), len(result.picks),
+                    "" if len(result.picks) == 1 else "s"))
+        for pick in result.picks:
+            self.log("  slot %d: %s%s" % (pick.slot, self.catalog.name_for_hero(pick.hero_key),
+                                          " (you)" if pick.is_self else ""))
+        return result
+
+    def _my_hero_key(self):
+        with self._lock:
+            return (self.session.phase.get("data") or {}).get("myHeroKey")
+
+    def _drive_hero_pick(self, hero_key: str):
+        """Puts the game on `hero_key`, then re-reads the slots to see if it took.
+
+        Runs on its own thread — see `_select_hero`. The re-scan is the honest part: the
+        double-click is a guess that the icon is where we last saw it, and looking again
+        is what turns that into something worth telling the phone.
+        """
+        if not vision.focus_game_window(log=lambda message: self.log(message)):
+            return
+        try:
+            clicked = vision.select_hero(self.templates, self.hero_keys, hero_key,
+                                         roster=self._roster,
+                                         log=lambda message: self.log(message))
+            if not clicked:
+                return
+            _, gray = vision.capture()
+            picks = vision.resolve_self_slot(
+                vision.scan_player_slots(gray, self.templates, self.hero_keys), hero_key)
+        except Exception as problem:     # pragma: no cover - depends on a live screen
+            self.log("Couldn't pick %s on screen: %s" % (hero_key, problem))
+            return
+
+        with self._lock:
+            if self.session.kind != "heroSelect":
+                return                   # the phase moved on while we were clicking
+            self.session.patch(teamPicks=[pick.as_wire() for pick in picks])
+            self._broadcast_snapshot()
+        self._changed()
+
     # ------------------------------------------------------------ clients
 
     def _client_connected(self, client):
@@ -425,6 +525,14 @@ class QueueServer:
             self._broadcast_snapshot()
         self.log("%s picked %s" % (client.name, self.catalog.name_for_hero(hero_key)))
         self._changed()
+
+        # The phone hears back the moment the state changed, above; the mouse takes a
+        # second or two longer. Doing that here would hold up the socket thread this
+        # arrived on — and every other message on it — for the length of a click and a
+        # re-scan, so it goes to a thread of its own.
+        if self.vision_enabled:
+            threading.Thread(target=self._drive_hero_pick, args=(hero_key,),
+                             daemon=True, name="hero-pick").start()
 
     def _register_push_token(self, client, token, environment, kind=None):
         # The device says which it is, and that is believed over the identity of the

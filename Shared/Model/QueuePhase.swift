@@ -112,6 +112,34 @@ public struct MapVoteInfo: Codable, Hashable, Sendable {
     }
 }
 
+/// One player's pick, as read off the hero-select screen.
+///
+/// `slot` is a position in the row of portraits, nothing more. It is not an identity and
+/// not a role — role queue orders the slots by role, so the player is not reliably in the
+/// first one. `isSelf` is the only thing that says which pick is ours, and the server
+/// leaves it false on every pick when it couldn't tell rather than guess at a slot.
+public struct TeamPick: Codable, Hashable, Sendable, Identifiable {
+    public var slot: Int
+    public var heroKey: String
+    public var isSelf: Bool
+
+    public var id: Int { slot }
+
+    public init(slot: Int, heroKey: String, isSelf: Bool = false) {
+        self.slot = slot
+        self.heroKey = heroKey
+        self.isSelf = isSelf
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        slot = try container.decode(Int.self, forKey: .slot)
+        heroKey = try container.decode(String.self, forKey: .heroKey)
+        // Absent from a server that scanned but couldn't tell whose pick is whose.
+        isSelf = try container.decodeIfPresent(Bool.self, forKey: .isSelf) ?? false
+    }
+}
+
 public struct HeroSelectInfo: Codable, Hashable, Sendable {
     public var mode: QueueMode
     public var role: Role
@@ -120,15 +148,27 @@ public struct HeroSelectInfo: Codable, Hashable, Sendable {
     /// Heroes already locked by teammates.
     public var takenHeroKeys: [String]
     public var myHeroKey: String?
+    /// The heroes the server actually saw on the roster, or nil if it never looked.
+    ///
+    /// Nil and empty mean different things and the difference matters here: nil is "no
+    /// one read the screen" — no game running, or a server without the vision extras —
+    /// and the app should show its full catalog. Empty would be "the roster is genuinely
+    /// empty", which is not a thing that happens.
+    public var availableHeroKeys: [String]?
+    /// What each player has picked so far, or nil if the server never looked.
+    public var teamPicks: [TeamPick]?
 
     public init(mode: QueueMode, role: Role, mapKey: String? = nil, deadline: Date,
-                takenHeroKeys: [String] = [], myHeroKey: String? = nil) {
+                takenHeroKeys: [String] = [], myHeroKey: String? = nil,
+                availableHeroKeys: [String]? = nil, teamPicks: [TeamPick]? = nil) {
         self.mode = mode
         self.role = role
         self.mapKey = mapKey
         self.deadline = deadline
         self.takenHeroKeys = takenHeroKeys
         self.myHeroKey = myHeroKey
+        self.availableHeroKeys = availableHeroKeys
+        self.teamPicks = teamPicks
     }
 }
 
