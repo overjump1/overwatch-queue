@@ -158,13 +158,27 @@ def map_vote(map_keys, deadline_seconds: float = 25, votes=None, my_vote=None) -
 
 
 def hero_select(mode: str, role: str, map_key=None, deadline_seconds: float = 40,
-                taken=None, my_hero=None) -> dict:
+                taken=None, my_hero=None, available=None, team_picks=None) -> dict:
+    """`available` and `team_picks` are what the screen scan saw, and are left out
+    entirely when there was no scan — on a Mac, or with the game closed. Their absence is
+    meaningful to the app: it's the difference between "nobody has picked" and "nobody
+    looked", and an empty list would say the first when we mean the second.
+
+    A pick's `slot` is a position on screen, not an identity or a role — role queue orders
+    the slots by role, so slot one is not reliably the player. `isSelf` is the only thing
+    that says which pick is ours, and it's absent from every pick when the scan couldn't
+    tell.
+    """
     data = {"mode": mode, "role": role, "deadline": in_seconds(deadline_seconds),
             "takenHeroKeys": list(taken or [])}
     if map_key:
         data["mapKey"] = map_key
     if my_hero:
         data["myHeroKey"] = my_hero
+    if available is not None:
+        data["availableHeroKeys"] = list(available)
+    if team_picks is not None:
+        data["teamPicks"] = [dict(pick) for pick in team_picks]
     return {"type": "heroSelect", "data": data}
 
 

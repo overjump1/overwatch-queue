@@ -188,10 +188,26 @@ player's choice.
 
 ```json
 {"type":"heroSelect","data":{"mode":"competitive","role":"tank","mapKey":"havana",
- "deadline":"2023-11-14T22:13:20Z","takenHeroKeys":["orisa"],"myHeroKey":"reinhardt"}}
+ "deadline":"2023-11-14T22:13:20Z","takenHeroKeys":["orisa"],"myHeroKey":"reinhardt",
+ "availableHeroKeys":["reinhardt","orisa","sigma"],
+ "teamPicks":[{"slot":2,"heroKey":"reinhardt","isSelf":true},
+              {"slot":3,"heroKey":"orisa","isSelf":false}]}}
 ```
 
 `takenHeroKeys` are removed from the grid. `mapKey` is optional.
+
+`availableHeroKeys` and `teamPicks` are what the server read off the PC's screen, and are
+**absent entirely when it didn't look** — no game running, or a server without the vision
+extras. Absent and empty are different answers and clients must treat them differently:
+absent means "nobody looked", so fall back to the shipped catalog; empty would mean the
+roster is genuinely empty, which never happens. Both were added after v1 shipped, so a
+client that has never heard of them decodes the phase exactly as before.
+
+`slot` is a position in the on-screen row of player portraits. **It is not an identity and
+not a role** — role queue orders the slots by role, so the local player is not reliably in
+slot 1. `isSelf` is the only thing that marks the local player's pick; it is `false` on
+every pick when the server couldn't tell which one was ours, and clients should show no
+"you" marker in that case rather than assuming a position.
 
 ### `inGame`
 

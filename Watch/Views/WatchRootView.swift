@@ -187,6 +187,30 @@ struct WatchHeroSelectView: View {
 
     var body: some View {
         ScrollView {
+            let picks = store.teamPicks()
+            if !picks.isEmpty {
+                // Small enough to read without scrolling past it, so the composition is
+                // the first thing on the wrist rather than something to hunt for.
+                HStack(spacing: 4) {
+                    ForEach(picks, id: \.pick.slot) { entry in
+                        HeroPortrait(hero: entry.hero, size: 26)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(entry.pick.isSelf
+                                                  ? AnyShapeStyle(Palette.amber)
+                                                  : AnyShapeStyle(entry.hero.role.tint.opacity(0.6)),
+                                                  lineWidth: entry.pick.isSelf ? 2 : 1)
+                            }
+                            .accessibilityLabel(entry.pick.isSelf
+                                                ? "You, \(entry.hero.name)"
+                                                : entry.hero.name)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 4)
+                .padding(.bottom, 4)
+            }
+
             LazyVGrid(columns: columns, spacing: 6) {
                 ForEach(store.selectableHeroes()) { hero in
                     Button {
