@@ -411,13 +411,35 @@ class QueueServer:
                                          roster=self._roster,
                                          log=lambda message: self.log(message))
             if not clicked:
+                self.log("Pick %s wasn't made on screen — do it on the PC"
+                         % self.catalog.name_for_hero(hero_key))
                 return
-            _, gray = vision.capture()
-            picks = vision.resolve_self_slot(
-                vision.scan_player_slots(gray, self.templates, self.hero_keys), hero_key)
+            still_open = vision.looks_at_hero_select(self.templates, self.hero_keys)
+            picks = []
+            if still_open:
+                _, gray = vision.capture()
+                picks = vision.resolve_self_slot(
+                    vision.scan_player_slots(gray, self.templates, self.hero_keys), hero_key)
         except Exception as problem:     # pragma: no cover - depends on a live screen
             self.log("Couldn't pick %s on screen: %s" % (hero_key, problem))
             return
+
+        if not still_open:
+            # Confirming a hero closes the menu, so the roster being gone is what success
+            # looks like — not a failure to verify. Nothing to re-read, and nothing to
+            # say about the slots: reporting an empty row here would tell the phone
+            # everyone had un-picked.
+            self.log("Picked %s" % self.catalog.name_for_hero(hero_key))
+            return
+
+        # The menu is still up, so the slot row is readable and worth checking against
+        # what was asked for. The click is only ever a guess that an icon was where the
+        # matcher said it was; this is the game's own answer.
+        landed = next((pick for pick in picks if pick.is_self), None)
+        if landed is not None and landed.hero_key != hero_key:
+            self.log("Asked for %s but the game shows %s — the click went wide"
+                     % (self.catalog.name_for_hero(hero_key),
+                        self.catalog.name_for_hero(landed.hero_key)))
 
         with self._lock:
             if self.session.kind != "heroSelect":

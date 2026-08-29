@@ -134,6 +134,24 @@ class MatcherTests(unittest.TestCase):
                            vision.EMPTY_STD_THRESHOLD)
 
 
+class ClickConfidenceTests(unittest.TestCase):
+    """Acting on a match is held to a higher bar than listing one.
+
+    The bug this guards: a hero the highlight is sitting on matches badly, and clicking
+    the best of a bad set of guesses puts the player on someone else's hero.
+    """
+
+    def test_clicking_needs_more_confidence_than_listing(self):
+        self.assertGreater(vision.CLICK_MIN_SCORE, vision.GRID_MIN_SCORE)
+
+    def test_a_hero_good_enough_to_list_can_still_be_too_weak_to_click(self):
+        """0.62 is the shape of the real failure — above the listing floor, and measured
+        on a live roster as the sort of score a wrong icon produces."""
+        weak = vision.RosterHit("sierra", 0.62, 10, 10, 60, 60)
+        self.assertGreaterEqual(weak.score, vision.GRID_MIN_SCORE)
+        self.assertLess(weak.score, vision.CLICK_MIN_SCORE)
+
+
 class WireFormatTests(unittest.TestCase):
     def test_a_scan_free_phase_carries_neither_new_field(self):
         """Absent, not empty. Empty would tell the app the roster is genuinely empty and

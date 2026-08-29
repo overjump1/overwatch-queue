@@ -69,6 +69,16 @@ DOWNSCALE = 0.5
 RECHECK_THRESHOLD = 0.65
 # Below this a hero isn't considered to be on the roster at all.
 GRID_MIN_SCORE = 0.60
+# ...but acting on a match needs more confidence than merely listing one. Being wrong in
+# `availableHeroKeys` shows the player one hero too many; being wrong here puts them on
+# the wrong hero in a live game, which they then have to notice and undo mid-match.
+#
+# Measured on a real roster: median 0.80, and the single hero the highlight was sitting on
+# came back at 0.59 — then 0.83 once nudged, which is the whole point of the nudge. Two
+# others sat at 0.58 and 0.61 and *stayed* there after nudging; those are heroes the
+# matcher genuinely cannot place, and clicking their best guess is precisely how you end
+# up on the wrong hero. Refusing is the better answer.
+CLICK_MIN_SCORE = 0.65
 
 # Whether the roster is on screen at all, which is *not* answerable per hero.
 #
@@ -92,7 +102,14 @@ MIN_DISTINCT_POSITIONS = 40
 # Measured 69.6 for a filled slot against 38-46 for empty ones on the same screen.
 EMPTY_STD_THRESHOLD = 50.0
 # Below this a slot's best match isn't worth reporting as a pick at all.
-SLOT_MIN_SCORE = 0.45
+#
+# Measured on the same screen: a real pick reads 0.67-0.76, while an empty slot's best
+# guess — and the splash art that briefly fills these regions while the menu animates in —
+# lands at 0.42-0.46. This sat at 0.45, inside that noise, and the visible symptom was the
+# panel announcing teammates ("Jetpack Cat", "Brigitte") in a solo practice range. Those
+# names go straight to the watch, so a slot we can't read confidently is better reported
+# as empty than as somebody.
+SLOT_MIN_SCORE = 0.55
 
 NUDGE_PRESSES = 3
 NUDGE_SETTLE_SECONDS = 0.35
@@ -410,35 +427,69 @@ def click_and_confirm(point: tuple):
     time.sleep(CLICK_SETTLE_SECONDS)
 
 
+def _look_at_roster(templates, hero_keys):
+    """A fresh match of the whole roster, or None if it isn't on screen.
+
+    Always the whole catalog, never just the hero being looked for: a lone template
+    "matches" something on any screen at all, so how *all* of them landed is the only
+    evidence that what's in front of us is a roster.
+    """
+    _, gray = capture()
+    hits = _match_grid(gray, templates, hero_keys)
+    return hits if looks_like_roster(hits) else None
+
+
+def looks_at_hero_select(templates, hero_keys) -> bool:
+    """Whether the roster is on screen right now. Confirming a pick closes the menu, so
+    this is also how the caller tells a committed pick from one that never landed."""
+    return _look_at_roster(templates, hero_keys) is not None
+
+
 def select_hero(templates, hero_keys, hero_key: str, roster=None, log=None) -> bool:
     """Puts the player on `hero_key` by clicking its icon and confirming.
 
-    `roster` is the last scan's positions, reused when it has what we need so a pick
-    doesn't pay for a fresh scan. When it doesn't — most often because a hero is already
-    locked in and the roster isn't on screen at all — `H` brings the list back and the
-    screen is read again before clicking.
+    Looks again rather than trusting `roster`, which is only a hint that a scan happened
+    at all: those coordinates were true when they were taken, and between then and now the
+    player may have picked, the menu may have closed, or the highlight may have moved onto
+    the very hero we're being asked to click.
+
+    That last case is why this nudges. The highlight distorts the icon under it badly
+    enough to push its match down among the wrong answers — measured at 0.59 for the
+    highlighted hero against a median of 0.80, recovering to 0.83 once the highlight was
+    walked away with three right presses. Scanning has always done this; picking did not,
+    and would happily click the best of a bad set of guesses. That is the wrong-hero bug.
     """
     log = log or (lambda message: None)
-    hit = (roster or {}).get(hero_key)
 
-    if hit is None:
-        log("No position for %s — reopening the hero list" % hero_key)
+    hits = _look_at_roster(templates, hero_keys)
+    if hits is None:
+        log("Hero list isn't up — reopening it")
         reopen_hero_menu()
-        _, gray = capture()
-        # Matched across the whole catalog rather than just the hero we want, because a
-        # single template always "matches" something: the only way to know the roster came
-        # back is to look at how all of them landed.
-        hits = _match_grid(gray, templates, hero_keys)
-        if not looks_like_roster(hits):
+        hits = _look_at_roster(templates, hero_keys)
+        if hits is None:
             log("The hero list didn't come back — not clicking blind")
             return False
-        hit = hits.get(hero_key)
-        if hit is not None and hit.score < GRID_MIN_SCORE:
-            hit = None
 
-    if hit is None:
-        log("Couldn't find %s on screen" % hero_key)
+    hit = hits.get(hero_key)
+    if hit is None or hit.score < CLICK_MIN_SCORE:
+        # Too weak to act on. If the highlight is what's sitting on it, moving the
+        # highlight is exactly what fixes it, so it's worth one more look before refusing.
+        log("%s only matched at %.2f — nudging the highlight and looking again"
+            % (hero_key, hit.score if hit else 0.0))
+        _nudge_selection()
+        again = _look_at_roster(templates, hero_keys)
+        better = (again or {}).get(hero_key)
+        if better is not None and (hit is None or better.score > hit.score):
+            hit = better
+
+    if hit is None or hit.score < CLICK_MIN_SCORE:
+        # Deliberately no click. The best guess for a hero this badly matched is some
+        # other hero's icon, and picking the wrong one in a live game is worse than
+        # picking none and saying so.
+        log("Couldn't place %s confidently (best %.2f, need %.2f) — not clicking"
+            % (hero_key, hit.score if hit else 0.0, CLICK_MIN_SCORE))
         return False
 
+    log("Clicking %s at %.2f confidence" % (hero_key, hit.score))
     click_and_confirm(hit.center)
     return True
