@@ -51,7 +51,10 @@ public final class QueueStore {
         transport.onEvent = { [weak self] event in self?.handle(event) }
         transport.onStatusChange = { [weak self] status in
             self?.status = status
-            if status.isLive { self?.sendPendingRegistrations() }
+            if status.isLive {
+                self?.sendPendingRegistrations()
+                self?.syncClock()
+            }
         }
         status = transport.status
         transport.connect()
@@ -77,6 +80,66 @@ public final class QueueStore {
     public func registerActivityStartToken(_ token: String, environment: PushEnvironment) {
         pendingActivityStartToken = (token, environment)
         sendPendingRegistrations()
+    }
+
+    /// Asks the server what time it is, and times the answer.
+    ///
+    /// A burst rather than one, because the useful thing about a round trip is that a
+    /// short one bounds the error — and on a shared Wi-Fi link the shortest of a few
+    /// attempts is a much better bound than whichever one happened to go first.
+    /// `ClockSync.verify` keeps the sharpest and discards the rest.
+    ///
+    /// Sent on connect, and again whenever the app comes back to the foreground: a device
+    /// that has been asleep is exactly where a stale reading used to take hold.
+    public func syncClock(samples: Int = 3, spacing: Duration = .milliseconds(250)) {
+        guard status.isLive else { return }
+        Task { [weak self] in
+            for attempt in 0..<samples {
+                guard let self, self.status.isLive else { return }
+                self.transport?.send(.ping(clientTime: Date().timeIntervalSince1970))
+                if attempt < samples - 1 { try? await Task.sleep(for: spacing) }
+            }
+        }
+    }
+
+    /// Re-anchors the clock, and says so when the anchor actually moves.
+    ///
+    /// Only the heartbeat feeds this. The offset is measured as `serverTime - now`, so it
+    /// absorbs however long the message took to arrive — which makes freshness, not
+    /// content, the thing that qualifies a message as a clock sample. A heartbeat is
+    /// fresh by construction: it is generated and sent in the same breath, ten seconds
+    /// apart, and only over a socket that is currently up. A snapshot is not, and is
+    /// therefore not used for this.
+    ///
+    /// A watch on the phone relay consequently gets no correction at all, and shouldn't:
+    /// with no live socket of its own there is nothing fresh to measure against, and a
+    /// zero offset — trusting that a watch and a PC are both keeping ordinary network
+    /// time — is far closer to right than a reading taken off a coalesced snapshot of
+    /// unknown age. When the watch does open its own socket, heartbeats correct it
+    /// properly.
+    private func observeClock(serverTime: Date, from source: String) {
+        let before = clock.offset
+        let candidate = serverTime.timeIntervalSince(.now)
+        clock.observe(serverTime: serverTime)
+        if clock.offset != before {
+            report(String(format: "clock re-anchored from %@: %+.1fs (was %+.1fs, sample %+.1fs)",
+                          source, clock.offset, before, candidate))
+        } else if abs(candidate - clock.offset) > ClockSync.deadband {
+            report(String(format: "clock held at %+.1fs, ignoring %@ sample %+.1fs",
+                          clock.offset, source, candidate))
+        }
+    }
+
+    /// Writes a line into the server's log — see `ClientCommand.diagnostic`.
+    ///
+    /// Dropped rather than queued when nothing is connected: a diagnostic is only worth
+    /// anything next to the moment it describes, and a backlog delivered minutes later
+    /// out of order would be worse than the silence it replaced.
+    public func report(_ message: @autoclosure () -> String) {
+        #if DEBUG
+        guard status.isLive else { return }
+        transport?.send(.diagnostic(message()))
+        #endif
     }
 
     private func sendPendingRegistrations() {
@@ -120,7 +183,15 @@ public final class QueueStore {
         case .snapshot(let incoming):
             ingest(incoming)
         case .heartbeat(let serverTime):
-            clock.observe(serverTime: serverTime)
+            observeClock(serverTime: serverTime, from: "heartbeat")
+            lastUpdate = .now
+        case .pong(let clientTime, let serverTime):
+            let before = clock.offset
+            clock.verify(clientTime: clientTime, serverTime: serverTime)
+            if clock.offset != before || !clock.isVerified {
+                report(String(format: "clock verified: offset %+.2fs ±%.2fs (was %+.2fs)",
+                              clock.offset, clock.uncertainty / 2, before))
+            }
             lastUpdate = .now
         case .error(_, let message):
             status = .failed(message)
@@ -133,7 +204,13 @@ public final class QueueStore {
     public func ingest(_ incoming: QueueSnapshot) {
         guard snapshot.supersededBy(incoming) || snapshot.sequence == 0 else { return }
         let previous = snapshot.phase
-        clock.observe(serverTime: incoming.serverTime)
+        // Deliberately *not* a clock sample. A snapshot is kept and re-delivered: iOS
+        // hands a resumed app its socket backlog, and WatchConnectivity coalesces and
+        // delivers whenever it likes — so `serverTime` here can be many seconds old with
+        // nothing to say so, and believing it sets every timer on this device that far
+        // out. The watch felt this worst, because the very first thing it ever sees is a
+        // relayed snapshot: it would open a thirteen-second-old queue reading one second.
+        // `heartbeat` is the sample to trust — see `observeClock`.
         snapshot = incoming
         lastUpdate = .now
 

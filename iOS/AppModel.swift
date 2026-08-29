@@ -48,6 +48,11 @@ public final class AppModel {
         LiveActivityController.shared.onPushToStartToken = { [weak self] token in
             self?.store.registerActivityStartToken(token, environment: .current)
         }
+        // Whatever the activity has to say about itself goes to the server window, where
+        // it can be read without the phone in hand.
+        LiveActivityController.shared.onDiagnostic = { [weak self] message in
+            self?.store.report(message)
+        }
     }
 
     public func start() {
@@ -124,7 +129,7 @@ public final class AppModel {
     // wake-up push regardless, and only a visible alert actually needs the user's okay.
 
     public func registerForPushNotifications() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .timeSensitive]) { _, _ in }
         UIApplication.shared.registerForRemoteNotifications()
     }
 
@@ -132,22 +137,48 @@ public final class AppModel {
         store.registerPushToken(deviceToken.hexEncoded, environment: .current)
     }
 
-    /// A background push arrived: make sure the socket is live and ask for the truth,
-    /// rather than trusting the push payload itself to carry it. The system gives a
-    /// background launch only a short window before suspending it again.
+    /// A background push arrived. The system gives a background launch only a short window
+    /// before suspending it again, so the sleep below holds it open long enough for the
+    /// snapshot to actually come back.
+    public func handleBackgroundPush(completion: @escaping () -> Void) {
+        catchUp()
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            completion()
+        }
+    }
+
+    /// The player tapped their way in — a notification, or the Live Activity itself (on
+    /// the phone or mirrored on the watch).
+    ///
+    /// This is also the fallback that makes a failed push-to-start recoverable. Starting a
+    /// Live Activity from a push is best-effort and, in practice, often simply never
+    /// arrives; starting one from inside a running app never fails. So there is no
+    /// "start the activity" call here: `catchUp` asks for a fresh snapshot, `onSnapshot`
+    /// hands it to `LiveActivityController.sync`, and sync starts the activity because
+    /// there isn't one. The refresh *is* the start.
+    public func handleUserOpened() {
+        // The counterpart of the watch's own line — together they say which device a tap
+        // actually landed on, which is the whole question when a card on the wrist opens
+        // the phone instead.
+        store.report("phone opened by a tap (notification or Live Activity)")
+        // Reaching for the app is the player asking to see it, which outvotes having
+        // swiped the card away earlier in the same queue.
+        LiveActivityController.shared.forgetDismissal()
+        catchUp()
+    }
+
+    /// Make sure the socket is live and ask for the truth, rather than trusting whatever
+    /// arrived to carry it.
     ///
     /// Also re-checks for a Live Activity this process doesn't know about yet — a
     /// push-to-start push can create one entirely OS-side while nothing local was
     /// running, and this is the first chance any app code gets to notice, attach to it,
     /// and register its per-activity push token for every update after this one.
-    public func handleBackgroundPush(completion: @escaping () -> Void) {
+    private func catchUp() {
         LiveActivityController.shared.adoptRunningActivity()
         if store.transport?.status.isLive != true { connect() }
         store.requestRefresh()
-        Task {
-            try? await Task.sleep(for: .seconds(3))
-            completion()
-        }
     }
 
     // MARK: - Foregrounding / backgrounding
@@ -173,7 +204,13 @@ public final class AppModel {
 
     public func didBecomeActive() {
         endBackgroundTask()
-        if store.transport?.status.isLive != true { connect() }
+        if store.transport?.status.isLive != true {
+            connect()      // a fresh connection syncs the clock on its own
+        } else {
+            // Coming back from suspension is exactly where a stale reading used to take
+            // hold, and the socket that survived it never re-measured.
+            store.syncClock()
+        }
     }
 
     private func endBackgroundTask() {

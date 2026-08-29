@@ -68,6 +68,21 @@ send, and the client is built to accept it at any time.
 {"v":1,"body":{"type":"heartbeat","data":{"serverTime":"2023-11-14T22:13:20Z"}}}
 ```
 
+### `pong` — the answer to `ping`, for verifying the clock
+
+```json
+{"v":1,"body":{"type":"pong","data":{"clientTime":1700000000.123,"serverTime":1700000000.456}}}
+```
+
+Reply to every `ping` immediately, and echo `clientTime` back **exactly as it arrived** —
+the client needs its own send time to work out how long the round trip took, and anything
+you do to it is charged to the answer. Any delay you add is indistinguishable, to the
+client, from distance.
+
+Both fields are **epoch seconds as numbers**, not the whole-second ISO-8601 strings used
+everywhere else on this wire. Rounding to the second would be a half-second error in the
+one message whose entire purpose is measuring time.
+
 ### `error` — a command couldn't be honoured
 
 ```json
@@ -225,6 +240,8 @@ Sent when the player acts on the phone or the watch.
 {"v":1,"body":{"type":"registerPushToken","data":{"token":"5fceb98...","environment":"sandbox"}}}
 {"v":1,"body":{"type":"registerActivityPushToken","data":{"sessionID":"3F2504E0-4F89-41D3-9A0C-0305E82C3301","token":"activity-token...","environment":"sandbox"}}}
 {"v":1,"body":{"type":"registerActivityStartToken","data":{"token":"start-token...","environment":"sandbox"}}}
+{"v":1,"body":{"type":"ping","data":{"clientTime":1700000000.123}}}
+{"v":1,"body":{"type":"diagnostic","data":{"message":"Live Activity: started 24C67173-AADE"}}}
 ```
 
 `kind` is `phone` or `watch`. `token` is the pairing token — see [Pairing](#pairing).
@@ -259,6 +276,26 @@ activity that already ended can't accidentally attach to a new one.
 session: it's what lets the PC create the *next* Live Activity from nothing, even on a
 launch that's never opened this queue's activity itself. Sent once available, and again
 whenever the system hands over a replacement.
+
+`ping` asks what time it is, carrying this device's own clock so the reply can be timed.
+Answer with `pong`. This is the **only** message a client should measure a clock offset
+from: `serverTime` on a `snapshot` or a `heartbeat` is stamped before the message travels
+and read after it arrives, so it silently understates by however long delivery took — and
+both surfaces here buffer, since iOS hands a resumed app its socket backlog and
+WatchConnectivity coalesces. A round trip makes that delay *measurable* instead of
+invisible, which is what lets a slow sample be rejected rather than believed.
+
+`diagnostic` is a line the device wants written into the server's log, and the only
+client command that isn't about the queue at all. Almost everything interesting about a
+Live Activity happens where nobody can watch: the card is created by the system, updated
+by push, and drawn by an extension in another process — so when one fails to appear there
+is nothing to read anywhere. This is how the device says so out loud.
+
+Debug builds only, and dropped rather than queued when the socket is down: a diagnostic
+is worth something next to the moment it describes and nothing at all delivered late and
+out of order. A server is free to ignore it entirely; `server/` prints it prefixed with
+the client's name, so a line the phone wrote is never mistaken for something the server
+observed.
 
 ## Push
 

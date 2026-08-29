@@ -65,6 +65,7 @@ extension QueuePhase {
 
 extension QueueEvent {
     private struct Heartbeat: Codable { var serverTime: Date }
+    private struct Pong: Codable { var clientTime: TimeInterval; var serverTime: TimeInterval }
     private struct ErrorBody: Codable { var code: String; var message: String }
 
     public func encode(to encoder: Encoder) throws {
@@ -76,6 +77,9 @@ extension QueueEvent {
         case .heartbeat(let time):
             try c.tag("heartbeat")
             try c.encode(Heartbeat(serverTime: time), forKey: .data)
+        case .pong(let clientTime, let serverTime):
+            try c.tag("pong")
+            try c.encode(Pong(clientTime: clientTime, serverTime: serverTime), forKey: .data)
         case .error(let code, let message):
             try c.tag("error")
             try c.encode(ErrorBody(code: code, message: message), forKey: .data)
@@ -89,13 +93,16 @@ extension QueueEvent {
             self = .snapshot(try c.decode(QueueSnapshot.self, forKey: .data))
         case "heartbeat":
             self = .heartbeat(serverTime: try c.decode(Heartbeat.self, forKey: .data).serverTime)
+        case "pong":
+            let pong = try c.decode(Pong.self, forKey: .data)
+            self = .pong(clientTime: pong.clientTime, serverTime: pong.serverTime)
         case "error":
             let body = try c.decode(ErrorBody.self, forKey: .data)
             self = .error(code: body.code, message: body.message)
         case let other:
             throw DecodingError.dataCorruptedError(
                 forKey: .type, in: c,
-                debugDescription: "Unknown event \"\(other)\". Known: snapshot, heartbeat, error")
+                debugDescription: "Unknown event \"\(other)\". Known: snapshot, heartbeat, pong, error")
         }
     }
 }
@@ -110,6 +117,8 @@ extension ClientCommand {
     private struct ActivityPushToken: Codable {
         var sessionID: UUID; var token: String; var environment: PushEnvironment
     }
+    private struct Diagnostic: Codable { var message: String }
+    private struct Ping: Codable { var clientTime: TimeInterval }
 
     public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: TaggedKeys.self)
@@ -137,6 +146,12 @@ extension ClientCommand {
         case .registerActivityStartToken(let token, let environment):
             try c.tag("registerActivityStartToken")
             try c.encode(PushToken(token: token, environment: environment), forKey: .data)
+        case .ping(let clientTime):
+            try c.tag("ping")
+            try c.encode(Ping(clientTime: clientTime), forKey: .data)
+        case .diagnostic(let message):
+            try c.tag("diagnostic")
+            try c.encode(Diagnostic(message: message), forKey: .data)
         }
     }
 
@@ -164,6 +179,10 @@ extension ClientCommand {
         case "registerActivityStartToken":
             let push = try c.decode(PushToken.self, forKey: .data)
             self = .registerActivityStartToken(token: push.token, environment: push.environment)
+        case "ping":
+            self = .ping(clientTime: try c.decode(Ping.self, forKey: .data).clientTime)
+        case "diagnostic":
+            self = .diagnostic(try c.decode(Diagnostic.self, forKey: .data).message)
         case let other:
             throw DecodingError.dataCorruptedError(
                 forKey: .type, in: c,

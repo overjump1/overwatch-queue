@@ -49,14 +49,101 @@ public struct ClockSync: Sendable {
     /// re-anchoring on them makes timers visibly stutter.
     public static let deadband: TimeInterval = 1.5
 
+    /// How long a good sample is trusted before a worse one may replace it. Long enough
+    /// that no plausible delivery delay outlasts it, short enough that a server whose
+    /// clock genuinely moved is believed before anyone notices.
+    public static let anchorLifetime: TimeInterval = 120
+
+    /// A round trip longer than this says nothing useful: half of it is the most the
+    /// offset could be wrong by, and past a couple of seconds that's worse than the drift
+    /// being corrected for.
+    public static let maximumRoundTrip: TimeInterval = 2
+
+    /// When the sample currently anchoring `offset` arrived. `nil` until the first one.
+    private var anchoredAt: Date?
+
+    /// How long the round trip behind the current anchor took — its margin of error.
+    /// `.infinity` for an anchor measured the old, unverified way.
+    public private(set) var uncertainty: TimeInterval = .infinity
+
+    /// Whether the offset rests on a real round-trip measurement rather than a guess.
+    public var isVerified: Bool { uncertainty.isFinite }
+
+    /// Folds in a `pong`: a measured round trip, and therefore a *known* margin of error.
+    ///
+    /// This is the honest version of `observe(serverTime:)` below. There, the delay
+    /// between the server stamping a time and this device reading it is invisible and
+    /// gets silently charged to the offset. Here the client's own send time comes back
+    /// untouched, so the round trip is known — the server's reply is assumed to sit
+    /// halfway through it, which is wrong only by however lopsided the trip was.
+    ///
+    /// Being able to state the error is what makes this verification rather than
+    /// observation: a slow trip is *rejected* instead of quietly believed, and a better
+    /// measurement always wins over a worse one.
+    public mutating func verify(clientTime: TimeInterval, serverTime: TimeInterval,
+                                receivedAt: Date = .now) {
+        let roundTrip = receivedAt.timeIntervalSince1970 - clientTime
+        guard roundTrip >= 0, roundTrip <= Self.maximumRoundTrip else { return }
+
+        let candidate = serverTime - (clientTime + roundTrip / 2)
+        let isSharper = roundTrip <= uncertainty
+        let anchorHasAgedOut = anchoredAt.map {
+            receivedAt.timeIntervalSince($0) > Self.anchorLifetime
+        } ?? true
+
+        guard isSharper || anchorHasAgedOut else { return }
+        if abs(candidate - offset) > Self.deadband || !isVerified { offset = candidate }
+        uncertainty = roundTrip
+        anchoredAt = receivedAt
+    }
+
     public init(offset: TimeInterval = 0) {
         self.offset = offset
     }
 
+    /// Folds in one observation of the server's clock.
+    ///
+    /// Not simply "believe the newest", which is what this used to do and what made a
+    /// queue read differently on each device. `serverTime` is stamped before the message
+    /// travels and `receivedAt` is taken after, so every sample is understated by exactly
+    /// however long delivery took: `measured = true − latency`. Latency is never negative,
+    /// so **the largest sample seen is the truest one**, and the newest is merely the
+    /// most recent — a distinction that costs nothing on a socket answering in
+    /// milliseconds and everything the moment something buffers.
+    ///
+    /// Both things that surface a queue do buffer. iOS suspends a backgrounded app and
+    /// hands it the socket's backlog on resume, and WatchConnectivity coalesces and
+    /// delivers on its own schedule; measured here, a snapshot thirteen seconds stale is
+    /// indistinguishable from a PC thirteen seconds slow, and the old code took it at
+    /// face value and re-anchored every timer onto it.
+    ///
+    /// So a sample is adopted when it's *better* — less latency, a larger offset — and
+    /// otherwise only once the current anchor has aged out, which is what still lets a
+    /// server whose clock really did change be believed eventually.
     public mutating func observe(serverTime: Date, receivedAt: Date = .now) {
+        // A measured round trip beats an unmeasured one-way reading every time, so once
+        // `verify` has anchored, this only fills the gaps — and only after that anchor
+        // has aged out entirely.
+        if isVerified, let anchoredAt,
+           receivedAt.timeIntervalSince(anchoredAt) <= Self.anchorLifetime { return }
+
         let candidate = serverTime.timeIntervalSince(receivedAt)
-        if abs(candidate - offset) > Self.deadband {
+
+        guard let anchoredAt else {
+            // Nothing has anchored yet, so there's no "better" to measure against —
+            // take this one, unless it agrees with where we already are.
+            if abs(candidate - offset) > Self.deadband { offset = candidate }
+            self.anchoredAt = receivedAt
+            return
+        }
+
+        let isBetter = candidate > offset + Self.deadband
+        let isWorse = candidate < offset - Self.deadband
+        let anchorHasAgedOut = receivedAt.timeIntervalSince(anchoredAt) > Self.anchorLifetime
+
+        if isBetter || (isWorse && anchorHasAgedOut) {
             offset = candidate
+            self.anchoredAt = receivedAt
         }
     }
 

@@ -59,7 +59,15 @@ class ActivityTokens:
     def register_start(self, token: str, environment: str):
         if not token or environment not in ENVIRONMENTS:
             return
-        self._start = {"token": token, "environment": environment}
+        start = {"token": token, "environment": environment}
+        # Unchanged means nothing to write. Worth the branch for one reason: it makes this
+        # file's mtime mean "the last time the app actually registered a *new* token",
+        # which is the one signal that tells you a reinstall has invalidated the old one
+        # — a push-to-start against a stale token is accepted by Apple and simply never
+        # delivered, with nothing on this side to show for it.
+        if self._start == start:
+            return
+        self._start = start
         self._save()
 
     def start_token(self):
@@ -73,7 +81,10 @@ class ActivityTokens:
     def register_update(self, session_id: str, token: str, environment: str):
         if not token or environment not in ENVIRONMENTS or not session_id:
             return
-        self._update = {"token": token, "environment": environment, "session_id": session_id}
+        update = {"token": token, "environment": environment, "session_id": session_id}
+        if self._update == update:                     # same reasoning as `register_start`
+            return
+        self._update = update
         self._save()
 
     def update_token(self, session_id: str):

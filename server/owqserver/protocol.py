@@ -48,6 +48,19 @@ def notification_copy(kind: str):
         _NOTIFICATION_BODIES.get(kind, "Status changed.")
 
 
+def activity_fallback_copy():
+    """`(title, body)` for the notification sent when a Live Activity never appeared.
+
+    Not `notification_copy`: that copy announces an urgent phase, and this is only ever
+    sent for a routine one (an urgent phase already got a real alert of its own). It has to
+    earn the interruption on its own terms, so it says what happened and what tapping does.
+
+    Unlike the copy above there's no Swift counterpart to keep in step — nothing on the
+    device composes this text, it only ever arrives already written.
+    """
+    return "Queue started", "Tap to put it on your Lock Screen."
+
+
 # ---------------------------------------------------------------- Live Activity pushes
 #
 # A Live Activity push's `content-state` is decoded on-device with a plain `JSONDecoder`
@@ -179,6 +192,21 @@ def envelope(body: dict) -> str:
 
 def heartbeat() -> str:
     return envelope({"type": "heartbeat", "data": {"serverTime": iso(now())}})
+
+
+def pong(client_time: float) -> str:
+    """The reply to `ping`, for measuring the clock offset with a known margin of error.
+
+    `client_time` goes back exactly as it arrived — the client needs its own send time to
+    work out how long the round trip took, and anything this end did to it would be
+    charged to the answer. Both times are epoch seconds as numbers rather than the
+    whole-second ISO strings used elsewhere here: rounding to the second would be a
+    half-second error in the one message whose whole purpose is measuring time.
+    """
+    return envelope({"type": "pong", "data": {
+        "clientTime": client_time,
+        "serverTime": now().timestamp(),
+    }})
 
 
 def error(code: str, message: str) -> str:

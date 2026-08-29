@@ -127,8 +127,10 @@ class APNsClient:
     def send_alert(self, kind: str, device_token: str, environment: str,
                    title: str, body: str, session_id: str, sequence: int):
         """A real, visible notification — reserved for phases urgent enough that the
-        player should be told even with the app fully closed."""
-        payload = {"aps": {"alert": {"title": title, "body": body}, "sound": "default"},
+        player should be told even with the app fully closed. Marked time-sensitive so it
+        breaks through Focus and is delivered promptly rather than batched with the rest."""
+        payload = {"aps": {"alert": {"title": title, "body": body}, "sound": "default",
+                           "interruption-level": "time-sensitive"},
                    "sessionID": session_id, "sequence": sequence}
         return self._send(kind, self.config.bundle_id(kind), device_token, environment,
                           payload, push_type="alert", priority="10")

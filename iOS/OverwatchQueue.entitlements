@@ -8,5 +8,11 @@
 	</array>
 	<key>aps-environment</key>
 	<string>development</string>
+	<!-- What actually lets `interruption-level: time-sensitive` mean anything. Asking for
+	     `.timeSensitive` in `requestAuthorization` is the deprecated half of this and is
+	     not enough on its own: without the entitlement the level is quietly downgraded,
+	     and a match-found alert would sit behind a Focus like any other notification. -->
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
 </dict>
 </plist>

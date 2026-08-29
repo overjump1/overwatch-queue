@@ -1,6 +1,13 @@
 import SwiftUI
 
 /// The watch face of the app: same phases, same language, sized for a glance.
+///
+/// Being a plain switch over the phase is what makes every way in land somewhere sensible
+/// without any routing: a notification tap, the Smart Stack's mirrored Live Activity, the
+/// accessory complication and a cold launch all arrive here and get the screen for
+/// whatever is happening right now. There is deliberately no navigation state and no deep
+/// link target — the queue's phase *is* the destination, and anything that tried to
+/// remember a different one could only ever be out of date.
 struct WatchRootView: View {
     @Environment(QueueStore.self) private var store
 
