@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(ROOT, "server"))
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from owqserver import protocol, queuevision, queuewatch          # noqa: E402
+from owqserver import protocol, queueroles, queuevision, queuewatch  # noqa: E402
 from owqserver.catalog import Catalog                            # noqa: E402
 from owqserver.pairing import Pairing                            # noqa: E402
 from owqserver.activitytokens import ActivityTokens              # noqa: E402
@@ -199,6 +199,72 @@ class QueueVisionPanelTests(unittest.TestCase):
         self._show(_StubWatcher(_seen(queuewatch.SEARCHING_MENU, mode="arcade")))
         self.assertEqual(self.panel.controls.mode, "arcade")
         self.assertFalse(self.panel.role_picker.isEnabled())    # arcade has no role queue
+
+    def controls_mode(self, mode):
+        self.panel.controls.mode = mode
+
+
+def _selection(roles, mode=None):
+    return queueroles.RoleSelection(frozenset(roles), mode, {}, True)
+
+
+@unittest.skipIf(APP is None, "PyQt6 isn't installed")
+class RoleDetectionPanelTests(unittest.TestCase):
+    """What clicking "Detect from screen" does with whatever the scan comes back with.
+
+    `_role_scanned` is exercised directly rather than through the worker thread it
+    normally arrives from — the threading is `_jump`'s pattern re-used verbatim, and
+    already covered by nothing failing to deadlock in every other test in this file.
+    What's worth testing here is what the panel *does* with an answer once it has one.
+    """
+
+    def setUp(self):
+        pairing = Pairing(token="3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+                          port=8904, path=os.devnull)
+        self.server = QueueServer(pairing, Catalog(), push_tokens=PushTokens(os.devnull),
+                                  activity_tokens=ActivityTokens(os.devnull))
+        self.panel = ControlPanel(self.server)
+        self.panel.detect_role_button.setEnabled(False)   # as it is mid-scan
+
+    def tearDown(self):
+        self.panel.close()
+
+    def test_a_single_checked_role_is_applied_to_the_dropdown(self):
+        self.panel._role_scanned(_selection(["support"]))
+        self.assertEqual(self.panel.role_picker.currentText(), "Support")
+        self.assertEqual(self.panel.controls.role, "support")
+
+    def test_more_than_one_checked_role_is_applied_as_flex(self):
+        self.panel._role_scanned(_selection(["tank", "damage"]))
+        self.assertEqual(self.panel.controls.role, "flex")
+
+    def test_nothing_checked_leaves_the_dropdown_alone(self):
+        self.panel.controls.role = "tank"
+        self.panel._role_scanned(_selection([]))
+        self.assertEqual(self.panel.controls.role, "tank")
+
+    def test_no_screen_to_read_leaves_the_dropdown_alone(self):
+        self.panel.controls.role = "tank"
+        self.panel._role_scanned(None)
+        self.assertEqual(self.panel.controls.role, "tank")
+
+    def test_the_button_is_re_enabled_once_an_answer_comes_back(self):
+        self.panel._role_scanned(None)
+        self.assertTrue(self.panel.detect_role_button.isEnabled())
+
+    def test_applying_a_role_does_not_write_it_straight_back(self):
+        """`setCurrentIndex` fires the same signal a human click does. Blocking it keeps
+        the panel from answering its own scan back — the same guard `_sync_mode_picker`
+        needs for the same reason."""
+        seen = []
+        self.panel.role_picker.currentIndexChanged.connect(lambda _: seen.append(1))
+        self.panel._role_scanned(_selection(["support"]))
+        self.assertEqual(seen, [])
+
+    def test_a_mode_named_by_the_screen_follows_when_the_current_mode_queues_by_role(self):
+        self.controls_mode("quickPlay")
+        self.panel._role_scanned(_selection(["support"], mode="competitive"))
+        self.assertEqual(self.panel.controls.mode, "competitive")
 
     def controls_mode(self, mode):
         self.panel.controls.mode = mode

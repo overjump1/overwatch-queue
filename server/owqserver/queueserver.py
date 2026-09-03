@@ -13,7 +13,7 @@ import random
 import threading
 import time
 
-from . import protocol, queuevision, queuewatch, vision
+from . import protocol, queueroles, queuevision, queuewatch, vision
 from .activitytokens import ActivityTokens
 from .apns import APNsClient, APNsConfig
 from .heroimages import TemplateStore
@@ -60,6 +60,7 @@ class QueueServer:
                                      queuevision.QUEUE_VISION_AVAILABLE)
         self.queue_watcher = None
         self.templates = TemplateStore(catalog, log=lambda message: self.log(message))
+        self.role_templates = queueroles.RoleIconStore(log=lambda message: self.log(message))
         # Where each hero sat the last time we looked, so picking one doesn't have to pay
         # for a fresh scan. Cleared whenever the phase moves, since the roster is only on
         # screen during hero select and stale coordinates would click on nothing.
@@ -420,6 +421,34 @@ class QueueServer:
     def _my_hero_key(self):
         with self._lock:
             return (self.session.phase.get("data") or {}).get("myHeroKey")
+
+    def scan_role_select(self):
+        """Looks at the "Select a Role" screen. `None` when there's nothing to look at.
+
+        On demand, the same as `scan_hero_select` and for the same reason: unlike the
+        queue banner, nothing about this screen says whether it's still up a second from
+        now, so there's no continuous watcher for it to feed — a caller asks when it
+        wants an answer, gets one look, and decides what to do with it.
+        """
+        if not self.vision_enabled:
+            return None
+        if not vision.focus_game_window(log=lambda message: self.log(message)):
+            return None
+
+        try:
+            result = queueroles.scan(self.role_templates,
+                                     log=lambda message: self.log(message))
+        except Exception as problem:      # pragma: no cover - depends on a live screen
+            self.log("Role-select scan failed: %s" % problem)
+            return None
+
+        if not result.on_screen:
+            return None
+
+        self.log("Scanned — %s checked%s" % (
+            ", ".join(sorted(result.roles)) or "nothing",
+            " (%s)" % result.mode if result.mode else ""))
+        return result
 
     def _drive_hero_pick(self, hero_key: str):
         """Puts the game on `hero_key`, then re-reads the slots to see if it took.

@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout, QGroupBo
                              QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy,
                              QSlider, QVBoxLayout, QWidget)
 
-from . import protocol, qr, queuevision, queuewatch, vision
+from . import protocol, qr, queueroles, queuevision, queuewatch, vision
 from .controls import Controls
 from .pairing import local_addresses
 from .queueserver import SCENARIOS
@@ -117,6 +117,7 @@ class _Bridge(QObject):
     """Carries socket-thread callbacks onto the GUI thread."""
     logged = pyqtSignal(str)
     changed = pyqtSignal()
+    role_scanned = pyqtSignal(object)
 
 
 class ControlPanel(QMainWindow):
@@ -137,6 +138,7 @@ class ControlPanel(QMainWindow):
         self._bridge = _Bridge()
         self._bridge.logged.connect(self._write_log)
         self._bridge.changed.connect(self._refresh)
+        self._bridge.role_scanned.connect(self._role_scanned)
         server.log = self._bridge.logged.emit
         server.on_change = self._bridge.changed.emit
 
@@ -249,6 +251,16 @@ class ControlPanel(QMainWindow):
         self.role_picker.currentIndexChanged.connect(self._role_changed)
         grid.addWidget(_label("Role"), 0, 2)
         grid.addWidget(self.role_picker, 0, 3)
+
+        self.detect_role_button = QPushButton("Detect from screen")
+        self.detect_role_button.setEnabled(queueroles.QUEUE_ROLES_AVAILABLE)
+        self.detect_role_button.setToolTip(
+            "Reads the checked boxes on Overwatch's own Select a Role screen and sets "
+            "the dropdown to match. Only works while that screen is actually up."
+            if queueroles.QUEUE_ROLES_AVAILABLE else
+            "Not installed here — see server/requirements.txt.")
+        self.detect_role_button.clicked.connect(self._detect_role)
+        grid.addWidget(self.detect_role_button, 0, 4)
 
         self.estimate_label = QLabel()
         self.estimate_slider = QSlider(Qt.Orientation.Horizontal)
@@ -458,6 +470,47 @@ class ControlPanel(QMainWindow):
 
     def _role_changed(self, index: int):
         self.controls.role = ROLES[index]
+
+    def _detect_role(self):
+        """Reads the checkboxes on the real Select a Role screen, one look, on request.
+
+        Unlike hero select this never runs by itself: a full look takes a moment and
+        brings Overwatch to the front the same way `_jump("heroSelect")` does, so it goes
+        to a worker for the same reason — freezing the panel on the GUI thread would look
+        like a crash. `role_scanned` carries the answer back rather than `changed`,
+        because applying it means writing to `self.controls.role`, and that has to happen
+        on the GUI thread same as any other widget-adjacent write.
+        """
+        if not self.server.vision_enabled:
+            self.server.log("Turn on screen reading to detect a role from it")
+            return
+        self.detect_role_button.setEnabled(False)
+        self.server.log("Reading the Select a Role screen…")
+
+        def work():
+            result = self.server.scan_role_select()
+            self._bridge.role_scanned.emit(result)
+
+        threading.Thread(target=work, daemon=True, name="role-select-scan").start()
+
+    def _role_scanned(self, result):
+        self.detect_role_button.setEnabled(queueroles.QUEUE_ROLES_AVAILABLE)
+        if result is None:
+            self.server.log("Select a Role isn't on screen — nothing to read")
+            return
+
+        role = result.effective_role
+        if role is None:
+            self.server.log("Read the screen, but nothing on it is checked yet")
+            return
+
+        self.controls.role = role
+        self.role_picker.blockSignals(True)
+        self.role_picker.setCurrentIndex(ROLES.index(role))
+        self.role_picker.blockSignals(False)
+        if result.mode and result.mode != self.controls.mode and self.controls.queues_by_role:
+            self.controls.mode = result.mode
+            self._sync_mode_picker()
 
     def _estimate_changed(self, value: int):
         self.controls.set_estimate(value)
