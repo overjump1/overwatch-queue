@@ -95,6 +95,24 @@ def idle_tab(strip, hue):
     return strip
 
 
+def hud_pill(strip, hue, seconds=17):
+    """The top-right HUD pill shown while queued but away from the Play menu, filled and
+    carrying its timer where the real one prints it — with the HUD icon row real footage
+    always shows just above it, close enough to merge with it under a naive blob search.
+    That merge, not the pill's own shape, is why `hud_pill` exists rather than treating
+    this corner the same way the in-game bar's is: without the icon row here, this box
+    is shaped exactly like a right-pinned bar and the shape-and-colour search finds it
+    just fine, which would be testing the wrong thing."""
+    box = queuevision._fractional_box(queuevision.HUD_PILL_REGION, *SCREEN)
+    x, y, w, h = box
+    clutter_h, gap = int(h * 0.8), int(h * 0.15)
+    clutter_y = max(0, y - gap - clutter_h)
+    _fill(strip, (x, clutter_y, w, clutter_h), 30.0)
+    _fill(strip, box, hue)
+    x0, y0, w0, h0 = queuevision._fractional_box(queuevision.HUD_PILL_TIMER_REGION, *SCREEN)
+    return _stamp(strip, seconds, (x0, y0 + int(h0 * 0.8)), int(h0 * 0.8))
+
+
 def check_circle(strip, box):
     x, y, _, h = box
     cv2.circle(strip, (x + h // 2, y + h // 2), int(h * 0.32), (60, 200, 60), -1)
@@ -279,6 +297,56 @@ class MenuTabTests(unittest.TestCase):
                                       *SCREEN)
         self.assertEqual(hit.mode, "quickPlay")
         self.assertGreater(hit.coverage, queuevision.DOMINANT_COVERAGE_MIN)
+
+
+@unittest.skipUnless(HAVE_CV2, "vision extras aren't installed")
+class HudPillTests(unittest.TestCase):
+    """The corner pill shown while queued but browsing anywhere that isn't the Play menu.
+
+    Added after a real capture showed a match found while looking at match history —
+    the green check appeared here, for well under a second, and nothing was looking. The
+    fixed-place reasoning is identical to `MenuTabTests`; what's specific to this pill is
+    that its own region sits close enough to a right-pinned in-game bar's that
+    `find_banner` only asks here once the shape-and-colour search above comes up empty —
+    covered by `BannerDetectionTests` finding the bar first, not repeated here.
+    """
+
+    def test_a_queueing_pill_is_found(self):
+        hit = queuevision.find_banner(hud_pill(scenery(1), 216.0), *SCREEN)
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit.kind, queuevision.HUD_PILL)
+        self.assertEqual(hit.mode, "quickPlay")
+        self.assertTrue(hit.searching)
+
+    def test_ordinary_scenery_in_the_corner_is_not_a_pill(self):
+        self.assertIsNone(queuevision.find_banner(scenery(2), *SCREEN))
+
+    def test_a_green_check_on_the_pill_means_the_game_was_found(self):
+        box = queuevision._fractional_box(queuevision.HUD_PILL_REGION, *SCREEN)
+        strip = check_circle(hud_pill(scenery(3), 216.0), box)
+        hit = queuevision.find_banner(strip, *SCREEN)
+        self.assertIsNotNone(hit)
+        self.assertTrue(hit.game_found)
+
+    def test_busy_but_mottled_content_in_the_corner_is_not_a_pill(self):
+        """Measured on a real while-you-wait capture: a kill feed of two banners and a
+        portrait, all bright and all sitting in this same corner, covered 0.69 of the
+        crop in its busiest hue — a real pill covers 0.94 and up. This is why that
+        threshold is its own, tighter number rather than the general banner's."""
+        box = queuevision._fractional_box(queuevision.HUD_PILL_REGION, *SCREEN)
+        x, y, w, h = box
+        strip = scenery(4)
+        # Three unequal, differently-hued patches rather than one flat fill — nothing
+        # here should agree enough to read as a single dominant colour.
+        _fill(strip, (x, y, w // 3, h), 100.0)
+        _fill(strip, (x + w // 3, y, w // 3, h), 200.0)
+        _fill(strip, (x + 2 * w // 3, y, w // 3, h), 300.0)
+        self.assertIsNone(queuevision.find_banner(strip, *SCREEN))
+
+    def test_a_pill_with_no_timer_is_not_found(self):
+        box = queuevision._fractional_box(queuevision.HUD_PILL_REGION, *SCREEN)
+        strip = _fill(scenery(5), box, 216.0)
+        self.assertIsNone(queuevision.find_banner(strip, *SCREEN))
 
 
 # ---------------------------------------------------------------- the timer

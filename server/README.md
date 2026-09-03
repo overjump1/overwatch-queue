@@ -101,7 +101,7 @@ draws and the game world never does. What it can tell from that:
 
 | | |
 |---|---|
-| **Which state** | The tall pill at top centre is the menu; the wide bar in a top corner is a while-you-wait game. A green check circle on either is *game found*. |
+| **Which state** | The tall pill at top centre is the Play menu; the wide bar in a top corner is a while-you-wait game; the small pill at top right is anywhere else — career profile, hero gallery, settings, any other screen. A green check circle on any of the three is *game found*. |
 | **Which mode** | The banner's colour. Blue is Quick Play, pink is Competitive — see `owqserver/queuemodes.json`, and add to it rather than widening its tolerance. A colour that isn't listed is still a queue; the panel's mode is kept. |
 | **How long** | Read off the timer printed on the banner, which is the game's own clock and so survives the server starting mid-queue. Until it can be read the wait is timed from here instead, and the panel says which of the two you're looking at. |
 
@@ -135,6 +135,33 @@ One line per frame, plus every box it considered and the test that rejected each
 mode whose colour isn't in `queuemodes.json` prints as `?` beside the hue it actually is,
 which is the number to add. `--dump DIR` saves annotated frames and `--image FILE` re-runs
 a saved one.
+
+## Reading which role is checked
+
+Role-queue modes show a "Select a Role" screen before searching starts — Tank, Damage,
+Support and a fourth, each with its own checkbox, and more than one can be checked at
+once. Nothing about the queue banner says which of those was chosen, so this is a
+separate, on-demand look at that screen, the same way hero select is: click **Detect from
+screen** beside the role dropdown in the panel, or call `QueueServer.scan_role_select()`.
+
+It finds each card by its icon — the same shield, bullets, cross and three-circle glyphs
+the rest of the game uses — rather than by position, then reads each one's own checkbox
+for whether it's checked. The vivid colour behind whichever card is focused (the same
+blue-for-Quick-Play, pink-for-Competitive hue the queue banner reads) is picked up too,
+as a bonus this screen happens to also reveal — it marks keyboard/controller focus, not
+which roles are selected, so it names the mode rather than deciding anything about roles.
+
+Unlike everything else in `owqserver/queuevision.py`, the constants in
+`owqserver/queueroles.py` were never measured against a live capture — they were read off
+two screenshots handed over for this feature, which is a starting point rather than a
+calibration. Check them against your own screen with:
+
+```bash
+python3 server/queuerole_debug.py --dump annotated.png
+```
+
+It prints where each icon was found, its confidence, its checkbox and card regions, and
+whether the screen was recognised at all.
 
 ## The controls
 

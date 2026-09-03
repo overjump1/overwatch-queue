@@ -175,7 +175,10 @@ class QueueTracker:
                 self._enter(GAME_FOUND, when)
             return
 
-        wanted = SEARCHING_MENU if hit.kind == queuevision.MENU_PILL else SEARCHING_IN_GAME
+        # The in-game bar is the only one of these actually drawn over a live match; the
+        # menu tab and the corner HUD pill are both "somewhere in the menus", whichever
+        # screen that happens to be, so both read as the same state.
+        wanted = SEARCHING_IN_GAME if hit.kind == queuevision.IN_GAME_BAR else SEARCHING_MENU
         if self.searching:
             # Already certain there's a queue on; which banner is showing is just where
             # the player happens to be, and swapping between them needs no convincing.

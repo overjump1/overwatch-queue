@@ -1,7 +1,7 @@
 """Finding the queue banner on screen.
 
-Overwatch shows a queue in two places, and they need two different methods — which was
-not the original plan, and is the main thing a real capture taught this module.
+Overwatch shows a queue in three places, and they need three different methods — which
+was not the original plan, and is the main thing real captures kept teaching this module.
 
 - **In a while-you-wait game**, a wide bar pinned to a top corner: mode icon, "ROLE
   QUEUE: QUICK PLAY", a timer. Found by shape and colour, because a game world contains
@@ -10,9 +10,19 @@ not the original plan, and is the main thing a real capture taught this module.
   idle tab is the same tab — same trapezoid, same blue, same place, differing only in
   what is printed on it. `menu_tab` explains what is used instead and why nothing
   cheaper works.
+- **Anywhere else** — career profile, hero gallery, settings, any screen that isn't the
+  Play menu or a match — a small pill pinned to the top-right corner, under the game's
+  own HUD icon row. `hud_pill` is `menu_tab`'s same fixed-place answer for the same
+  reason: a real capture showed this pill's own bounding blob merging with the icon row
+  and portraits sitting a few pixels above it into one tall shape that fails the in-game
+  bar's height test, the exact failure `menu_tab`'s docstring already describes for the
+  main tab and its own nav bar. A match found while looking at, say, match history was
+  measured to show its green check here for well under a second before the screen cut to
+  a loading black — missed entirely until this existed, silently, because nothing was
+  looking at the one place it happened to appear.
 
-There is a third thing the queue does, which is show neither of those for a few seconds
-while one turns into the other. That gap is deliberately not this module's problem: here
+There is a fourth thing the queue does, which is show none of those for a few seconds
+while one turns into another. That gap is deliberately not this module's problem: here
 it is simply None, and `queuewatch` is what decides a gap still means "queueing".
 
 When the match lands, whichever of the two is showing gets a saturated green check circle
@@ -63,6 +73,7 @@ MODES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "queuemode
 
 MENU_PILL = "menuPill"
 IN_GAME_BAR = "inGameBar"
+HUD_PILL = "hudPill"
 
 # Only the top of the screen is ever captured. One strip covers the centre pill and both
 # corners, so nothing here depends on which corner the in-game bar is pinned to — and on
@@ -113,6 +124,29 @@ MENU_TAB_REGION = (0.42, 0.000, 0.58, 0.080)
 # ...and where the timer is printed inside it. Measured at 0.549-0.573; kept generous.
 MENU_TIMER_REGION = (0.515, 0.000, 0.600, 0.055)
 
+# Where the top-right HUD pill sits — see `hud_pill`. Measured off a real 1920x1080
+# capture at (1464, 86)-(1909, 155), i.e. 0.763-0.994 by 0.080-0.144; widened past both
+# measured edges the same way every other fixed region here is, but the bottom only as
+# far as `STRIP_FRACTION` allows — the pill's true 0.144 already sits close to that 0.15
+# ceiling, and margin pushed past it isn't margin, it's a bottom edge quietly clipped out
+# of the capture on any screen a little taller than the one this was measured on.
+HUD_PILL_REGION = (0.74, 0.07, 1.00, 0.148)
+# ...and where its digits print, measured at roughly 0.967-0.988 by 0.102-0.121 in the
+# same capture — tighter than the pill's own edge on purpose. The pill is rounded at that
+# corner, and that curve is itself a bright, low-saturation mark against the fill —
+# `queuedigits.segment` picked it up as a fifth "glyph" taller than the real digits and
+# rejected the whole reading on the strength of that one wrong height, before this was
+# pulled in far enough to leave it out.
+HUD_PILL_TIMER_REGION = (0.963, 0.10, 0.99, 0.126)
+# Held to a tighter bar than an ordinary banner's `DOMINANT_COVERAGE_MIN`: this region is
+# a fixed place rather than a shape match, so nothing about *finding* a candidate here
+# already argues it's the genuine pill the way surviving the width/height/fill tests
+# does elsewhere. Measured on a real while-you-wait capture, a kill-feed busy with two
+# banners and a portrait sitting in this same corner covered 0.69 of the crop in its
+# busiest hue — not nothing, but well short of the 0.94-0.98 the real pill covered on
+# every capture it was measured on.
+HUD_PILL_COVERAGE_MIN = 0.85
+
 GREEN_HUE_RANGE = (85.0, 165.0)
 GREEN_SATURATION_MIN = 110
 GREEN_VALUE_MIN = 110
@@ -130,6 +164,7 @@ GREEN_MAX_SHARE = 0.35
 TIMER_REGION = {
     IN_GAME_BAR: (0.76, 0.05, 1.00, 0.95),
     MENU_PILL: (0.00, 0.00, 1.00, 1.00),      # the crop is already only the timer
+    HUD_PILL: (0.00, 0.00, 1.00, 1.00),       # ditto — see `hud_pill`
 }
 
 
@@ -420,6 +455,50 @@ def menu_tab(strip, screen_w: int, screen_h: int, modes=None):
     return BannerHit(MENU_PILL, tab, mode, hue, False, coverage, float(keep.mean()))
 
 
+def hud_pill(strip, screen_w: int, screen_h: int, modes=None):
+    """The queue pill Overwatch pins to the top-right corner while you're anywhere that
+    isn't the Play menu or a match — career profile, hero gallery, settings, whatever —
+    or None when it isn't there.
+
+    A fixed place, the same reason and the same way `menu_tab` is: measured on a real
+    capture, the pill's own bounding blob merged with the HUD icon row and hero-portrait
+    thumbnails sitting a few pixels above it into one 456x162 shape, which fails the
+    in-game bar's height test for exactly the reason `menu_tab`'s own docstring describes
+    for the main tab and its nav bar — components that are individually the right shape
+    stop existing as components once the close bridges them into one. Cropping to just
+    the pill sidesteps that the same way cropping to just the tab does.
+
+    Checked only after the in-game bar's own free search comes up empty — see
+    `find_banner` — because this region sits close enough to a right-pinned in-game bar's
+    own that the genuine article should always be found there first.
+    """
+    hues, tolerance = modes if modes is not None else load_modes()
+    box = _fractional_box(HUD_PILL_REGION, screen_w, screen_h)
+    x, y, w, h = box
+    body = strip[max(0, y):y + h, max(0, x):x + w]
+    if body.size == 0:
+        return None
+
+    hsv = cv2.cvtColor(body, cv2.COLOR_BGR2HSV)
+    keep = (hsv[:, :, 1] >= SATURATION_MIN) & (hsv[:, :, 2] >= VALUE_MIN)
+    hue, coverage, spread = dominant_hue(hsv[:, :, 0][keep].astype(np.float32) * 2.0)
+    if coverage < HUD_PILL_COVERAGE_MIN or spread > HUE_STD_MAX:
+        # Ordinary content in that corner — an idle HUD, someone else's UI — is not one
+        # flat colour the way this pill always is. The timer check further down could
+        # eventually rule most of it out too, but this is cheaper and rules out more.
+        return None
+    mode = match_mode(hue, hues, tolerance)
+
+    if green_check(body):
+        return BannerHit(HUD_PILL, box, mode, hue, True, coverage, float(keep.mean()))
+
+    timer = _fractional_box(HUD_PILL_TIMER_REGION, screen_w, screen_h)
+    tx, ty, tw, th = timer
+    if queuedigits.segment(strip[max(0, ty):ty + th, max(0, tx):tx + tw]) is None:
+        return None
+    return BannerHit(HUD_PILL, box, mode, hue, False, coverage, float(keep.mean()))
+
+
 def find_banner(strip, screen_w: int = 0, screen_h: int = 0, modes=None):
     """The queue banner in `strip`, or None if there isn't one.
 
@@ -432,6 +511,10 @@ def find_banner(strip, screen_w: int = 0, screen_h: int = 0, modes=None):
     real capture, the menu's own row of mode tabs is a flat blue box of exactly the right
     proportions sitting against the left edge, and without that check it reads as an
     in-game queue bar every time the menu is on screen.
+
+    `hud_pill` goes last, not because it matters least, but because its fixed region
+    overlaps where a right-pinned in-game bar can legitimately be — a real corner bar
+    should always win the search above before this fixed crop is ever asked.
     """
     screen_w = screen_w or strip.shape[1]
     screen_h = screen_h or int(strip.shape[0] / STRIP_FRACTION)
@@ -449,4 +532,5 @@ def find_banner(strip, screen_w: int = 0, screen_h: int = 0, modes=None):
                         green_check(patch), coverage, fill)
         if hit.game_found or queuedigits.segment(hit.timer_patch(strip)) is not None:
             return hit
-    return None
+
+    return hud_pill(strip, screen_w, screen_h, modes)
