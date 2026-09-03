@@ -1,0 +1,8 @@
+{
+  "_comment": "Banner hue in degrees per queue mode, measured off real captures. A mode that isn't here is still a queue - `find_banner` reports mode null and the caller keeps whatever mode the panel has. Add to this rather than widening the tolerance: two modes 24 degrees apart would start stealing each other's queues.",
+  "tolerance": 12.0,
+  "hues": {
+    "quickPlay": 212.0,
+    "competitive": 340.0
+  }
+}

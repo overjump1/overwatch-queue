@@ -12,14 +12,14 @@ from __future__ import annotations
 
 import threading
 
-from PyQt6.QtCore import Qt, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QObject, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QImage, QPixmap
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout, QGroupBox,
                              QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow,
                              QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy,
                              QSlider, QVBoxLayout, QWidget)
 
-from . import protocol, qr, vision
+from . import protocol, qr, queuevision, queuewatch, vision
 from .controls import Controls
 from .pairing import local_addresses
 from .queueserver import SCENARIOS
@@ -30,6 +30,13 @@ LOG_LINES = 400
 JUMPS = [("Match Found", "matchFound"), ("Map Vote", "mapVote"),
          ("Hero Select", "heroSelect"), ("In Game", "inGame"), ("Cancelled", "cancelled")]
 ROLES = ["tank", "damage", "support", "flex"]
+
+QUEUE_STATE_NAMES = {
+    queuewatch.SEARCHING_MENU: "Searching, in the menu",
+    queuewatch.SEARCHING_IN_GAME: "Searching, in a game",
+    queuewatch.SEARCHING_HIDDEN: "Searching, banner out of sight",
+    queuewatch.GAME_FOUND: "Game found",
+}
 
 PHASE_NAMES = {"idle": "Idle", "searching": "Searching", "matchFound": "Match found",
                "mapVote": "Map vote", "heroSelect": "Hero select", "inGame": "In game",
@@ -81,6 +88,7 @@ QListWidget, QPlainTextEdit {
     padding: 6px; color: %(white)s;
 }
 QLabel#muted { color: %(muted)s; }
+QLabel#queue { color: %(muted)s; padding-top: 2px; }
 QLabel#status { color: %(muted)s; padding: 4px 2px; }
 QSlider::groove:horizontal { height: 4px; background: #24365a; border-radius: 2px; }
 QSlider::handle:horizontal {
@@ -132,6 +140,15 @@ class ControlPanel(QMainWindow):
         server.log = self._bridge.logged.emit
         server.on_change = self._bridge.changed.emit
 
+        server.watch_queue(self.controls)
+        # The watcher only calls back when the state *moves*, but the wait it is
+        # reporting goes up every second, so the line showing it is ticked from here
+        # rather than from the poll thread.
+        self._queue_tick = QTimer(self)
+        self._queue_tick.timeout.connect(self._refresh_queue_vision)
+        self._queue_tick.start(1000)
+        self._refresh_queue_vision()
+
     # ------------------------------------------------------------ layout
 
     def _build(self):
@@ -152,7 +169,8 @@ class ControlPanel(QMainWindow):
         right = QVBoxLayout()
         right.setSpacing(14)
         for panel in (self._queue_box(), self._jump_box(), self._scenario_box(),
-                      self._options_row(), self._vision_row()):
+                      self._options_row(), self._vision_row(),
+                      self._queue_vision_row()):
             panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
             right.addWidget(panel)
         right.addWidget(self._log_box(), 1)      # only the log takes the slack
@@ -334,6 +352,33 @@ class ControlPanel(QMainWindow):
         layout.addWidget(_muted(note, wrap=True), 1)
         return row
 
+    def _queue_vision_row(self) -> QWidget:
+        row = QFrame()
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(4, 0, 4, 0)
+        layout.setSpacing(4)
+
+        self.watch_queue = QCheckBox("Watch for a queue")
+        self.watch_queue.setChecked(self.server.queue_vision_enabled)
+        self.watch_queue.setEnabled(queuevision.QUEUE_VISION_AVAILABLE)
+        self.watch_queue.toggled.connect(self._queue_vision_changed)
+        layout.addWidget(self.watch_queue)
+
+        if queuevision.QUEUE_VISION_AVAILABLE:
+            note = ("Reads the queue banner at the top of the screen and moves the phase "
+                    "on its own — searching, then match found. Looks only; never takes "
+                    "the mouse. The jump buttons above still work either way.")
+        else:
+            note = ("Not installed here — see server/requirements.txt. The queue stays "
+                    "hand-driven.")
+        layout.addWidget(_muted(note, wrap=True))
+
+        self.queue_state = QLabel("Not watching.")
+        self.queue_state.setObjectName("queue")
+        self.queue_state.setWordWrap(True)
+        layout.addWidget(self.queue_state)
+        return row
+
     def _log_box(self) -> QGroupBox:
         box = QGroupBox("Traffic")
         layout = QVBoxLayout(box)
@@ -345,6 +390,67 @@ class ControlPanel(QMainWindow):
         return box
 
     # ------------------------------------------------------------ widget events
+
+    def _queue_vision_changed(self, on: bool):
+        self.server.queue_vision_enabled = on and queuevision.QUEUE_VISION_AVAILABLE
+        if on:
+            self.server.watch_queue(self.controls)
+        elif self.server.queue_watcher:
+            self.server.queue_watcher.stop()
+            self.server.queue_watcher = None
+        self._refresh_queue_vision()
+
+    def _refresh_queue_vision(self):
+        watcher = self.server.queue_watcher
+        seen = watcher.latest if watcher else None
+        if not watcher or not watcher.running:
+            return self._say_queue("Not watching.", MUTED)
+        if seen is None or not seen.in_queue:
+            if seen is not None and not seen.looking:
+                return self._say_queue("Watching — Overwatch isn't in front.", MUTED)
+            return self._say_queue("Watching — no queue on screen.", MUTED)
+
+        self._sync_mode_picker()
+        # The mode shown is the one being broadcast, not the hue of the latest frame.
+        # They agree once `_correct_mode` has settled, and while they don't it is the
+        # broadcast one the phone is showing — a panel that disagreed with the watch
+        # would send you looking for a bug in the wrong half of the project. The raw
+        # per-frame reading is a tuning question, and `queuewatch_debug.py` prints it.
+        #
+        # "read off the screen" or "timed from here" rather than the wire's own word for
+        # it: the difference being pointed at is whether the number came off the game's
+        # clock or ours, which is the one thing about it worth knowing at a glance.
+        self._say_queue(
+            "%s   ·   %s   ·   %s waited (%s)"
+            % (QUEUE_STATE_NAMES.get(seen.state, seen.state),
+               protocol.MODE_NAMES.get(self.controls.mode, self.controls.mode),
+               _clock(int(seen.queue_elapsed)),
+               "read off the screen" if seen.source == "timer" else "timed from here")
+            + ("" if seen.looking else "   ·   Overwatch isn't in front, so this is the "
+                                       "last thing actually seen"),
+            ORANGE if seen.state == queuewatch.GAME_FOUND else WHITE)
+
+    def _say_queue(self, text: str, colour: str):
+        self.queue_state.setText(text)
+        self.queue_state.setStyleSheet("color: %s;" % colour)
+
+    def _sync_mode_picker(self):
+        """Follows `controls.mode` when the watcher has changed it underneath the panel.
+
+        Without this the dropdown keeps saying whatever was last chosen by hand while the
+        queue on screen — and on the phone — is a different mode, which makes the panel
+        disagree with itself. Signals are blocked because `setCurrentIndex` would fire
+        `_mode_changed` and write the value straight back: harmless today, and exactly
+        the shape of loop that stops being harmless the moment either side grows a side
+        effect.
+        """
+        index = protocol.MODES.index(self.controls.mode)
+        if self.mode_picker.currentIndex() == index:
+            return
+        self.mode_picker.blockSignals(True)
+        self.mode_picker.setCurrentIndex(index)
+        self.mode_picker.blockSignals(False)
+        self.role_picker.setEnabled(self.controls.queues_by_role)
 
     def _mode_changed(self, index: int):
         self.controls.mode = protocol.MODES[index]
@@ -482,6 +588,7 @@ class ControlPanel(QMainWindow):
         if not clients:
             self.devices.addItem("Waiting for a phone to scan the code…")
 
+        self._refresh_queue_vision()
         self.status.setText("%s   ·   sequence %d   ·   %d device%s connected"
                             % (PHASE_NAMES.get(session.kind, session.kind), session.sequence,
                                len(clients), "" if len(clients) == 1 else "s"))

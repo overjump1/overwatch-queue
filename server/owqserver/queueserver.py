@@ -13,7 +13,7 @@ import random
 import threading
 import time
 
-from . import protocol, vision
+from . import protocol, queuevision, queuewatch, vision
 from .activitytokens import ActivityTokens
 from .apns import APNsClient, APNsConfig
 from .heroimages import TemplateStore
@@ -29,7 +29,7 @@ HELLO_TIMEOUT_SECONDS = 10
 
 class QueueServer:
     def __init__(self, pairing, catalog, log=None, push_tokens=None, activity_tokens=None,
-                 vision_enabled=False):
+                 vision_enabled=False, queue_vision_enabled=False):
         self.pairing = pairing
         self.catalog = catalog
         self.session = QueueSession()
@@ -52,6 +52,13 @@ class QueueServer:
         # running and typed arrow keys into it. Nothing that merely *builds* a server
         # should be able to take the mouse. `run.py` turns it on for the actual app.
         self.vision_enabled = bool(vision_enabled) and vision.VISION_AVAILABLE
+        # Watching for a queue is opt-in for the same reason, though the stakes are lower:
+        # it only ever reads the top of the screen and never takes the mouse. What it does
+        # do is *drive the session on its own*, so a test that built a server with it on
+        # would find its phase moving underneath it.
+        self.queue_vision_enabled = (bool(queue_vision_enabled) and
+                                     queuevision.QUEUE_VISION_AVAILABLE)
+        self.queue_watcher = None
         self.templates = TemplateStore(catalog, log=lambda message: self.log(message))
         # Where each hero sat the last time we looked, so picking one doesn't have to pay
         # for a fresh scan. Cleared whenever the phase moves, since the roster is only on
@@ -123,9 +130,26 @@ class QueueServer:
         self._heartbeat.start()
         self.log("Listening on port %d" % self.pairing.port)
 
+    def watch_queue(self, controls):
+        """Starts reading the queue off the screen, and returns the watcher or None.
+
+        Takes the panel's `Controls` rather than building its own, because the mode and
+        role a queue is in are only half readable — see `queuewatch.QueueWatcher`. Called
+        from `run.py` and the panel; doing it here keeps the enabled-or-not decision in
+        the one place that already makes it for hero select.
+        """
+        if not self.queue_vision_enabled or self.queue_watcher is not None:
+            return self.queue_watcher
+        self.queue_watcher = queuewatch.QueueWatcher(
+            controls, log=lambda message: self.log(message))
+        self.queue_watcher.start()
+        return self.queue_watcher
+
     def stop(self):
         self._running = False
         self.stop_scenario()
+        if self.queue_watcher:
+            self.queue_watcher.stop()
         self.ws.stop()
         if self.apns:
             self.apns.close()

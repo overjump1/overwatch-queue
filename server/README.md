@@ -3,10 +3,12 @@
 What the phone and the watch talk to. It runs on the PC, holds the queue state, and
 pushes it to every paired device over a WebSocket.
 
-The game side doesn't exist yet, so the state comes from a control panel you drive by
-hand. That panel is not a mock: it pushes real snapshots through the real socket, and
-what the phone does with them is exactly what it will do when this program is reading
-Overwatch instead of reading a mouse click.
+Half of it reads the game. The queue banner at the top of the screen is watched
+continuously, so *searching* and *match found* happen on their own; hero select is read
+when the panel asks for it. Everything else still comes from a control panel you drive by
+hand, and that panel is not a mock — it pushes real snapshots through the real socket, and
+what the phone does with them is exactly what it does when the screen is the thing
+driving them.
 
 ```bash
 pip install -r server/requirements.txt
@@ -90,6 +92,50 @@ for this app, so it should never leave a machine you personally control.
 4. Install the extra dependencies this path needs (already listed, commented, in
    `server/requirements.txt`) and restart the server.
 
+## Watching for a queue
+
+On by default wherever the vision extras import; `--no-queue-vision` turns it off, as does
+the **Watch for a queue** checkbox in the panel. It captures the top 15% of the screen a
+few times a second and looks for the queue banner — a flat, saturated box that the game
+draws and the game world never does. What it can tell from that:
+
+| | |
+|---|---|
+| **Which state** | The tall pill at top centre is the menu; the wide bar in a top corner is a while-you-wait game. A green check circle on either is *game found*. |
+| **Which mode** | The banner's colour. Blue is Quick Play, pink is Competitive — see `owqserver/queuemodes.json`, and add to it rather than widening its tolerance. A colour that isn't listed is still a queue; the panel's mode is kept. |
+| **How long** | Read off the timer printed on the banner, which is the game's own clock and so survives the server starting mid-queue. Until it can be read the wait is timed from here instead, and the panel says which of the two you're looking at. |
+
+The seconds where the banner isn't drawn at all — loading into a deathmatch, a killcam, a
+scoreboard — do not end the queue: an absent banner starts a twenty-second grace period
+instead, and alt-tabbing suspends even that, because a screenshot of your browser is not
+evidence about your queue.
+
+Nothing in this half focuses a window or touches the mouse. It only looks; the hero-select
+scanner above is the part that clicks.
+
+### Its digits are learned, not shipped
+
+There are no digit images in the repository and no font to render them from. The timer is
+a clock, and a clock counts, which is enough for it to label its own digits: the tick
+where the tens place rolls over is the tick where the units place is zero, and one run of
+exactly ten ticks between two rollovers both labels ten glyphs and proves itself. A single
+unbroken minute of queueing teaches it the set, which is then cached in
+`server/.cache/queue-digits/` and never learned again.
+
+### Retuning it
+
+The constants in `owqserver/queuevision.py` were measured off captures. To check them
+against your own screen:
+
+```bash
+python3 server/queuewatch_debug.py --all
+```
+
+One line per frame, plus every box it considered and the test that rejected each one. A
+mode whose colour isn't in `queuemodes.json` prints as `?` beside the hue it actually is,
+which is the number to add. `--dump DIR` saves annotated frames and `--image FILE` re-runs
+a saved one.
+
 ## The controls
 
 | | |
@@ -133,10 +179,15 @@ straight at the PC is the only way to test it without hardware.
 
 ```
 run.py            entry point
+queuewatch_debug.py  prints what the queue watcher sees, for retuning it
 owqserver/
   gui.py          the PyQt6 window
   controls.py     what its buttons mean, with no Qt in sight — the testable half
   queueserver.py  queue state, command handling, scenarios
+  queuevision.py  finds the queue banner by its shape and colour
+  queuedigits.py  reads the timer on it, and learns its digits from it
+  queuewatch.py   turns a stream of frames into a queue, and tells the server
+  vision.py       reads the hero-select screen, and clicks on it
   wsserver.py     a small RFC 6455 WebSocket server
   protocol.py     the wire format from docs/PROTOCOL.md
   pairing.py      the token, where it's stored, and the addresses to offer

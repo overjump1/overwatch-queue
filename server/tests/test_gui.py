@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(ROOT, "server"))
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from owqserver import protocol                                   # noqa: E402
+from owqserver import protocol, queuevision, queuewatch          # noqa: E402
 from owqserver.catalog import Catalog                            # noqa: E402
 from owqserver.pairing import Pairing                            # noqa: E402
 from owqserver.activitytokens import ActivityTokens              # noqa: E402
@@ -116,6 +116,92 @@ class PanelTests(unittest.TestCase):
         APP.processEvents()
         picture = self.panel.grab()
         self.assertEqual((picture.width(), picture.height()), (1060, 800))
+
+
+class _StubWatcher:
+    """A watcher that reports whatever the test wants, without a thread or a screen."""
+
+    def __init__(self, latest=None, running=True):
+        self.latest = latest
+        self.running = running
+        self.stopped = False
+
+    def stop(self):
+        # Closing the panel stops the server, and stopping the server stops the watcher.
+        self.stopped = True
+
+
+def _seen(state, mode="competitive", elapsed=0.0, source="self"):
+    return queuewatch.QueueObservation(state, queuevision.MENU_PILL, mode, elapsed, 0.0,
+                                       source, 0.9)
+
+
+@unittest.skipIf(APP is None, "PyQt6 isn't installed")
+class QueueVisionPanelTests(unittest.TestCase):
+    """The line that says what the watcher can see, and the dropdown beside it."""
+
+    def setUp(self):
+        pairing = Pairing(token="3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+                          port=8903, path=os.devnull)
+        self.server = QueueServer(pairing, Catalog(), push_tokens=PushTokens(os.devnull),
+                                  activity_tokens=ActivityTokens(os.devnull))
+        self.panel = ControlPanel(self.server)
+
+    def tearDown(self):
+        self.panel.close()
+
+    def _show(self, watcher):
+        self.server.queue_watcher = watcher
+        self.panel._refresh_queue_vision()
+        return self.panel.queue_state.text()
+
+    def test_it_says_so_when_nothing_is_watching(self):
+        self.assertEqual(self._show(None), "Not watching.")
+
+    def test_a_watcher_that_has_seen_nothing_says_so_too(self):
+        """Distinct from "not watching" on purpose: one means the feature is off, the
+        other means it is on and the screen has no queue on it."""
+        self.assertIn("no queue", self._show(_StubWatcher(_seen(queuewatch.IDLE))))
+
+    def test_a_queue_shows_its_state_mode_and_wait(self):
+        text = self._show(_StubWatcher(_seen(queuewatch.SEARCHING_IN_GAME,
+                                             elapsed=137.0)))
+        self.assertIn("Searching, in a game", text)
+        self.assertIn("Competitive", text)
+        self.assertIn("2:17", text)
+
+    def test_the_gap_where_the_banner_is_hidden_is_named_as_such(self):
+        self.assertIn("out of sight",
+                      self._show(_StubWatcher(_seen(queuewatch.SEARCHING_HIDDEN))))
+
+    def test_it_says_whether_the_wait_was_read_or_guessed(self):
+        self.assertIn("timed from here",
+                      self._show(_StubWatcher(_seen(queuewatch.SEARCHING_MENU))))
+        self.assertIn("read off the screen",
+                      self._show(_StubWatcher(_seen(queuewatch.SEARCHING_MENU,
+                                                    source="timer"))))
+
+    def test_a_match_is_picked_out_from_the_rest(self):
+        self._show(_StubWatcher(_seen(queuewatch.GAME_FOUND)))
+        self.assertIn("f99e1a", self.panel.queue_state.styleSheet())
+
+    def test_the_dropdown_follows_a_mode_the_watcher_found(self):
+        """Otherwise the panel says one mode while the phone shows another, and the
+        first place anyone looks for that bug is the app."""
+        self.controls_mode("quickPlay")
+        self._show(_StubWatcher(_seen(queuewatch.SEARCHING_MENU, mode="quickPlay")))
+        self.assertEqual(self.panel.mode_picker.currentText(), "Quick Play")
+
+    def test_following_it_does_not_write_the_mode_back(self):
+        """`setCurrentIndex` fires the same signal a human click does. Blocking it keeps
+        the panel from answering the watcher back."""
+        self.controls_mode("arcade")
+        self._show(_StubWatcher(_seen(queuewatch.SEARCHING_MENU, mode="arcade")))
+        self.assertEqual(self.panel.controls.mode, "arcade")
+        self.assertFalse(self.panel.role_picker.isEnabled())    # arcade has no role queue
+
+    def controls_mode(self, mode):
+        self.panel.controls.mode = mode
 
 
 if __name__ == "__main__":
