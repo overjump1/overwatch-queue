@@ -264,6 +264,25 @@ class RowShapeTests(unittest.TestCase):
         hits = self._row(support=self._hit("support", 500, y=900))
         self.assertFalse(queueroles.looks_like_role_select(hits))
 
+    def test_four_templates_landing_on_the_same_spot_is_not_the_role_screen(self):
+        """The regression a full-video sweep found: a victory screen's own art, a spawn
+        room's wall monitors and a control point's contest meter each had three or four
+        templates all land within a few pixels of each other — a generic bright shape
+        weakly resembling several icons at once, not four separate cards. Sorting them by
+        x still comes back in Tank-Damage-Support-Flex order purely because that's the
+        order they were built in and their x's are practically tied, which the order
+        check alone cannot tell apart from the real thing."""
+        hits = {role: self._hit(role, 500 + i, size=100)
+               for i, role in enumerate(queueroles.ROLE_ORDER)}
+        self.assertFalse(queueroles.looks_like_role_select(hits))
+
+    def test_cards_spaced_a_little_short_of_real_are_still_rejected(self):
+        """Real cards measured 2.5-3x an icon's own width apart; comfortably under that
+        floor is still not spacing this accepts, on purpose — see `MIN_CARD_SPACING_RATIO`."""
+        hits = {role: self._hit(role, i * 60, size=48)
+               for i, role in enumerate(queueroles.ROLE_ORDER)}
+        self.assertFalse(queueroles.looks_like_role_select(hits))
+
 
 class SvgRasterTests(unittest.TestCase):
     """The one icon that only exists as an SVG, filled by hand rather than by a renderer

@@ -108,6 +108,13 @@ ICON_MIN_SCORE = 0.5
 # under a cursor or a controller-focus glow) is still enough to call this the role
 # screen, the same tolerance `looks_like_roster` gives a hero grid.
 MIN_ICONS_FOUND = 3
+# How far apart two confidently-matched icons have to sit, as a multiple of their own
+# average width, to count as two different cards rather than one coincidence several
+# templates all landed on. Real cards measured about 2.5-3x apart on a real capture;
+# this sits well under that floor rather than at it, on purpose — see
+# `looks_like_role_select`'s own docstring for the three real screens that made this
+# check necessary at all.
+MIN_CARD_SPACING_RATIO = 1.5
 
 # Where the checkbox and the card's own coloured body sit: (dx0, dy0, dx1, dy1) offsets
 # from an icon's own centre-x and `row_geometry`'s own top-y, in units of its spacing —
@@ -479,8 +486,20 @@ def looks_like_role_select(hits: dict) -> bool:
     Confidence alone isn't enough — see `vision.looks_like_roster` for the same
     argument made about the hero grid. What a lone confident icon can't fake is the
     *arrangement*: the four cards sit in one row, left to right, always in the same
-    order. Requiring both is what tells this screen apart from, say, a scoreboard that
-    happens to have a shield-shaped badge on it somewhere.
+    order, each a real distance from the next.
+
+    That last clause was added after a full-video sweep, not guessed in advance: a
+    victory screen's own art, a spawn room's wall monitors, and a control point's
+    contest meter each fooled an earlier version of this into believing they were the
+    role row. In every one of those, three or four templates had all landed on
+    virtually the same small patch of the image — a generic bright shape weakly
+    resembling a shield, a cross and a set of bullets all at once — rather than on four
+    separate cards. Sorting them by x still came back in Tank-Damage-Support-Flex order
+    purely because that is the order they were inserted in and their x's were all but
+    tied, which the order check alone cannot tell apart from four cards genuinely read
+    left to right. Real cards are never that close together: measured on a real
+    capture, centre-to-centre spacing ran about 2.5-3x an icon's own width. Requiring at
+    least a real fraction of that is what a coincidence landing on one spot cannot fake.
     """
     confident = {role: hit for role, hit in hits.items() if hit.score >= ICON_MIN_SCORE}
     if len(confident) < MIN_ICONS_FOUND:
@@ -493,7 +512,13 @@ def looks_like_role_select(hits: dict) -> bool:
     centers = [hit.y + hit.h / 2.0 for hit in confident.values()]
     heights = [hit.h for hit in confident.values()]
     tolerance = 0.6 * (sum(heights) / len(heights))
-    return (max(centers) - min(centers)) <= tolerance
+    if (max(centers) - min(centers)) > tolerance:
+        return False
+
+    x_centers = [confident[role].x + confident[role].w / 2.0 for role in by_x]
+    gaps = [b - a for a, b in zip(x_centers, x_centers[1:])]
+    average_width = sum(confident[role].w for role in by_x) / len(by_x)
+    return all(gap >= MIN_CARD_SPACING_RATIO * average_width for gap in gaps)
 
 
 def card_checked(bgr, hit: RoleCardHit, geometry: "RowGeometry") -> bool:
