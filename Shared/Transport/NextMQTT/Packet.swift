@@ -73,6 +73,34 @@ enum PropertyIdentifier: UInt {
     case topicAliasMaximum  = 34 // Two Byte Integer
 }
 
+/// Skips the value of an MQTT5 property this decoder doesn't otherwise care about —
+/// needed because a real broker's CONNACK carries several of these (Maximum QoS, Retain
+/// Available, Receive Maximum, …) that upstream NextMQTT didn't know how to skip, so it
+/// threw and turned a broker-accepted connection into a reported failure. Every standard
+/// property identifier and wire type is from MQTT5 spec section 2.2.2.2.
+func skipMQTTPropertyValue(id: UInt, container: inout UnkeyedDecodingContainer) throws {
+    switch id {
+    case 1, 23, 25, 36, 37, 40, 41, 42:      // Byte
+        _ = try container.decode(UInt8.self)
+    case 19, 33, 34, 35:                     // Two Byte Integer
+        _ = try container.decode(UInt16.self)
+    case 2, 17, 24, 39:                      // Four Byte Integer
+        _ = try container.decode(UInt32.self)
+    case 11:                                 // Variable Byte Integer
+        _ = try container.decode(UIntVar.self)
+    case 3, 8, 18, 21, 26, 28, 31:            // UTF-8 String
+        _ = try container.decode(String.self)
+    case 9, 22:                              // Binary Data
+        let length = try container.decode(UInt16.self)
+        for _ in 0..<length { _ = try container.decode(UInt8.self) }
+    case 38:                                 // UTF-8 String Pair (User Property)
+        _ = try container.decode(String.self)
+        _ = try container.decode(String.self)
+    default:
+        throw ConnackPacket.Error.invalidPropertyIdentifier
+    }
+}
+
 struct FixedHeader: MQTTCodable {
     let controlOptions: ControlOptions
     let remainingLength: UIntVar
@@ -311,7 +339,9 @@ extension ConnackPacket: MQTTDecodable {
                 bytesRemaining -= MemoryLayout.size(ofValue: aliasMax)
                 self.topicAliasMaximum = Int(aliasMax)
             default:
-                throw Error.invalidPropertyIdentifier
+                let y = container.currentIndex
+                try skipMQTTPropertyValue(id: UInt(propertyId), container: &container)
+                bytesRemaining -= container.currentIndex - y
             }
         }
     }
