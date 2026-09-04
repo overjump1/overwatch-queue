@@ -1,5 +1,4 @@
 import Foundation
-import CocoaMQTT
 
 /// Talks to the queue server on the PC over MQTT, via the local Mosquitto broker the
 /// server itself manages (see `server/owqserver/mqttbroker.py`). Replaces
@@ -12,6 +11,10 @@ import CocoaMQTT
 /// after a reconnect following a dead Wi-Fi, which is the whole reason this replaced the
 /// old hand-rolled WebSocket server: a write failure there silently dropped a client's
 /// next update with nothing to redeliver it.
+///
+/// Built on the vendored `NextMQTT` client (see `Shared/Transport/NextMQTT/`), not
+/// CocoaMQTT: this transport also runs on watchOS (the watch falls back to it directly
+/// when the phone is unreachable), and CocoaMQTT's socket layer doesn't build there.
 @MainActor
 public final class MQTTTransport: NSObject, QueueTransport {
     public let name = "MQTT"
@@ -26,11 +29,11 @@ public final class MQTTTransport: NSObject, QueueTransport {
     private let identity: ClientIdentity
     private let clientID: String
 
-    private var mqtt: CocoaMQTT?
+    private var mqtt: MQTT?
     private var wantsConnection = false
 
     private static let phoneUsername = "owq"
-    private static let keepAliveSeconds: UInt16 = 15
+    private static let keepAliveSeconds = 15
 
     public init(pairing: Pairing, identity: ClientIdentity) {
         self.pairing = pairing
@@ -52,18 +55,17 @@ public final class MQTTTransport: NSObject, QueueTransport {
         // A clean disconnect, not the Last Will path: this device really is going
         // offline on purpose, so publish that now rather than waiting on the broker to
         // notice the socket died.
-        mqtt?.publish(presenceTopic, withString: #"{"online":false}"#, qos: .qos1, retained: true)
+        mqtt?.publish(to: presenceTopic, qos: .leastOnce, retain: true, message: Self.presenceMessage(online: false))
         mqtt?.disconnect()
         mqtt = nil
         status = .offline
     }
 
     public func send(_ command: ClientCommand) {
-        guard let mqtt, mqtt.connState == .connected else { return }
+        guard let mqtt, mqtt.connectionState == .connected else { return }
         do {
             let data = try Wire.encode(command)
-            guard let text = String(data: data, encoding: .utf8) else { return }
-            mqtt.publish(commandTopic, withString: text, qos: .qos1)
+            mqtt.publish(to: commandTopic, qos: .leastOnce, message: data)
         } catch {
             status = .failed("Couldn't encode command: \(error.localizedDescription)")
         }
@@ -77,29 +79,61 @@ public final class MQTTTransport: NSObject, QueueTransport {
 
     private func openConnection() {
         status = .connecting
-        let client = CocoaMQTT(clientID: clientID, host: pairing.host, port: UInt16(pairing.port))
-        client.username = Self.phoneUsername
-        client.password = pairing.token
-        client.keepAlive = Self.keepAliveSeconds
-        client.cleanSession = true
-        client.autoReconnect = true
-        client.autoReconnectTimeInterval = 5          // seconds between attempts
-        client.willMessage = CocoaMQTTWill(topic: presenceTopic, message: #"{"online":false}"#)
-        client.willMessage?.qos = .qos1
-        client.willMessage?.retained = true
-        client.delegate = self
+        let will = MQTT.Will(topic: presenceTopic, message: #"{"online":false}"#, qos: .leastOnce, retain: true)
+        let client = MQTT(
+            host: pairing.host,
+            port: pairing.port,
+            username: Self.phoneUsername,
+            password: pairing.token,
+            will: will,
+            options: [.clientId: clientID, .cleanStart: true, .pingInterval: Self.keepAliveSeconds]
+        )
+        client.onMessage = { [weak self] topic, payload in
+            guard let self, let payload else { return }
+            Task { @MainActor in self.handle(topic: topic, payload: payload) }
+        }
+        client.onConnectionState = { [weak self] state in
+            Task { @MainActor in self?.handleConnectionState(state) }
+        }
         mqtt = client
-        _ = client.connect()
+        client.connect { [weak self] result in
+            guard let self else { return }
+            Task { @MainActor in
+                guard case .failure = result else { return }
+                // A rejected CONNACK (bad credentials, most likely a stale or revoked
+                // pairing token) on the *initial* connect attempt — retrying with the
+                // same wrong password would never succeed, so this is a terminal
+                // failure, not a transient one.
+                self.status = .failed("Not paired with \(self.pairing.displayText) — re-scan the QR code.")
+                self.wantsConnection = false
+                self.mqtt?.disconnect()
+            }
+        }
+    }
+
+    private func handleConnectionState(_ state: MQTT.ConnectionState) {
+        switch state {
+        case .connecting, .reconnecting:
+            status = .connecting
+        case .connected:
+            subscribeAndAnnounce()
+            status = .connected
+        case .dropped:
+            guard wantsConnection else { return }
+            // The client's own auto-reconnect loop handles retrying; nothing to
+            // schedule here.
+            status = .failed("Disconnected from \(pairing.displayText)")
+        case .notConnected, .disconnecting, .disconnected:
+            break
+        }
     }
 
     private func subscribeAndAnnounce() {
         guard let mqtt else { return }
-        mqtt.subscribe([
-            (TOPIC_SNAPSHOT, CocoaMQTTQoS.qos1),
-            (replyTopic, CocoaMQTTQoS.qos0),
-            (TOPIC_HEARTBEAT, CocoaMQTTQoS.qos0),
-        ])
-        mqtt.publish(presenceTopic, withString: #"{"online":true}"#, qos: .qos1, retained: true)
+        mqtt.subscribe(to: TOPIC_SNAPSHOT, options: [.qos(.leastOnce), .retainSendOnSubscribe])
+        mqtt.subscribe(to: replyTopic, options: [.qos(.mostOnce), .retainSendOnSubscribe])
+        mqtt.subscribe(to: TOPIC_HEARTBEAT, options: [.qos(.mostOnce), .retainSendOnSubscribe])
+        mqtt.publish(to: presenceTopic, qos: .leastOnce, retain: true, message: Self.presenceMessage(online: true))
         send(.hello(client: identity, token: nil))
     }
 
@@ -113,6 +147,10 @@ public final class MQTTTransport: NSObject, QueueTransport {
         }
     }
 
+    private static func presenceMessage(online: Bool) -> Data {
+        Data(#"{"online":\#(online)}"#.utf8)
+    }
+
     /// A clientID that survives relaunches (so the broker's retained presence topic
     /// doesn't keep pointing at a stale "online" for a device that quit) but is unique
     /// per install (so two phones paired to the same PC don't collide on one topic set).
@@ -124,46 +162,6 @@ public final class MQTTTransport: NSObject, QueueTransport {
         defaults.set(generated, forKey: key)
         return generated
     }
-}
-
-extension MQTTTransport: CocoaMQTTDelegate {
-    public func mqtt(_ mqtt: CocoaMQTT, didConnectAck ack: CocoaMQTTConnAck) {
-        Task { @MainActor in
-            guard ack == .accept else {
-                // A rejected CONNACK (bad credentials, most likely a stale or revoked
-                // pairing token) — `autoReconnect` would just retry the same wrong
-                // password forever, so this is a terminal failure, not a transient one.
-                self.status = .failed("Not paired with \(self.pairing.displayText) — re-scan the QR code.")
-                self.wantsConnection = false
-                mqtt.disconnect()
-                return
-            }
-            self.subscribeAndAnnounce()
-            self.status = .connected
-        }
-    }
-
-    public func mqtt(_ mqtt: CocoaMQTT, didReceiveMessage message: CocoaMQTTMessage, id: UInt16) {
-        let topic = message.topic
-        let payload = Data(message.payload)
-        Task { @MainActor in self.handle(topic: topic, payload: payload) }
-    }
-
-    public func mqttDidDisconnect(_ mqtt: CocoaMQTT, withError err: Error?) {
-        Task { @MainActor in
-            guard self.wantsConnection else { return }
-            self.status = .failed(err?.localizedDescription ?? "Disconnected from \(self.pairing.displayText)")
-            // `autoReconnect` on the CocoaMQTT instance handles retrying the connection
-            // itself; nothing to schedule here.
-        }
-    }
-
-    public func mqtt(_ mqtt: CocoaMQTT, didPublishMessage message: CocoaMQTTMessage, id: UInt16) {}
-    public func mqtt(_ mqtt: CocoaMQTT, didPublishAck id: UInt16) {}
-    public func mqtt(_ mqtt: CocoaMQTT, didSubscribeTopics success: NSDictionary, failed: [String]) {}
-    public func mqtt(_ mqtt: CocoaMQTT, didUnsubscribeTopics topics: [String]) {}
-    public func mqttDidPing(_ mqtt: CocoaMQTT) {}
-    public func mqttDidReceivePong(_ mqtt: CocoaMQTT) {}
 }
 
 private let TOPIC_SNAPSHOT = "owq/snapshot"
