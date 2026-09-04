@@ -4,11 +4,17 @@ What the phone and the watch talk to. It runs on the PC, holds the queue state, 
 pushes it to every paired device over a WebSocket.
 
 Half of it reads the game. The queue banner at the top of the screen is watched
-continuously, so *searching* and *match found* happen on their own; hero select is read
-when the panel asks for it. Everything else still comes from a control panel you drive by
-hand, and that panel is not a mock — it pushes real snapshots through the real socket, and
-what the phone does with them is exactly what it does when the screen is the thing
-driving them.
+continuously, so *searching* and *match found* happen on their own; whichever role is
+checked on the "Select a Role" screen is read the same way, whenever there's no queue to
+watch instead. Past that, one watcher thread follows the whole rest of a match on its
+own too: the vote screen, the hero roster, and the "Prepare to Attack" countdown that
+means the match has actually started, each moving the phase along the moment it's seen —
+map vote's own options read as the real maps on screen where the OCR extra is installed,
+hero select's as the real roster and picks. The control panel underneath all of that is
+not a mock, though — it pushes real snapshots through the real socket, and what the phone
+does with them is exactly what it does when the screen is the thing driving them, which is
+also what makes it possible to drive any of this by hand instead, or override it, at any
+point.
 
 ```bash
 pip install -r server/requirements.txt
@@ -141,8 +147,10 @@ a saved one.
 Role-queue modes show a "Select a Role" screen before searching starts — Tank, Damage,
 Support and a fourth, each with its own checkbox, and more than one can be checked at
 once. Nothing about the queue banner says which of those was chosen, so this is a
-separate, on-demand look at that screen, the same way hero select is: click **Detect from
-screen** beside the role dropdown in the panel, or call `QueueServer.scan_role_select()`.
+separate look at that screen — but unlike hero select, reading it is nothing more than a
+screenshot, so `queuewatch.QueueWatcher` reads it on every idle poll and keeps the panel's
+own role picker in step automatically. **Detect from screen** beside the role dropdown and
+`QueueServer.scan_role_select()` are still there for a manual, one-off read on demand.
 
 It finds each card by its icon — the same shield, bullets, cross and three-circle glyphs
 the rest of the game uses — rather than by position, then reads each one's own checkbox
@@ -162,6 +170,27 @@ python3 server/queuerole_debug.py --dump annotated.png
 
 It prints where each icon was found, its confidence, its checkbox and card regions, and
 whether the screen was recognised at all.
+
+## Reading which maps are on the vote screen
+
+The vote screen's own cards were tried two other ways before this one, and both failed
+against real captures: the card's own thumbnail is a different render of the map
+entirely from the catalog's promotional screenshot, so matching one against the other
+means nothing, and rendering a candidate map's name in a stand-in font to compare against
+the real text on screen doesn't survive either the wrong font or the game's own tight
+letter-kerning — even switching to the game's real font (Overwatch's UI runs on Big
+Noodle Too) didn't fix it, since a whole word squashed to another word's size throws away
+the shape that told them apart. What actually reads the card cleanly is a real OCR model,
+`rapidocr-onnxruntime` — an optional, meaningfully large extra (see
+`server/requirements.txt`), not something this needs a system OCR binary installed
+alongside the way `pytesseract` would. Every name it reads is checked against
+`Catalog.key_for_map_name`, which tolerates a clipped crop losing a trailing letter but
+refuses anything not close enough to a real map to trust — the same "win clearly or say
+nothing" the rest of this project already holds every match to.
+
+Without the extra installed, or with fewer than two of the (up to three) cards reading as
+a real map, map vote falls back to the same plausible-but-not-real catalog options this
+project has always shown — `Controls.map_vote_phase` is where that fallback lives.
 
 ## The controls
 

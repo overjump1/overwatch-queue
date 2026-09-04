@@ -186,6 +186,13 @@ PREPARE_TIMER_REGION = (0.52, 0.032, 0.575, 0.058)
 # test rather than reusing `queuedigits.TEXT_SATURATION_MAX`, which that amber fails by a
 # wide margin (measured saturation 150-160 against a ceiling of 60).
 PREPARE_VALUE_MIN = 150
+# The other half of "amber, not white" — a full-video sweep found this timer's fixed box
+# also catching a *white* "0:SS" countdown from an unrelated screen ("Locks In"), value
+# alone being just as bright as the real thing and its own leading zero genuinely holed,
+# so neither the marks-count nor the hole check told them apart. Measured saturation on
+# five of those was 4-13; on four real amber readings, 178-198. `PREPARE_VALUE_MIN` alone
+# never asked this, which is how something achromatic got through it in the first place.
+PREPARE_SATURATION_MIN = 100
 # A digit stroke has real area; a compression artefact or a stray pixel does not.
 PREPARE_MIN_MARK_AREA = 4
 # Two digits and a colon is the least a running clock ever shows here (the countdown
@@ -207,18 +214,93 @@ PREPARE_MIN_MARKS = 3
 PREPARE_CLUTTER_REGION = (0.354, 0.069, 0.651, 0.157)
 PREPARE_CLUTTER_MAX = 0.09
 
+# Upscaled before the digits are pulled apart, matching `queuedigits.segment`'s own
+# convention: hard-edged interface text loses nothing to cubic upscaling, and a glyph
+# this small is a steadier shape to measure larger.
+PREPARE_UPSCALE = 4
+
+# How far the minutes digit `looks_like_prepare` isolates may sit from the seconds digits
+# beside it, in the upscaled crop, before it's treated as not really next to them at all.
+# A full-video sweep found this timer's fixed box catching more than just its own digits:
+# twice, a neighbouring label's own text ("...THE PAYLOAD", "...ATTACK") bled in from the
+# crop's left edge and got picked up as if it were the minutes digit, sitting 137-138px
+# from the real seconds beside it. Every real minutes digit measured through this path,
+# true or false, sat within 20-63px of its own seconds. The threshold is set well clear
+# of both real ranges, not fitted to either edge.
+PREPARE_DIGIT_GAP_MAX = 90
+
+# The minutes digit `looks_like_prepare` isolates has to be a "0" — the one thing a real
+# pre-match countdown always shows there, since it never reaches a full minute. Read not
+# by classifying which digit it is, but by asking whether its stroke encloses a hole the
+# way "0" does — cheaper than reading the label's text or the digits' full value, either
+# of which would also tell a pre-match countdown from the live match clock drawn in the
+# exact same amber, in the exact same place, for the rest of the round.
+#
+# A hole alone was not enough, and only real captures found why: this font's own "4" also
+# closes a small loop, where the diagonal meets the crossbar — measured at 0.22-0.36 of
+# the digit's own height, against 0.52-0.71 for a real "0"'s full oval. What actually
+# separates them is *how much* of the digit that hole fills, not merely whether one
+# exists.
+PREPARE_HOLE_HEIGHT_MIN = 0.45
+
+
+def _prepare_digit_marks(mask):
+    """Every digit-height mark in `mask` (already upscaled), left to right — the seconds'
+    two and, immediately before them, the minutes' one — or None if there aren't at least
+    that many to be a timer at all."""
+    count, _, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
+    scale = PREPARE_UPSCALE * PREPARE_UPSCALE
+    marks = [tuple(int(value) for value in stats[index][:5]) for index in range(1, count)
+             if stats[index][4] >= PREPARE_MIN_MARK_AREA * scale]
+    if len(marks) < PREPARE_MIN_MARKS:
+        return None
+    tallest = max(mark[3] for mark in marks)
+    digits = sorted((mark for mark in marks if mark[3] >= 0.6 * tallest),
+                    key=lambda mark: mark[0])
+    return digits if len(digits) >= 3 else None
+
+
+def _hole_height_ratio(mask, mark) -> float:
+    """How tall the largest enclosed hole in `mark` (an (x, y, w, h, area) tuple) is,
+    relative to the mark's own height — 0.0 with no hole at all. A real "0"'s oval fills
+    most of the digit; a "4"'s own small closed loop, where its diagonal meets the
+    crossbar, fills only a corner of it. See `PREPARE_HOLE_HEIGHT_MIN` for the real gap
+    between those two shapes."""
+    x, y, w, h, _ = mark
+    pad = 3
+    y0, y1 = max(0, y - pad), y + h + pad
+    x0, x1 = max(0, x - pad), x + w + pad
+    sub = (mask[y0:y1, x0:x1] * 255).astype(np.uint8)
+    contours, hierarchy = cv2.findContours(sub, cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE)
+    if hierarchy is None:
+        return 0.0
+    tallest_hole = 0
+    for index, row in enumerate(hierarchy[0]):
+        if row[3] != -1:
+            _, _, _, hole_h = cv2.boundingRect(contours[index])
+            tallest_hole = max(tallest_hole, hole_h)
+    return tallest_hole / float(h)
+
 
 def looks_like_prepare(frame_bgr) -> bool:
     """Whether a countdown is sitting where "Prepare to Attack" always puts one, and the
     match itself hasn't actually started yet.
 
-    The first half answers *is the screen showing that banner*, not *how many seconds
-    are left* — it looks for digit-shaped marks in the timer's own fixed spot rather than
-    reading them, the way `queuedigits.segment` reads the queue's. Teaching this timer
-    its own digits the same way is future work; see the module docstring for why.
+    Three questions, in order, each one narrowing what the last one couldn't rule out:
 
-    The second half is the one a real sweep, not a guess, put here — see
-    `PREPARE_CLUTTER_REGION`'s own comment for the failure it was measured against.
+    - Are there enough digit-shaped marks here to be a timer at all — see
+      `PREPARE_MIN_MARKS`.
+    - Is the one immediately before the seconds actually the minutes digit, or a
+      neighbouring label's text that bled into this box's own fixed position from the
+      left — see `PREPARE_DIGIT_GAP_MAX`.
+    - Is that minutes digit a "0" — see the module's own comment on why a hole is what
+      this asks instead of reading it outright.
+
+    The clutter check below is the one a real sweep put here first, before any of this
+    existed; see `PREPARE_CLUTTER_REGION`'s own comment for the failure it was measured
+    against. Both this and that one are needed: the clutter check alone still let through
+    a live match clock sitting over a quiet objective tracker, which the sweep that added
+    this method's own checks is what actually found.
     """
     h, w = frame_bgr.shape[:2]
     x, y, tw, th = queuevision._fractional_box(PREPARE_TIMER_REGION, w, h)
@@ -226,11 +308,21 @@ def looks_like_prepare(frame_bgr) -> bool:
     if body.size == 0:
         return False
 
-    hsv = cv2.cvtColor(body, cv2.COLOR_BGR2HSV)
-    mask = (hsv[:, :, 2] >= PREPARE_VALUE_MIN).astype(np.uint8)
-    count, _, stats, _ = cv2.connectedComponentsWithStats(mask, 8)
-    marks = sum(1 for index in range(1, count) if stats[index][4] >= PREPARE_MIN_MARK_AREA)
-    if marks < PREPARE_MIN_MARKS:
+    big = cv2.resize(body, (tw * PREPARE_UPSCALE, th * PREPARE_UPSCALE),
+                     interpolation=cv2.INTER_CUBIC)
+    hsv = cv2.cvtColor(big, cv2.COLOR_BGR2HSV)
+    mask = ((hsv[:, :, 2] >= PREPARE_VALUE_MIN) &
+           (hsv[:, :, 1] >= PREPARE_SATURATION_MIN)).astype(np.uint8)
+    digits = _prepare_digit_marks(mask)
+    if digits is None:
+        return False
+
+    seconds_first = digits[-2]
+    minutes = digits[-3]
+    gap = seconds_first[0] - (minutes[0] + minutes[2])
+    if not 0 <= gap <= PREPARE_DIGIT_GAP_MAX:
+        return False
+    if _hole_height_ratio(mask, minutes) < PREPARE_HOLE_HEIGHT_MIN:
         return False
 
     cx, cy, cw, ch = queuevision._fractional_box(PREPARE_CLUTTER_REGION, w, h)

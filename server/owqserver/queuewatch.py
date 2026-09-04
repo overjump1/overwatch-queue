@@ -32,6 +32,20 @@ it. It begins as the moment we first noticed, and is rewritten the instant the o
 timer can be read — see `queuedigits` for why the game's own clock is the better answer.
 `source` says which of the two the number came from, so nothing downstream has to guess.
 
+**Polling while searching does not have to mean polling `find_banner` itself that often.**
+A full look — shape, colour spread, the timer digits — costs real work, which is exactly
+why `SEARCHING_POLL_SECONDS` throttles it to four times a second rather than every frame.
+But a full-video test measured what that throttle actually costs: the real check circle
+goes from nothing to thousands of matching pixels within two frames of appearing, so a
+quarter-second gap is routinely most of the moment being waited for. `queuevision.
+green_hint` is what closes that without paying for more full looks — a box already known,
+scanned for nothing but "enough green pixels to be worth asking," measured at 0-5 on
+every one of five real queues right up until the real thing, which put over 2000 in the
+same box immediately. `_fast_wait` spends the same quarter-second `SEARCHING_POLL_SECONDS`
+already budgeted for the next full look watching that box at 50Hz instead of sleeping
+through it blind, and returns the instant it trips so the next full look happens right
+then rather than however much of the budget was left.
+
 `QueueTracker` holds all of that and touches nothing: no screen, no clock, no server. It
 is handed frames and a time and returns an observation, which is what lets the whole of
 the reasoning above be tested against a made-up minute. `QueueWatcher` is the thin part
@@ -39,13 +53,26 @@ around it that captures, polls and calls `QueueServer.apply`.
 
 Like `queuevision`, and unlike the hero-select half of `vision.py`, nothing here focuses a
 window or touches the mouse. It only looks.
+
+**Which role is checked is read the same way, whenever there is no queue to watch
+instead.** `queueroles.scan` was built alongside this module but, until a real session
+using both live found it, stayed a button a person had to click — the "Select a Role"
+screen a person actually looks at right before starting a queue, so it only matters while
+`IDLE`, and is only ever a plain screenshot the same as everything else here, never a
+focus grab the way reading a hero's own pick is. `_check_role_select` is that read, run on
+the same idle cadence as everything else while there is no banner to explain why not.
 """
 from __future__ import annotations
 
 import threading
 import time
 
-from . import protocol, queuedigits, queuevision, vision
+try:                                    # pragma: no cover - trivial import guard
+    import cv2
+except ImportError:                     # pragma: no cover - the Mac dev path
+    cv2 = None
+
+from . import protocol, queuedigits, queueroles, queuevision, stagevision, vision
 
 IDLE = "idle"
 SEARCHING_MENU = "searchingMenu"
@@ -68,6 +95,19 @@ TIMER_DISAGREE_SECONDS = 2.0
 
 IDLE_POLL_SECONDS = 1.5
 SEARCHING_POLL_SECONDS = 0.25
+# How often the fast trip-wire actually looks, inside a `SEARCHING_POLL_SECONDS` budget.
+# The real check circle's own ramp (0 to 2000+ matching pixels within two frames) has
+# room to spare against even a slower tick than this; 50Hz is chosen for margin, not
+# because anything measured needed it that tight.
+FAST_TICK_SECONDS = 0.02
+# How long a banner box is trusted after the last poll that actually confirmed one there.
+# Past this, `_fast_wait` falls back to sleeping rather than watching: a box this stale
+# is a poll or more behind, and a full-video test found exactly what a stale one can drift
+# onto — a live match's own green score bar, once the real banner had already moved on to
+# somewhere else. `green_check`'s shape tests would still reject that if asked, so a stale
+# box only ever costs a wasted look rather than a wrong answer, but there is no reason to
+# spend even that when the box backing it is this old.
+BOX_FRESHNESS_SECONDS = 0.5
 
 
 class QueueObservation:
@@ -83,7 +123,8 @@ class QueueObservation:
         self.mode = mode                        # a protocol mode, or None if unmeasured
         self.queue_elapsed = float(queue_elapsed)
         self.state_elapsed = float(state_elapsed)
-        self.source = source                    # "timer" (read) or "self" (guessed)
+        self.source = source                    # "timer" (read), "self" (guessed), or
+                                                 # "audio" (queueaudio's own tone, below)
         self.confidence = float(confidence)
         # Whether the last look was a look at all. False means Overwatch was behind
         # something, so `state` is the last thing actually seen rather than news.
@@ -161,6 +202,34 @@ class QueueTracker:
             self._saw_nothing(when, gap, visible)
         return self.observation(when)
 
+    def audio_found(self, when: float):
+        """A second, independent "match found" signal from `queueaudio` rather than a
+        banner glimpsed on screen — see that module for what it actually hears and how
+        it decided.
+
+        Only trusted while actually searching, which a full-video test of that audio
+        channel is what showed this gate was necessary rather than incidental: every
+        other quiet-then-loud transition the same recording's audio turned up — entering
+        hero select, "prepare to attack" starting, whatever plays between rounds — happens
+        strictly after a real match already landed, by which point this tracker has
+        already left every `SEARCHING_STATES` member behind. `self.searching` being false
+        is what tells those apart from the real thing without this method needing to know
+        what any of them individually were. It does not fully close the channel's own
+        weaker spot — the same sweep found a couple of triggers that land *while still
+        genuinely searching*, most likely voice chat resuming after a lull, which this
+        gate cannot distinguish from the real tone by timing alone — so this stays a
+        second opinion the way `queuevision`'s own is treated as the trustworthy one:
+        useful for catching what a brief on-screen check missed, not yet trusted to
+        overrule a screen that disagrees with it.
+        """
+        if not self.searching:
+            return
+        if self.state != GAME_FOUND:
+            self._found_waited = self.queue_elapsed(when)
+            self._enter(GAME_FOUND, when)
+        self.looking = True
+        self.source = "audio"
+
     def _saw_banner(self, hit, when: float, timer):
         self.looking = True
         self._hidden_visible = self._hidden_total = 0.0
@@ -185,6 +254,24 @@ class QueueTracker:
             self._anchor(when, timer)
             if self.state != wanted:
                 self._enter(wanted, when)
+            return
+
+        if self.state == GAME_FOUND and self.source == "audio":
+            # A GAME_FOUND that came from `audio_found` has no on-screen confirmation of
+            # its own — nothing has actually looked yet. The screen showing "still
+            # searching" straight afterward is exactly that missing look, and it says the
+            # tone this came from was not a match landing after all: a real one clears
+            # the banner within a few seconds, and a full-video test of this channel
+            # found real false claims that a blind hold would have sat on for the full
+            # twelve seconds, silently eating whatever the queue did in the meantime —
+            # in one measured case, the real match landing three seconds later. Retracted
+            # immediately in favour of what the screen is still plainly showing, rather
+            # than held the way a vision-confirmed GAME_FOUND is.
+            self._pending = None
+            self._started = self._started if self._started is not None else when
+            self.source = "self"
+            self._enter(wanted, when)
+            self._anchor(when, timer)
             return
 
         if self.state == GAME_FOUND and when - self._entered < GAME_FOUND_HOLD_SECONDS:
@@ -271,25 +358,38 @@ class QueueWatcher:
 
     Takes a `Controls` rather than a `QueueServer` because the queue's mode and role are
     only half readable: the banner's colour is the mode, but nothing on it says which role
-    was queued, so the panel's selection stays the source for that. Going through
-    `Controls` also means this gets `effective_role` — the open-queue rule for Arcade and
-    Mystery Heroes — rather than reimplementing it.
+    was queued while one is actually running. Before one starts, though, the role is
+    exactly as readable as the banner is — see `_check_role_select` — so `Controls.role`
+    is written here too, the same as `mode` and `estimate` already are by hand, whenever
+    the real "Select a Role" screen says something different. Going through `Controls`
+    also means this gets `effective_role` — the open-queue rule for Arcade and Mystery
+    Heroes — rather than reimplementing it.
     """
 
-    def __init__(self, controls, log=None, reader=None, tracker=None):
+    def __init__(self, controls, log=None, reader=None, tracker=None, role_templates=None,
+                hero_templates=None, hero_keys=None):
         self.controls = controls
         self.server = controls.server
         self.log = log or (lambda message: None)
         self.tracker = tracker or QueueTracker()
         self.reader = reader if reader is not None else \
             queuedigits.DigitReader(log=lambda message: self.log(message))
+        self.role_templates = role_templates
+        self.hero_templates = hero_templates
+        self.hero_keys = hero_keys
         self.latest = None
         self.on_change = None           # called (on the poll thread) after a state moves
+        # called (on the poll thread) with a `queueroles.RoleSelection` whenever an idle
+        # poll reads a role different from the one already selected — a GUI wires this to
+        # whatever already keeps a picker widget in sync with a hand-triggered scan.
+        self.on_role_detected = None
 
         self._modes = queuevision.load_modes()
         self._acted = IDLE
         self._thread = None
         self._stop = threading.Event()
+        self._last_box = None           # a searching banner's own box, for `_fast_wait`
+        self._last_box_at = None        # when that box was last actually confirmed
 
     @property
     def running(self) -> bool:
@@ -323,10 +423,82 @@ class QueueWatcher:
 
         strip, screen_w, screen_h = queuevision.capture_strip()
         hit = queuevision.find_banner(strip, screen_w, screen_h, self._modes)
+        if hit is not None:
+            self._last_box = hit.box
+            self._last_box_at = when
         timer = None
         if hit is not None and hit.searching:
             timer = self.reader.read(hit.timer_patch(strip), when)
-        return self.tracker.update(hit, when, visible=True, timer=timer)
+        observation = self.tracker.update(hit, when, visible=True, timer=timer)
+
+        if hit is None and self.role_templates is not None and observation.state == IDLE:
+            self._check_role_select()
+        if hit is None:
+            self._check_match_progress()
+        return observation
+
+    def _check_match_progress(self):
+        """Moves the session on through map vote, hero select and into the match itself,
+        the same look `Controls.jump` already takes on a person's own click — this is
+        only ever a fresh set of eyes on `self.server.session.kind`, never a tracker of
+        its own the way the banner has one, because that phase is already the one true
+        record of where the match actually is.
+
+        Gated on that phase rather than anything read here, on purpose: `mapVote` and
+        `heroSelect` are each looked for only while the phase hasn't already said we're
+        there, so a screen that happens to look like one twice in a row costs one look
+        and one skipped one, never two jumps. `looks_like_prepare` is the exception,
+        since it is asked for *because* `heroSelect` is already current — a match that
+        has actually started is what it exists to catch.
+        """
+        kind = self.server.session.kind
+        if kind not in ("matchFound", "mapVote", "heroSelect"):
+            return
+
+        if kind == "heroSelect":
+            if stagevision.looks_like_prepare(queueroles.capture()):
+                self.controls.jump("inGame")
+            return
+
+        frame = queueroles.capture()
+        if stagevision.looks_like_map_vote(frame):
+            if kind != "mapVote":
+                self.controls.jump("mapVote")
+            return
+
+        if not self.server.vision_enabled or self.hero_templates is None or \
+                self.hero_keys is None:
+            # Detecting the roster needs no mouse of its own, but the jump this would
+            # make does — `Controls.hero_select_phase` reaches for a real scan, which
+            # focuses the window the same as a person's own click would. Skipped
+            # entirely with vision off, the same boundary `run.py` already draws.
+            return
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        grid_hits = vision._match_grid(gray, self.hero_templates, self.hero_keys)
+        if vision.looks_like_roster(grid_hits):
+            self.controls.jump("heroSelect")
+
+    def _check_role_select(self):
+        """Reads the real "Select a Role" screen, the same look `QueueServer.
+        scan_role_select` takes on request — but every idle poll rather than a person's
+        click, since `queueroles.scan` needs nothing this module doesn't already have
+        permission to do. It takes its own screenshot rather than reusing `strip`: the
+        row of cards can sit anywhere down the middle of the screen depending on
+        resolution and UI scale, unlike the banner, which is only ever near the top.
+        """
+        try:
+            result = queueroles.scan(self.role_templates, modes=self._modes, log=self.log)
+        except Exception as problem:              # noqa: BLE001 - see `_loop`
+            self.log("Queue watch's role check skipped a frame: %s" % problem)
+            return
+        if not result.on_screen:
+            return
+        role = result.effective_role
+        if role is None or role == self.controls.role:
+            return
+        self.controls.role = role
+        if self.on_role_detected:
+            self.on_role_detected(result)
 
     # ------------------------------------------------------------ the loop
 
@@ -342,7 +514,16 @@ class QueueWatcher:
                 # for it but a dead thread.
                 self.log("Queue watch skipped a frame: %s" % problem)
                 observation = None
-            self._stop.wait(self._interval(observation))
+
+            interval = self._interval(observation)
+            if observation is not None and observation.searching:
+                # Waiting specifically for the one moment `queuevision.green_hint` exists
+                # to catch early - see the module docstring. Any other observation (idle,
+                # already `GAME_FOUND`, or a poll that failed) just sleeps the interval out
+                # exactly as before.
+                self._fast_wait(interval)
+            else:
+                self._stop.wait(interval)
 
     def _interval(self, observation) -> float:
         if observation is None:
@@ -352,6 +533,35 @@ class QueueWatcher:
             # it then arrives a quarter-second later rather than a second and a half.
             return SEARCHING_POLL_SECONDS
         return IDLE_POLL_SECONDS
+
+    def _fast_wait(self, budget: float) -> bool:
+        """Spends up to `budget` seconds watching the last confirmed banner box for
+        `queuevision.green_hint`'s cheap trip-wire, instead of sleeping through it blind.
+        Returns whether it tripped — true or false, the budget is always fully spent
+        either watching or waiting, so the caller's own timing is unaffected either way.
+
+        Falls back to an ordinary sleep whenever there is no box fresh enough to trust;
+        see `BOX_FRESHNESS_SECONDS` for why a stale one is worse than none.
+        """
+        if (self._last_box is None or self._last_box_at is None or
+                time.monotonic() - self._last_box_at > BOX_FRESHNESS_SECONDS):
+            self._stop.wait(budget)
+            return False
+
+        box = self._last_box
+        deadline = time.monotonic() + budget
+        while not self._stop.is_set():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            try:
+                strip, _, _ = queuevision.capture_strip()
+                if queuevision.green_hint(strip, box):
+                    return True
+            except Exception as problem:          # noqa: BLE001 - see `_loop`
+                self.log("Queue watch's fast check skipped a frame: %s" % problem)
+            self._stop.wait(min(FAST_TICK_SECONDS, max(0.0, deadline - time.monotonic())))
+        return False
 
     # ------------------------------------------------------------ telling the server
 

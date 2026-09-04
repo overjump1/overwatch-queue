@@ -18,12 +18,15 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "server"))
 
-from owqserver import protocol, queuedigits, queuevision, queuewatch    # noqa: E402
+from owqserver import (protocol, queuedigits, queueroles, queuevision,  # noqa: E402
+                       queuewatch, vision)
+from owqserver import stagevision as sv_stage                           # noqa: E402
 from owqserver.catalog import Catalog                                   # noqa: E402
 from owqserver.controls import Controls                                 # noqa: E402
 from owqserver.pairing import Pairing                                   # noqa: E402
@@ -84,6 +87,25 @@ def menu_tab(strip, hue, seconds=17):
     _fill(strip, box, hue)
     x0, y0, w, h = queuevision._fractional_box(queuevision.MENU_TIMER_REGION, *SCREEN)
     return _stamp(strip, seconds, (x0 + int(w * 0.10), y0 + int(h * 0.72)), int(h * 0.34))
+
+
+def busy_scenery_with_a_check(strip, box):
+    """Ordinary gameplay that happens to fill `menu_tab`'s own fixed box with several
+    different saturated colours - not one hue the way the real tab always is - plus a
+    real check-circle-shaped blob sitting in it. Standing in for a full-video sweep's
+    own real false positive: a control-point contest meter, itself green and round
+    enough to pass `green_check` outright, sitting in a scene busy with other saturated
+    colour. `scenery` alone reproduces `hud_pill`'s already-documented fleck problem
+    instead - too little saturated content at all for coverage to measure - which is
+    a different failure from the one this fixture is for."""
+    x, y, w, h = box
+    hues = [10.0, 40.0, 90.0, 200.0, 320.0]
+    for i, hue in enumerate(hues):
+        x0, x1 = x + (w * i) // len(hues), x + (w * (i + 1)) // len(hues)
+        patch = np.zeros((h, x1 - x0, 3), np.uint8)
+        patch[:, :] = (int(hue / 2), 200, 200)
+        strip[y:y + h, x0:x1] = cv2.cvtColor(patch, cv2.COLOR_HSV2BGR)
+    return check_circle(strip, box)
 
 
 def idle_tab(strip, hue):
@@ -225,6 +247,42 @@ class GreenCheckTests(unittest.TestCase):
         self.assertFalse(queuevision.green_check(patch))
 
 
+@unittest.skipUnless(HAVE_CV2, "vision extras aren't installed")
+class GreenHintTests(unittest.TestCase):
+    """`green_hint`'s own, much lower bar - "worth a real look", not "is the real thing".
+
+    No diameter, aspect or circularity test here on purpose; those belong to
+    `green_check`; `green_hint` exists to be cheap enough to run every frame of the
+    quarter-second a full look would otherwise just sleep through, so plain ordinary
+    scenery and even the ornament that fools nothing else are both meant to fail it the
+    same easy way `green_check` fails them - not by running the same expensive shape
+    work faster.
+    """
+
+    BOX = (40, 20, 200, 90)
+
+    def test_a_real_check_circle_trips_it(self):
+        strip = check_circle(scenery(), self.BOX)
+        self.assertTrue(queuevision.green_hint(strip, self.BOX))
+
+    def test_plain_scenery_does_not(self):
+        self.assertFalse(queuevision.green_hint(scenery(), self.BOX))
+
+    def test_a_handful_of_stray_pixels_is_not_enough(self):
+        """The real gap measured on a full recording: ordinary noise inside an
+        already-known banner box never exceeded five matching pixels; the threshold sits
+        nowhere near that, with thousands of pixels of margin below the real thing."""
+        strip = scenery()
+        x, y, w, h = self.BOX
+        patch = np.zeros((3, 3, 3), np.uint8)
+        patch[:, :] = cv2.cvtColor(np.uint8([[[60, 200, 230]]]), cv2.COLOR_HSV2BGR)[0, 0]
+        strip[y:y + 3, x:x + 3] = patch
+        self.assertFalse(queuevision.green_hint(strip, self.BOX))
+
+    def test_an_empty_box_is_not_a_hint(self):
+        self.assertFalse(queuevision.green_hint(scenery(), (0, 0, 0, 0)))
+
+
 class ModeHueTests(unittest.TestCase):
     def setUp(self):
         self.hues, self.tolerance = queuevision.load_modes()
@@ -321,6 +379,19 @@ class MenuTabTests(unittest.TestCase):
         at rest would put every player permanently in a queue."""
         self.assertIsNone(queuevision.find_banner(idle_tab(scenery(2), 216.0), *SCREEN))
 
+    def test_a_few_bright_marks_on_ordinary_scenery_are_not_a_match(self):
+        """The regression a full-video sweep found on this path's other half: ordinary
+        gameplay can happen to put a small cluster of bright marks in this exact fixed
+        spot — not a real tab, just coincidence — and still pass `queuedigits.segment`'s
+        own loose "three or four glyphs in a row" test for `M:SS`. Measured on
+        seventy-one real ones, fill never rose above 0.557; on five real tabs, found and
+        merely searching alike, it never fell under 0.822. `MENU_TAB_FILL_MIN` sits in
+        that gap, asked before either the colour or the timer are."""
+        timer = queuevision._fractional_box(queuevision.MENU_TIMER_REGION, *SCREEN)
+        tx, ty, tw, th = timer
+        strip = _stamp(scenery(9), 32, (tx + 5, ty + th - 4), int(th * 0.7))
+        self.assertIsNone(queuevision.find_banner(strip, *SCREEN))
+
     def test_a_green_check_on_the_tab_means_the_game_was_found(self):
         box = queuevision._fractional_box(queuevision.MENU_TAB_REGION, *SCREEN)
         strip = check_circle(menu_tab(scenery(3), 216.0), box)
@@ -345,6 +416,19 @@ class MenuTabTests(unittest.TestCase):
                                       *SCREEN)
         self.assertEqual(hit.mode, "quickPlay")
         self.assertGreater(hit.coverage, queuevision.DOMINANT_COVERAGE_MIN)
+
+    def test_a_real_check_shape_in_a_busy_scene_is_not_a_match(self):
+        """The regression a full-video sweep found. This box is a fixed screen position,
+        not a shape found fresh each time — so whenever the game genuinely isn't in a
+        menu, whatever real gameplay happens to be sitting at that exact spot got read
+        as if it were the tab. One real false positive was a control-point contest
+        meter, itself green and round enough to pass `green_check` outright; measured
+        at the time, its coverage was 0.55-0.78, against 0.825-0.925 for three real
+        check circles caught through this same path. `MENU_TAB_GREEN_COVERAGE_MIN`
+        sits in that gap."""
+        box = queuevision._fractional_box(queuevision.MENU_TAB_REGION, *SCREEN)
+        strip = busy_scenery_with_a_check(scenery(8), box)
+        self.assertIsNone(queuevision.find_banner(strip, *SCREEN))
 
 
 @unittest.skipUnless(HAVE_CV2, "vision extras aren't installed")
@@ -708,6 +792,67 @@ class TrackerTimingTests(unittest.TestCase):
                                53.75, places=2)
 
 
+class TrackerAudioTests(unittest.TestCase):
+    """`audio_found` — `queueaudio`'s own edge, folded into the same state machine.
+
+    A full-video test of the real audio channel is what both of these came from: every
+    other quiet-then-loud transition it also caught (entering hero select, "prepare to
+    attack" starting) happened strictly after a real match, by which point the tracker
+    had already left every `SEARCHING_STATES` member behind - `self.searching` is what
+    tells those apart without this needing to know what any of them individually were.
+    But that same test found real false claims *while still genuinely searching* (most
+    likely voice chat resuming after a lull), and a first version of this method held
+    one blind for the full `GAME_FOUND_HOLD_SECONDS` - long enough that, on one measured
+    case, the real match landing three seconds later arrived after the tracker had
+    already reset itself to idle and was silently thrown away. The retraction below is
+    what a screen that keeps disagreeing is for.
+    """
+
+    def setUp(self):
+        self.tracker = queuewatch.QueueTracker()
+
+    def test_ignored_from_idle(self):
+        self.tracker.audio_found(0.0)
+        self.assertEqual(self.tracker.state, queuewatch.IDLE)
+
+    def test_confirms_a_match_while_searching(self):
+        self.tracker.update(hit(), 0.0)
+        self.tracker.update(hit(), 0.25)
+        self.tracker.audio_found(1.0)
+        self.assertEqual(self.tracker.state, queuewatch.GAME_FOUND)
+        self.assertEqual(self.tracker.source, "audio")
+
+    def test_ignored_once_a_match_already_ended_the_search(self):
+        self.tracker.update(hit(), 0.0)
+        self.tracker.update(hit(), 0.25)
+        self.tracker.update(hit(game_found=True), 5.0)
+        self.tracker.audio_found(20.0)
+        self.assertEqual(self.tracker.source, "self")     # untouched - the call no-opped
+
+    def test_a_false_claim_is_retracted_when_the_banner_keeps_searching(self):
+        self.tracker.update(hit(), 0.0)
+        self.tracker.update(hit(), 0.25)
+        started = self.tracker._started
+
+        self.tracker.audio_found(5.0)                       # a false claim
+        self.assertEqual(self.tracker.state, queuewatch.GAME_FOUND)
+
+        seen = self.tracker.update(hit(), 6.0)               # the banner disagrees
+        self.assertEqual(seen.state, queuewatch.SEARCHING_MENU)
+        self.assertEqual(self.tracker.source, "self")
+        self.assertEqual(self.tracker._started, started)     # the queue itself untouched
+
+        self.tracker.audio_found(20.0)                       # the real tone, later, still lands
+        self.assertEqual(self.tracker.state, queuewatch.GAME_FOUND)
+        self.assertEqual(self.tracker.source, "audio")
+
+    def test_a_vision_confirmed_match_is_not_retracted_the_same_way(self):
+        self.tracker.update(hit(), 0.0)
+        self.tracker.update(hit(), 0.25)
+        self.tracker.update(hit(game_found=True), 5.0)
+        self.assertEqual(self.tracker.update(hit(), 6.0).state, queuewatch.GAME_FOUND)
+
+
 # ---------------------------------------------------------------- the wiring
 
 class _StubReader:
@@ -717,6 +862,179 @@ class _StubReader:
 
     def reset(self):
         self.resets += 1
+
+
+class WatcherRoleDetectionTests(unittest.TestCase):
+    """`_check_role_select` — reading "Select a Role" the same way a hand-triggered scan
+    does, just on every idle poll instead of a click. See `queuewatch`'s own module
+    docstring for why this one screen can run unattended when hero select's own can't."""
+
+    def setUp(self):
+        server = QueueServer(Pairing(token="t" * 32, port=0), Catalog())
+        self.controls = Controls(server)
+        self.watcher = queuewatch.QueueWatcher(self.controls, reader=_StubReader(),
+                                               role_templates=object())
+        self._real_scan = queueroles.scan
+        self.addCleanup(setattr, queueroles, "scan", self._real_scan)
+        self.detected = []
+        self.watcher.on_role_detected = self.detected.append
+
+    def _stub_scan(self, result):
+        queueroles.scan = lambda templates, modes=None, log=None: result
+
+    def test_a_different_checked_role_is_adopted(self):
+        self._stub_scan(queueroles.RoleSelection(frozenset({"damage"}), None, {}, True))
+        self.watcher._check_role_select()
+        self.assertEqual(self.controls.role, "damage")
+        self.assertEqual(len(self.detected), 1)
+
+    def test_the_same_role_already_selected_does_not_fire_again(self):
+        self.controls.role = "support"
+        self._stub_scan(queueroles.RoleSelection(frozenset({"support"}), None, {}, True))
+        self.watcher._check_role_select()
+        self.assertEqual(self.controls.role, "support")
+        self.assertEqual(self.detected, [])
+
+    def test_the_screen_not_being_up_changes_nothing(self):
+        self.controls.role = "tank"
+        self._stub_scan(queueroles.RoleSelection(frozenset(), None, {}, False))
+        self.watcher._check_role_select()
+        self.assertEqual(self.controls.role, "tank")
+        self.assertEqual(self.detected, [])
+
+    def test_nothing_checked_yet_changes_nothing(self):
+        """A screen caught mid-change is not a decision — see `RoleSelection.
+        effective_role`."""
+        self.controls.role = "tank"
+        self._stub_scan(queueroles.RoleSelection(frozenset(), None, {}, True))
+        self.watcher._check_role_select()
+        self.assertEqual(self.controls.role, "tank")
+        self.assertEqual(self.detected, [])
+
+    def test_a_failed_read_does_not_kill_the_poll(self):
+        def boom(templates, modes=None, log=None):
+            raise RuntimeError("no screen")
+        queueroles.scan = boom
+        self.watcher._check_role_select()          # must not raise
+        self.assertEqual(self.detected, [])
+
+    def test_poll_only_checks_role_while_idle(self):
+        """A queue already running has no role-select screen to compete with the
+        banner for, and checking anyway would be a wasted full-screen capture on every
+        single poll of a live queue. A `game_found` hit is used here purely so `poll`
+        skips the timer reader on its way to that state — nothing about the timer is
+        what this test is about."""
+        self._stub_scan(queueroles.RoleSelection(frozenset({"damage"}), None, {}, True))
+        self.controls.role = "tank"
+
+        class _Hit:
+            box = (0, 0, 10, 10)
+            searching = False
+            game_found = True
+            kind = PILL
+            mode = None
+            confidence = 0.9
+
+        import numpy as np
+        real_capture = queuevision.capture_strip
+        queuevision.capture_strip = lambda: (np.zeros((10, 10, 3), np.uint8), 1920, 1080)
+        real_find = queuevision.find_banner
+        queuevision.find_banner = lambda *a, **k: _Hit()
+        self.addCleanup(setattr, queuevision, "capture_strip", real_capture)
+        self.addCleanup(setattr, queuevision, "find_banner", real_find)
+
+        real_game_window = vision._game_window
+        real_foreground = vision._foreground_is_game
+        vision._game_window = lambda: object()
+        vision._foreground_is_game = lambda: True
+        self.addCleanup(setattr, vision, "_game_window", real_game_window)
+        self.addCleanup(setattr, vision, "_foreground_is_game", real_foreground)
+
+        observation = self.watcher.poll(0.0)
+        self.assertEqual(observation.state, queuewatch.GAME_FOUND)
+        self.assertEqual(self.controls.role, "tank")   # untouched - not idle
+
+
+@unittest.skipUnless(HAVE_CV2, "vision extras aren't installed")
+class WatcherMatchProgressTests(unittest.TestCase):
+    """`_check_match_progress` — the same jumps a person's own click already makes,
+    taken automatically off `self.server.session.kind` instead of a button."""
+
+    def setUp(self):
+        self.server = QueueServer(Pairing(token="t" * 32, port=0), Catalog())
+        self.server.vision_enabled = True
+        self.controls = Controls(self.server)
+        self.watcher = queuewatch.QueueWatcher(
+            self.controls, reader=_StubReader(), hero_templates=object(), hero_keys=[])
+        # A real scan would focus the game window; stubbed the same way a test of the
+        # button click itself would need to, so this exercises only whether the right
+        # jump was made, not whether a real screen scan behind it also works.
+        self.server.scan_hero_select = lambda: None
+
+        sv_stage.looks_like_map_vote = lambda frame: False
+        sv_stage.looks_like_prepare = lambda frame: False
+        vision._match_grid = lambda *a, **k: {}
+        vision.looks_like_roster = lambda hits: False
+        queueroles.capture = lambda: np.zeros((4, 4, 3), np.uint8)
+
+    def tearDown(self):
+        import importlib
+        importlib.reload(sv_stage)
+        importlib.reload(vision)
+        importlib.reload(queueroles)
+
+    def _set_kind(self, kind, **data):
+        """Puts the session directly into `kind` without going through every
+        transition in between - only the one edge under test should matter here."""
+        self.server.session.phase = {"type": kind, "data": data}
+
+    def test_idle_or_searching_is_not_touched(self):
+        self._set_kind("searching")
+        self.watcher._check_match_progress()
+        self.assertEqual(self.server.session.kind, "searching")
+
+    def test_the_vote_screen_moves_a_found_match_into_mapVote(self):
+        self._set_kind("matchFound")
+        sv_stage.looks_like_map_vote = lambda frame: True
+        self.watcher._check_match_progress()
+        self.assertEqual(self.server.session.kind, "mapVote")
+
+    def test_already_being_on_the_vote_screen_is_not_jumped_again(self):
+        self._set_kind("mapVote")
+        sv_stage.looks_like_map_vote = lambda frame: True
+        moves = []
+        self.controls.jump = lambda kind: moves.append(kind)
+        self.watcher._check_match_progress()
+        self.assertEqual(moves, [])
+
+    def test_the_roster_moves_a_found_match_into_hero_select(self):
+        self._set_kind("matchFound")
+        vision.looks_like_roster = lambda hits: True
+        self.watcher._check_match_progress()
+        self.assertEqual(self.server.session.kind, "heroSelect")
+
+    def test_the_roster_is_never_checked_with_vision_off(self):
+        """The jump this would make focuses the window; the check itself is skipped
+        entirely rather than relying on the jump alone to decline."""
+        self.server.vision_enabled = False
+        self._set_kind("matchFound")
+        vision.looks_like_roster = lambda hits: True
+        self.watcher._check_match_progress()
+        self.assertEqual(self.server.session.kind, "matchFound")
+
+    def test_the_prepare_countdown_moves_hero_select_into_the_match(self):
+        self._set_kind("heroSelect")
+        sv_stage.looks_like_prepare = lambda frame: True
+        self.watcher._check_match_progress()
+        self.assertEqual(self.server.session.kind, "inGame")
+
+    def test_prepare_is_not_asked_about_before_hero_select(self):
+        """Checked only because `heroSelect` is already current — asking earlier would
+        let an unrelated screen jump straight past mapVote and hero select both."""
+        self._set_kind("mapVote")
+        sv_stage.looks_like_prepare = lambda frame: True
+        self.watcher._check_match_progress()
+        self.assertEqual(self.server.session.kind, "mapVote")
 
 
 class WatcherWiringTests(unittest.TestCase):
@@ -844,6 +1162,52 @@ class WatcherPacingTests(unittest.TestCase):
         self.watcher.tracker.update(hit(), 0.0)
         self.assertEqual(self._interval(queuewatch.IDLE),
                          queuewatch.SEARCHING_POLL_SECONDS)
+
+
+@unittest.skipUnless(HAVE_CV2, "vision extras aren't installed")
+class WatcherFastWaitTests(unittest.TestCase):
+    """`_fast_wait` — spending a poll's own budget watching for `green_hint` instead of
+    sleeping through it, which is the whole reason it exists. See the module docstring
+    for the full-video numbers behind it."""
+
+    BOX = (40, 20, 200, 90)
+
+    def setUp(self):
+        server = QueueServer(Pairing(token="t" * 32, port=0), Catalog())
+        self.watcher = queuewatch.QueueWatcher(Controls(server), reader=_StubReader())
+        self._real_capture = queuevision.capture_strip
+        self.addCleanup(setattr, queuevision, "capture_strip", self._real_capture)
+
+    def _stub_capture(self, strip):
+        queuevision.capture_strip = lambda: (strip, SCREEN[0], SCREEN[1])
+
+    def test_with_no_box_yet_it_just_sleeps_the_budget(self):
+        self._stub_capture(check_circle(scenery(), self.BOX))    # would trip if looked
+        started = time.monotonic()
+        self.assertFalse(self.watcher._fast_wait(0.05))
+        self.assertGreaterEqual(time.monotonic() - started, 0.05)
+
+    def test_a_stale_box_is_not_trusted_either(self):
+        self.watcher._last_box = self.BOX
+        self.watcher._last_box_at = time.monotonic() - queuewatch.BOX_FRESHNESS_SECONDS * 2
+        self._stub_capture(check_circle(scenery(), self.BOX))    # would trip if looked
+        self.assertFalse(self.watcher._fast_wait(0.05))
+
+    def test_a_fresh_box_with_nothing_green_spends_the_whole_budget(self):
+        self.watcher._last_box = self.BOX
+        self.watcher._last_box_at = time.monotonic()
+        self._stub_capture(scenery())
+        started = time.monotonic()
+        self.assertFalse(self.watcher._fast_wait(0.05))
+        self.assertGreaterEqual(time.monotonic() - started, 0.05)
+
+    def test_a_fresh_box_turning_green_trips_well_before_the_budget_runs_out(self):
+        self.watcher._last_box = self.BOX
+        self.watcher._last_box_at = time.monotonic()
+        self._stub_capture(check_circle(scenery(), self.BOX))
+        started = time.monotonic()
+        self.assertTrue(self.watcher._fast_wait(1.0))
+        self.assertLess(time.monotonic() - started, 0.5)
 
 
 class ServerIntegrationTests(unittest.TestCase):

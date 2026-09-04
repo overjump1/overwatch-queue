@@ -176,8 +176,11 @@ class APNsClient:
                           {"aps": aps}, push_type="liveactivity", priority="10")
 
     def send_activity_end(self, activity_token: str, environment: str,
-                          content_state: dict, timestamp: int, dismissal_date=None):
+                          content_state: dict, timestamp: int, alert=None,
+                          dismissal_date=None):
         aps = {"timestamp": timestamp, "event": "end", "content-state": content_state}
+        if alert:
+            aps["alert"] = alert
         if dismissal_date is not None:
             aps["dismissal-date"] = dismissal_date
         topic = self.config.bundle_id_ios + self._LIVE_ACTIVITY_TOPIC_SUFFIX

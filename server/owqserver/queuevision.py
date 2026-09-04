@@ -182,6 +182,17 @@ GREEN_MAX_SHARE = 0.35
 # either edge of it.
 GREEN_CIRCULARITY_MIN = 0.36
 
+# How uniformly one hue has to fill `menu_tab`'s own fixed box before its green check is
+# even asked for — see that function's own docstring for the false positives a full-video
+# sweep found without this.
+MENU_TAB_GREEN_COVERAGE_MIN = 0.80
+
+# How much of `menu_tab`'s own fixed box has to be saturated interface at all — checked
+# before either its colour or its timer are asked about, for the same reason
+# `HUD_PILL_FILL_MIN` exists on the corner pill's own box. See that function's own
+# docstring for the seventy-one real false positives a full-video sweep found without it.
+MENU_TAB_FILL_MIN = 0.70
+
 # Where the timer sits inside each kind of box, as (x0, y0, x1, y1) fractions of the box.
 # The in-game bar right-aligns it; the pill puts it beside the icon on the upper row.
 TIMER_REGION = {
@@ -365,6 +376,45 @@ def green_check(patch) -> bool:
     return False
 
 
+# How many green-hued, saturated, bright pixels inside a *known* banner box are enough to
+# be worth `green_check`'s full shape work — not enough on their own to claim anything.
+# Measured across five real queues on a full recording: with the box actually current, the
+# most that ever showed up before a match landed was 5 pixels, compression noise on an
+# edge; the real check circle put over 2000 pixels in the same box within its first two
+# visible frames, ramping toward 6000-7000 a few frames after that. This sits in the very
+# wide gap between those, nowhere near either edge of it.
+GREEN_HINT_MIN_PIXELS = 50
+
+
+def green_hint(strip, box) -> bool:
+    """A cheap trip-wire for a banner box already known, not one being searched for fresh.
+
+    Meant to run far more often than a full `find_banner` sweep can afford to: no
+    connected-components pass, no diameter, aspect or circularity test — those are what
+    actually decide whether a hit is real, and are exactly what this is for deciding
+    whether to bother asking. A hit here should trigger a real `find_banner` look at the
+    same frame, not a claim of its own.
+
+    This is only as good as `box` is current. Measured on the same recording: once a real
+    match ends a queue and the screen moves on to something else, a box left stale can
+    land on ordinary green interface elsewhere — a live match's own green team-score bar,
+    on one real capture — and register thousands of pixels having nothing to do with any
+    banner. `green_check`'s own shape tests would still reject that if asked, so a stale
+    box costs a wasted look rather than a wrong answer, but a caller keeping `box` fresh
+    (dropping it once a real poll goes a while without confirming one) avoids paying even
+    that.
+    """
+    x, y, w, h = box
+    patch = strip[max(0, y):y + h, max(0, x):x + w]
+    if patch.size == 0:
+        return False
+    hsv = cv2.cvtColor(patch, cv2.COLOR_BGR2HSV)
+    hue = hsv[:, :, 0].astype(np.float32) * 2.0
+    mask = ((hue >= GREEN_HUE_RANGE[0]) & (hue <= GREEN_HUE_RANGE[1]) &
+           (hsv[:, :, 1] >= GREEN_SATURATION_MIN) & (hsv[:, :, 2] >= GREEN_VALUE_MIN))
+    return int(mask.sum()) >= GREEN_HINT_MIN_PIXELS
+
+
 # ---------------------------------------------------------------- detection
 
 def classify(box, screen_w: int):
@@ -487,19 +537,44 @@ def menu_tab(strip, screen_w: int, screen_h: int, modes=None):
 
     hsv = cv2.cvtColor(body, cv2.COLOR_BGR2HSV)
     keep = (hsv[:, :, 1] >= SATURATION_MIN) & (hsv[:, :, 2] >= VALUE_MIN)
+    fill = float(keep.mean())
+    if fill < MENU_TAB_FILL_MIN:
+        # This box is a fixed screen position, not a shape found fresh — so whenever
+        # gameplay itself isn't a solid, mostly-saturated box the way the real tab
+        # always is, whatever's actually there hasn't even earned a look at its colour
+        # or its timer yet. A full-video sweep found this path's other half missing
+        # exactly this gate: seventy-one real false "searching" reads, ordinary
+        # gameplay that happened to have a couple of bright marks sitting in this same
+        # spot, none measuring above 0.557 fill; five real menu-tab captures - three
+        # `GAME FOUND` and two plain searching - never measured below 0.822. `hud_pill`
+        # already asks this of its own fixed box; this hadn't, and should have.
+        return None
     hue, coverage, spread = dominant_hue(hsv[:, :, 0][keep].astype(np.float32) * 2.0)
     mode = match_mode(hue, hues, tolerance)
 
     # A match landing replaces the bolt with a green check — and takes the timer away
     # with it, so this has to be asked before the timer question, not after.
-    if green_check(body):
-        return BannerHit(MENU_PILL, tab, mode, hue, True, coverage, float(keep.mean()))
+    #
+    # `coverage` is asked first, which a full-video sweep is what made that necessary
+    # rather than incidental: this box is a fixed screen position, not a shape found
+    # fresh each time, so whenever the game itself is not actually in a menu, whatever
+    # real gameplay happens to sit at that exact spot gets read as if it were the tab —
+    # measured on five real false positives, one of them a control-point contest meter
+    # that happened to be circular and green enough for `green_check` to accept outright.
+    # `hud_pill` already asks this of its own fixed box; this hadn't, and should have.
+    # Measured on the three real check circles this project has captured through this
+    # path, coverage never fell under 0.825 — a real menu tab is close to one flat
+    # colour by design. Measured on the five false ones, none reached above 0.778,
+    # ordinary scenery being coincidentally green-heavy but never that uniform. The
+    # threshold sits in the real gap between those, not at either edge of it.
+    if coverage >= MENU_TAB_GREEN_COVERAGE_MIN and green_check(body):
+        return BannerHit(MENU_PILL, tab, mode, hue, True, coverage, fill)
 
     timer = _fractional_box(MENU_TIMER_REGION, screen_w, screen_h)
     tx, ty, tw, th = timer
     if queuedigits.segment(strip[max(0, ty):ty + th, max(0, tx):tx + tw]) is None:
         return None
-    return BannerHit(MENU_PILL, tab, mode, hue, False, coverage, float(keep.mean()))
+    return BannerHit(MENU_PILL, tab, mode, hue, False, coverage, fill)
 
 
 def hud_pill(strip, screen_w: int, screen_h: int, modes=None):

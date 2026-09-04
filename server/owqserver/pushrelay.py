@@ -87,10 +87,13 @@ class PushRelayClient:
         return self._send(payload)
 
     def send_activity_end(self, activity_token: str, environment: str,
-                          content_state: dict, timestamp: int, dismissal_date=None):
+                          content_state: dict, timestamp: int, alert=None,
+                          dismissal_date=None):
         payload = {"pushType": "liveActivityEnd", "token": activity_token,
                    "environment": environment, "timestamp": timestamp,
                    "contentState": content_state}
+        if alert:
+            payload["alert"] = alert
         if dismissal_date is not None:
             payload["dismissalDate"] = dismissal_date
         return self._send(payload)

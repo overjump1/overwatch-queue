@@ -56,14 +56,13 @@ class Controls:
     def phase_for(self, kind: str) -> dict:
         """The phase a jump button sends. Payloads are filled from the real catalog, so
         the phone gets keys it has art for."""
-        mode, role = self.mode, self.effective_role
-        catalog = self.server.catalog
+        mode = self.mode
 
         if kind == "matchFound":
             waited = self.server.session.elapsed() or self.estimate
-            return protocol.match_found(mode, role, waited)
+            return protocol.match_found(mode, self.effective_role, waited)
         if kind == "mapVote":
-            return protocol.map_vote(catalog.map_vote_options(mode), 25)
+            return self.map_vote_phase()
         if kind == "heroSelect":
             return self.hero_select_phase()
         if kind == "inGame":
@@ -71,6 +70,19 @@ class Controls:
         if kind == "cancelled":
             return protocol.cancelled("matchCancelled")
         raise ValueError("no such phase: %s" % kind)
+
+    def map_vote_phase(self) -> dict:
+        """Map vote, read off the screen when the game is there to be read.
+
+        `QueueServer.scan_map_vote` looks and returns `None` when it can't — no game, no
+        window, fewer than two cards reading as a real map, or a machine without the OCR
+        extra installed — in which case this falls back to the same plausible-catalog-
+        options behaviour every phase here had before any of them could read a screen.
+        """
+        scan = self.server.scan_map_vote()
+        if scan:
+            return protocol.map_vote(scan.map_keys, 25)
+        return protocol.map_vote(self.server.catalog.map_vote_options(self.mode), 25)
 
     def hero_select_phase(self) -> dict:
         """Hero select, read off the screen when the game is there to be read.

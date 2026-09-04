@@ -142,7 +142,9 @@ class ControlPanel(QMainWindow):
         server.log = self._bridge.logged.emit
         server.on_change = self._bridge.changed.emit
 
-        server.watch_queue(self.controls)
+        watcher = server.watch_queue(self.controls)
+        if watcher is not None:
+            watcher.on_role_detected = self._bridge.role_scanned.emit
         # The watcher only calls back when the state *moves*, but the wait it is
         # reporting goes up every second, so the line showing it is ticked from here
         # rather than from the poll thread.
@@ -406,7 +408,9 @@ class ControlPanel(QMainWindow):
     def _queue_vision_changed(self, on: bool):
         self.server.queue_vision_enabled = on and queuevision.QUEUE_VISION_AVAILABLE
         if on:
-            self.server.watch_queue(self.controls)
+            watcher = self.server.watch_queue(self.controls)
+            if watcher is not None:
+                watcher.on_role_detected = self._bridge.role_scanned.emit
         elif self.server.queue_watcher:
             self.server.queue_watcher.stop()
             self.server.queue_watcher = None

@@ -157,6 +157,46 @@ class PrepareTests(unittest.TestCase):
         strip[y:y + h, x:x + w] = rng.integers(0, 255, size=(h, w, 3), dtype=np.uint8)
         self.assertFalse(sv.looks_like_prepare(strip))
 
+    def test_several_minutes_remaining_is_not_the_prepare_banner_either(self):
+        """A second, later-found regression: the same fixed box is the *live match
+        clock* for the whole rest of the round, in the same amber, and a quiet moment
+        under an uncontested objective can slip the clutter check above on its own — a
+        full-video sweep found this happen for real. What a real pre-match countdown
+        never shows and a several-minutes-remaining match clock always does is a
+        non-zero leading digit; this fixture is "4:34", not "0:34"."""
+        self.assertFalse(sv.looks_like_prepare(prepare_screen(scenery(7), seconds=274)))
+
+    def test_a_label_bleeding_in_from_the_left_is_not_mistaken_for_the_minutes_digit(self):
+        """A second real regression from the same sweep: on one real capture, a
+        neighbouring label's own text bled into this box's fixed position from the left
+        edge, close enough to count as a digit-height mark, while the real minutes digit
+        wasn't in the crop at all — only the bleed and the two real seconds digits were.
+        Treating whatever sits leftmost as the minutes digit read that bleed as if it
+        were the missing zero, 137px from the seconds beside it against 20-63px for
+        every real minutes digit measured through this path. This fixture is that exact
+        shape: a bright mark hugging the crop's own left edge, then two digit-sized marks
+        on the right and nothing real in between."""
+        strip = scenery(8)
+        x, y, w, h = sv.queuevision._fractional_box(sv.PREPARE_TIMER_REGION, *SCREEN)
+        color = (40, 140, 230)
+        cv2.rectangle(strip, (x, y + 2), (x + 8, y + h - 2), color, -1)
+        cv2.rectangle(strip, (x + 70, y + 2), (x + 80, y + h - 2), color, -1)
+        cv2.rectangle(strip, (x + 90, y + 2), (x + 100, y + h - 2), color, -1)
+        self.assertFalse(sv.looks_like_prepare(strip))
+
+    def test_a_white_countdown_in_the_same_spot_is_not_the_prepare_banner(self):
+        """A third real regression: an unrelated white countdown ("Locks In") was found
+        sharing this exact fixed position, bright and holed exactly like a real "0"
+        wherever it happened to read one - value and shape both agreeing with a real
+        countdown, which is what makes colour the only thing left to ask. Measured on
+        five real captures of it, saturation was 4-13 against 178-198 for four real
+        amber readings through the same path."""
+        strip = scenery(9)
+        x, y, w, h = sv.queuevision._fractional_box(sv.PREPARE_TIMER_REGION, *SCREEN)
+        cv2.putText(strip, "0:30", (x, y + h - 2), cv2.FONT_HERSHEY_DUPLEX, h / 26.0,
+                   (255, 255, 255), max(1, int(h / 16)), cv2.LINE_AA)
+        self.assertFalse(sv.looks_like_prepare(strip))
+
 
 # ---------------------------------------------------------------- fingerprinting
 

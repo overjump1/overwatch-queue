@@ -7,6 +7,7 @@ than two.
 """
 from __future__ import annotations
 
+import difflib
 import json
 import os
 import random
@@ -100,6 +101,22 @@ class Catalog:
             if entry.get("key") == key:
                 return entry.get("name", key)
         return key
+
+    def key_for_map_name(self, name: str, cutoff: float = 0.6):
+        """The map key whose name reads closest to `name`, or `None` when nothing is
+        close enough to trust — built for a name that came off a screen read (OCR on the
+        vote screen's own card), not one typed by hand, so a small amount of noise (a
+        clipped crop losing a trailing letter, a misread glyph) is expected and worth
+        tolerating; a name that isn't close to *any* real map is what the cutoff is for
+        refusing instead."""
+        if not name:
+            return None
+        target = name.strip().upper()
+        by_name = {entry["name"].upper(): entry["key"] for entry in self.maps if entry.get("name")}
+        if target in by_name:
+            return by_name[target]
+        close = difflib.get_close_matches(target, by_name.keys(), n=1, cutoff=cutoff)
+        return by_name[close[0]] if close else None
 
     def name_for_hero(self, key: str) -> str:
         for entry in self.heroes:

@@ -13,7 +13,7 @@ import random
 import threading
 import time
 
-from . import protocol, queueroles, queuevision, queuewatch, vision
+from . import protocol, queuemapvote, queueroles, queuevision, queuewatch, vision
 from .activitytokens import ActivityTokens
 from .apns import APNsClient, APNsConfig
 from .heroimages import TemplateStore
@@ -97,6 +97,10 @@ class QueueServer:
         self._activity_start_first_sent_at = None
         self._activity_fallback_sent_for = None
         self._activity_fallback_delay_seconds = 15
+        # The phase an update alert was last sent for, so a patch to the *same* phase's
+        # data — the estimate ticking, a mode correction — never earns one of its own.
+        # See `_push_activity` for why every real phase change now does.
+        self._last_activity_kind = None
         self.apns = self._make_push_client()
 
         self.ws = WebSocketServer(port=pairing.port,
@@ -142,7 +146,9 @@ class QueueServer:
         if not self.queue_vision_enabled or self.queue_watcher is not None:
             return self.queue_watcher
         self.queue_watcher = queuewatch.QueueWatcher(
-            controls, log=lambda message: self.log(message))
+            controls, log=lambda message: self.log(message),
+            role_templates=self.role_templates,
+            hero_templates=self.templates, hero_keys=self.hero_keys)
         self.queue_watcher.start()
         return self.queue_watcher
 
@@ -252,15 +258,18 @@ class QueueServer:
           above, since only that wake-up gives the app a chance to attach to the activity
           and register a real per-activity token for every update after this one.
 
-        An urgent phase's *update* carries a real alert — sound, haptic, a brief peek —
-        the same way a delivery app's Live Activity announces "your order is on the way"
-        without a separate notification alongside it. Routine updates stay silent; the
-        card changing is signal enough once it's already on screen.
+        Every real phase change carries a real alert — sound, haptic, a brief peek — the
+        way a transit app's Live Activity buzzes at each stop rather than only the ones
+        it judges important: the point is feeling the trip move, not just being able to
+        check it. A *patch* to the phase already showing — the estimate ticking down, a
+        mode correction — is not that: nothing about the queue actually moved, so it
+        stays silent, which is what `_last_activity_kind` is for telling apart from a
+        real `apply`.
 
-        A *start* always carries one, urgent or not. A wholly silent push-to-start was
-        never once seen to arrive, while an identical one with an alert sometimes does —
-        which makes some sense, since there's nothing on screen yet for a silent content
-        refresh to land on.
+        A *start* always carries one. A wholly silent push-to-start was never once seen
+        to arrive, while an identical one with an alert sometimes does — which makes some
+        sense, since there's nothing on screen yet for a silent content refresh to land
+        on.
 
         "Sometimes" is the honest word. Push-to-start is accepted with a 200 and then, often
         enough to design around, simply never delivered — with nothing on this side to say
@@ -272,7 +281,8 @@ class QueueServer:
         timestamp = int(protocol.now().timestamp())
         title, body = protocol.notification_copy(kind)
         start_alert = {"title": title, "body": body}
-        update_alert = start_alert if kind in protocol.URGENT_KINDS else None
+        changed_kind = kind != self._last_activity_kind
+        update_alert = start_alert if changed_kind else None
 
         activity = self.activity_tokens.update_token(session_id)
         if activity:
@@ -281,10 +291,14 @@ class QueueServer:
             self._activity_start_first_sent_at = None
             token, environment = activity
             if kind in ("idle", "cancelled"):
-                self.apns.send_activity_end(token, environment, content_state, timestamp)
+                end_alert = start_alert if kind == "cancelled" and changed_kind else None
+                self.apns.send_activity_end(token, environment, content_state, timestamp,
+                                            alert=end_alert)
                 self.activity_tokens.forget_update()
                 self._activity_session_id = None
+                self._last_activity_kind = None
             else:
+                self._last_activity_kind = kind
                 self.apns.send_activity_update(token, environment, content_state,
                                                timestamp, alert=update_alert)
             return
@@ -313,6 +327,7 @@ class QueueServer:
 
         token, environment = start
         attributes = {"sessionID": session_id, "startedAt": self._activity_started_at}
+        self._last_activity_kind = kind
         self.apns.send_activity_start(token, environment, attributes, content_state,
                                       timestamp, alert=start_alert)
         if self._activity_start_first_sent_at is None:
@@ -425,10 +440,10 @@ class QueueServer:
     def scan_role_select(self):
         """Looks at the "Select a Role" screen. `None` when there's nothing to look at.
 
-        On demand, the same as `scan_hero_select` and for the same reason: unlike the
-        queue banner, nothing about this screen says whether it's still up a second from
-        now, so there's no continuous watcher for it to feed — a caller asks when it
-        wants an answer, gets one look, and decides what to do with it.
+        On demand, for a person's own click on the panel's own button. `queuewatch.
+        QueueWatcher._check_role_select` reads the same screen continuously and does not
+        call this — same underlying `queueroles.scan`, but on its own idle poll rather
+        than a focus grab this method still takes for a manual read's sake.
         """
         if not self.vision_enabled:
             return None
@@ -448,6 +463,30 @@ class QueueServer:
         self.log("Scanned — %s checked%s" % (
             ", ".join(sorted(result.roles)) or "nothing",
             " (%s)" % result.mode if result.mode else ""))
+        return result
+
+    def scan_map_vote(self):
+        """Looks at the "Vote for a Map" screen and reads which real maps its cards
+        name. `None` when there's nothing to look at, or when fewer than two cards read
+        as a real map — see `queuemapvote.scan` for why that's treated the same as the
+        screen not being up.
+
+        No focus grab first, unlike hero select's own scan: reading a screenshot never
+        needed the window foregrounded to begin with, the same reason `scan_role_select`
+        and the queue banner's own continuous poll don't take one either, and nothing
+        this reads back needs a real click to land anywhere.
+        """
+        if not self.vision_enabled:
+            return None
+        try:
+            result = queuemapvote.scan(self.catalog, log=lambda message: self.log(message))
+        except Exception as problem:      # pragma: no cover - depends on a live screen
+            self.log("Map vote scan failed: %s" % problem)
+            return None
+        if not result.on_screen:
+            return None
+        self.log("Scanned the vote screen — %s" % ", ".join(
+            self.catalog.name_for_map(key) for key in result.map_keys))
         return result
 
     def _drive_hero_pick(self, hero_key: str):
