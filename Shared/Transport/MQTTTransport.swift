@@ -51,9 +51,13 @@ public final class MQTTTransport: NSObject, QueueTransport {
         wantsConnection = false
         // A clean disconnect, not the Last Will path: this device really is going
         // offline on purpose, so publish that now rather than waiting on the broker to
-        // notice the socket died.
-        mqtt?.publish(presenceTopic, withString: #"{"online":false}"#, qos: .qos1, retained: true)
-        mqtt?.disconnect()
+        // notice the socket died. Only meaningful — and only safe to attempt — while
+        // actually connected; a transport that never got past a rejected CONNACK (or is
+        // already mid-teardown) has nothing to publish through.
+        if let mqtt, mqtt.connState == .connected {
+            mqtt.publish(presenceTopic, withString: #"{"online":false}"#, qos: .qos1, retained: true)
+            mqtt.disconnect()
+        }
         mqtt = nil
         status = .offline
     }
@@ -136,6 +140,11 @@ extension MQTTTransport: CocoaMQTTDelegate {
                 self.status = .failed("Not paired with \(self.pairing.displayText) — re-scan the QR code.")
                 self.wantsConnection = false
                 mqtt.disconnect()
+                // Fully torn down, not just told to disconnect: a later `disconnect()`
+                // call (e.g. from unpairing right after a failed pairing attempt) would
+                // otherwise reach into this same already-disconnected CocoaMQTT instance
+                // again via `self.mqtt?...` and publish/disconnect on it a second time.
+                self.mqtt = nil
                 return
             }
             self.subscribeAndAnnounce()
