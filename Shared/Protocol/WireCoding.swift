@@ -114,6 +114,9 @@ extension ClientCommand {
     private struct HeroKey: Codable { var heroKey: String }
     private struct Hello: Codable { var token: String?; var client: ClientIdentity }
     private struct PushToken: Codable { var token: String; var environment: PushEnvironment }
+    private struct DevicePushToken: Codable {
+        var token: String; var environment: PushEnvironment; var kind: ClientIdentity.Kind
+    }
     private struct ActivityPushToken: Codable {
         var sessionID: UUID; var token: String; var environment: PushEnvironment
     }
@@ -136,9 +139,10 @@ extension ClientCommand {
             try c.tag("cancelQueue")
         case .requestSnapshot:
             try c.tag("requestSnapshot")
-        case .registerPushToken(let token, let environment):
+        case .registerPushToken(let token, let environment, let kind):
             try c.tag("registerPushToken")
-            try c.encode(PushToken(token: token, environment: environment), forKey: .data)
+            try c.encode(DevicePushToken(token: token, environment: environment, kind: kind),
+                        forKey: .data)
         case .registerActivityPushToken(let sessionID, let token, let environment):
             try c.tag("registerActivityPushToken")
             try c.encode(ActivityPushToken(sessionID: sessionID, token: token, environment: environment),
@@ -170,8 +174,9 @@ extension ClientCommand {
         case "requestSnapshot":
             self = .requestSnapshot
         case "registerPushToken":
-            let push = try c.decode(PushToken.self, forKey: .data)
-            self = .registerPushToken(token: push.token, environment: push.environment)
+            let push = try c.decode(DevicePushToken.self, forKey: .data)
+            self = .registerPushToken(token: push.token, environment: push.environment,
+                                      kind: push.kind)
         case "registerActivityPushToken":
             let push = try c.decode(ActivityPushToken.self, forKey: .data)
             self = .registerActivityPushToken(sessionID: push.sessionID, token: push.token,

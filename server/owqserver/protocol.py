@@ -25,24 +25,34 @@ NO_HERO_SELECT_MODES = {"mysteryHeroes"}
 # Mirrors `QueuePhase.isUrgent` — the phases that get a real alert (sound, haptic, a brief
 # peek) on their Live Activity push, the way a delivery app announces a status change
 # without a separate notification alongside it. Routine changes stay silent.
+# No longer just the kinds worth interrupting the phone's own notification centre for —
+# see `QueueServer._push_activity` for the alert every one of these now also gets on the
+# Live Activity itself, `searching` and `inGame` included, the way a transit app buzzes at
+# every stop rather than only the ones it judges important.
 URGENT_KINDS = {"matchFound", "mapVote", "heroSelect"}
 
 _NOTIFICATION_TITLES = {
+    "searching": "Queue Started",
     "matchFound": "Match Found",
     "mapVote": "Map Vote",
     "heroSelect": "Hero Select",
+    "inGame": "Match Started",
+    "cancelled": "Queue Cancelled",
 }
 _NOTIFICATION_BODIES = {
+    "searching": "Watching your queue.",
     "matchFound": "You're being pulled into the game — get back to your PC.",
     "mapVote": "Pick where you want to play.",
     "heroSelect": "Choose your hero.",
+    "inGame": "Good luck, have fun.",
+    "cancelled": "The queue ended without a match.",
 }
 
 
 def notification_copy(kind: str):
-    """`(title, body)` for an urgent phase's Live Activity alert. Duplicated against the
-    Swift side on purpose, the same way the phase builders below mirror `QueuePhase` —
-    kept in step by eye rather than by a shared source, since the two live in different
+    """`(title, body)` for a phase's Live Activity alert. Duplicated against the Swift
+    side on purpose, the same way the phase builders below mirror `QueuePhase` — kept in
+    step by eye rather than by a shared source, since the two live in different
     languages."""
     return _NOTIFICATION_TITLES.get(kind, "Overwatch Queue"), \
         _NOTIFICATION_BODIES.get(kind, "Status changed.")
@@ -158,13 +168,27 @@ def map_vote(map_keys, deadline_seconds: float = 25, votes=None, my_vote=None) -
 
 
 def hero_select(mode: str, role: str, map_key=None, deadline_seconds: float = 40,
-                taken=None, my_hero=None) -> dict:
+                taken=None, my_hero=None, available=None, team_picks=None) -> dict:
+    """`available` and `team_picks` are what the screen scan saw, and are left out
+    entirely when there was no scan — on a Mac, or with the game closed. Their absence is
+    meaningful to the app: it's the difference between "nobody has picked" and "nobody
+    looked", and an empty list would say the first when we mean the second.
+
+    A pick's `slot` is a position on screen, not an identity or a role — role queue orders
+    the slots by role, so slot one is not reliably the player. `isSelf` is the only thing
+    that says which pick is ours, and it's absent from every pick when the scan couldn't
+    tell.
+    """
     data = {"mode": mode, "role": role, "deadline": in_seconds(deadline_seconds),
             "takenHeroKeys": list(taken or [])}
     if map_key:
         data["mapKey"] = map_key
     if my_hero:
         data["myHeroKey"] = my_hero
+    if available is not None:
+        data["availableHeroKeys"] = list(available)
+    if team_picks is not None:
+        data["teamPicks"] = [dict(pick) for pick in team_picks]
     return {"type": "heroSelect", "data": data}
 
 

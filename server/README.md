@@ -3,10 +3,18 @@
 What the phone and the watch talk to. It runs on the PC, holds the queue state, and
 pushes it to every paired device over a WebSocket.
 
-The game side doesn't exist yet, so the state comes from a control panel you drive by
-hand. That panel is not a mock: it pushes real snapshots through the real socket, and
-what the phone does with them is exactly what it will do when this program is reading
-Overwatch instead of reading a mouse click.
+Half of it reads the game. The queue banner at the top of the screen is watched
+continuously, so *searching* and *match found* happen on their own; whichever role is
+checked on the "Select a Role" screen is read the same way, whenever there's no queue to
+watch instead. Past that, one watcher thread follows the whole rest of a match on its
+own too: the vote screen, the hero roster, and the "Prepare to Attack" countdown that
+means the match has actually started, each moving the phase along the moment it's seen —
+map vote's own options read as the real maps on screen where the OCR extra is installed,
+hero select's as the real roster and picks. The control panel underneath all of that is
+not a mock, though — it pushes real snapshots through the real socket, and what the phone
+does with them is exactly what it does when the screen is the thing driving them, which is
+also what makes it possible to drive any of this by hand instead, or override it, at any
+point.
 
 ```bash
 pip install -r server/requirements.txt
@@ -90,6 +98,100 @@ for this app, so it should never leave a machine you personally control.
 4. Install the extra dependencies this path needs (already listed, commented, in
    `server/requirements.txt`) and restart the server.
 
+## Watching for a queue
+
+On by default wherever the vision extras import; `--no-queue-vision` turns it off, as does
+the **Watch for a queue** checkbox in the panel. It captures the top 15% of the screen a
+few times a second and looks for the queue banner — a flat, saturated box that the game
+draws and the game world never does. What it can tell from that:
+
+| | |
+|---|---|
+| **Which state** | The tall pill at top centre is the Play menu; the wide bar in a top corner is a while-you-wait game; the small pill at top right is anywhere else — career profile, hero gallery, settings, any other screen. A green check circle on any of the three is *game found*. |
+| **Which mode** | The banner's colour. Blue is Quick Play, pink is Competitive — see `owqserver/queuemodes.json`, and add to it rather than widening its tolerance. A colour that isn't listed is still a queue; the panel's mode is kept. |
+| **How long** | Read off the timer printed on the banner, which is the game's own clock and so survives the server starting mid-queue. Until it can be read the wait is timed from here instead, and the panel says which of the two you're looking at. |
+
+The seconds where the banner isn't drawn at all — loading into a deathmatch, a killcam, a
+scoreboard — do not end the queue: an absent banner starts a twenty-second grace period
+instead, and alt-tabbing suspends even that, because a screenshot of your browser is not
+evidence about your queue.
+
+Nothing in this half focuses a window or touches the mouse. It only looks; the hero-select
+scanner above is the part that clicks.
+
+### Its digits are learned, not shipped
+
+There are no digit images in the repository and no font to render them from. The timer is
+a clock, and a clock counts, which is enough for it to label its own digits: the tick
+where the tens place rolls over is the tick where the units place is zero, and one run of
+exactly ten ticks between two rollovers both labels ten glyphs and proves itself. A single
+unbroken minute of queueing teaches it the set, which is then cached in
+`server/.cache/queue-digits/` and never learned again.
+
+### Retuning it
+
+The constants in `owqserver/queuevision.py` were measured off captures. To check them
+against your own screen:
+
+```bash
+python3 server/queuewatch_debug.py --all
+```
+
+One line per frame, plus every box it considered and the test that rejected each one. A
+mode whose colour isn't in `queuemodes.json` prints as `?` beside the hue it actually is,
+which is the number to add. `--dump DIR` saves annotated frames and `--image FILE` re-runs
+a saved one.
+
+## Reading which role is checked
+
+Role-queue modes show a "Select a Role" screen before searching starts — Tank, Damage,
+Support and a fourth, each with its own checkbox, and more than one can be checked at
+once. Nothing about the queue banner says which of those was chosen, so this is a
+separate look at that screen — but unlike hero select, reading it is nothing more than a
+screenshot, so `queuewatch.QueueWatcher` reads it on every idle poll and keeps the panel's
+own role picker in step automatically. **Detect from screen** beside the role dropdown and
+`QueueServer.scan_role_select()` are still there for a manual, one-off read on demand.
+
+It finds each card by its icon — the same shield, bullets, cross and three-circle glyphs
+the rest of the game uses — rather than by position, then reads each one's own checkbox
+for whether it's checked. The vivid colour behind whichever card is focused (the same
+blue-for-Quick-Play, pink-for-Competitive hue the queue banner reads) is picked up too,
+as a bonus this screen happens to also reveal — it marks keyboard/controller focus, not
+which roles are selected, so it names the mode rather than deciding anything about roles.
+
+Unlike everything else in `owqserver/queuevision.py`, the constants in
+`owqserver/queueroles.py` were never measured against a live capture — they were read off
+two screenshots handed over for this feature, which is a starting point rather than a
+calibration. Check them against your own screen with:
+
+```bash
+python3 server/queuerole_debug.py --dump annotated.png
+```
+
+It prints where each icon was found, its confidence, its checkbox and card regions, and
+whether the screen was recognised at all.
+
+## Reading which maps are on the vote screen
+
+The vote screen's own cards were tried two other ways before this one, and both failed
+against real captures: the card's own thumbnail is a different render of the map
+entirely from the catalog's promotional screenshot, so matching one against the other
+means nothing, and rendering a candidate map's name in a stand-in font to compare against
+the real text on screen doesn't survive either the wrong font or the game's own tight
+letter-kerning — even switching to the game's real font (Overwatch's UI runs on Big
+Noodle Too) didn't fix it, since a whole word squashed to another word's size throws away
+the shape that told them apart. What actually reads the card cleanly is a real OCR model,
+`rapidocr-onnxruntime` — an optional, meaningfully large extra (see
+`server/requirements.txt`), not something this needs a system OCR binary installed
+alongside the way `pytesseract` would. Every name it reads is checked against
+`Catalog.key_for_map_name`, which tolerates a clipped crop losing a trailing letter but
+refuses anything not close enough to a real map to trust — the same "win clearly or say
+nothing" the rest of this project already holds every match to.
+
+Without the extra installed, or with fewer than two of the (up to three) cards reading as
+a real map, map vote falls back to the same plausible-but-not-real catalog options this
+project has always shown — `Controls.map_vote_phase` is where that fallback lives.
+
 ## The controls
 
 | | |
@@ -133,10 +235,15 @@ straight at the PC is the only way to test it without hardware.
 
 ```
 run.py            entry point
+queuewatch_debug.py  prints what the queue watcher sees, for retuning it
 owqserver/
   gui.py          the PyQt6 window
   controls.py     what its buttons mean, with no Qt in sight — the testable half
   queueserver.py  queue state, command handling, scenarios
+  queuevision.py  finds the queue banner by its shape and colour
+  queuedigits.py  reads the timer on it, and learns its digits from it
+  queuewatch.py   turns a stream of frames into a queue, and tells the server
+  vision.py       reads the hero-select screen, and clicks on it
   wsserver.py     a small RFC 6455 WebSocket server
   protocol.py     the wire format from docs/PROTOCOL.md
   pairing.py      the token, where it's stored, and the addresses to offer

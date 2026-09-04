@@ -141,6 +141,8 @@ struct WatchMapVoteView: View {
     var info: MapVoteInfo
     @Environment(QueueStore.self) private var store
 
+    private var deadline: Date { store.clock.toLocal(info.deadline) }
+
     var body: some View {
         List {
             Section {
@@ -148,34 +150,75 @@ struct WatchMapVoteView: View {
                     Button {
                         store.vote(map: option.mapKey)
                     } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(store.catalog.map(option.mapKey)?.name
-                                     ?? option.mapKey.capitalized)
-                                    .font(.caption.weight(.semibold))
-                                if let type = store.catalog.map(option.mapKey)?.primaryType {
-                                    Text(type.displayName)
-                                        .font(.system(size: 9))
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            Spacer()
-                            if info.myVote == option.mapKey {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(Palette.amber)
-                            } else {
-                                Text("\(option.votes)")
-                                    .font(.caption2.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
+                        WatchMapVoteRow(option: option,
+                                         map: store.catalog.map(option.mapKey),
+                                         isMyVote: info.myVote == option.mapKey)
                     }
+                    .buttonStyle(.plain)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 4))
                 }
             } header: {
-                Text("Map vote")
+                HStack(spacing: 6) {
+                    Text("Map vote")
+                    Spacer()
+                    CountdownRing(deadline: deadline, total: 25, lineWidth: 2, tint: Palette.amber)
+                        .frame(width: 16, height: 16)
+                    Text.countdown(to: deadline)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(Palette.white.opacity(0.8))
+                }
             }
         }
         .sensoryFeedback(.selection, trigger: info.myVote)
+    }
+}
+
+private struct WatchMapVoteRow: View {
+    var option: MapOption
+    var map: OverwatchMap?
+    var isMyVote: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Group {
+                if let map {
+                    MapImageView(map: map)
+                } else {
+                    Palette.deepBlue
+                }
+            }
+            .frame(width: 44, height: 44)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(map?.name ?? option.mapKey.capitalized)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                if let type = map?.primaryType {
+                    Label(type.displayName, systemImage: type.symbolName)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                        .labelStyle(.titleAndIcon)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            VStack(spacing: 2) {
+                if isMyVote {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(Palette.amber)
+                }
+                Text("\(option.votes)")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(isMyVote ? Palette.amber : .clear, lineWidth: 1.5)
+        }
     }
 }
 
@@ -185,8 +228,49 @@ struct WatchHeroSelectView: View {
 
     private let columns = [GridItem(.adaptive(minimum: 48), spacing: 6)]
 
+    private var deadline: Date { store.clock.toLocal(info.deadline) }
+
     var body: some View {
         ScrollView {
+            HStack(spacing: 6) {
+                CountdownRing(deadline: deadline, total: 40, lineWidth: 2, tint: info.role.tint)
+                    .frame(width: 18, height: 18)
+                Text.countdown(to: deadline)
+                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(Palette.white)
+                Spacer(minLength: 0)
+                Image(systemName: info.role.symbolName)
+                    .font(.system(size: 10))
+                    .foregroundStyle(info.role.tint)
+            }
+            .padding(.horizontal, 4)
+            .padding(.bottom, 4)
+
+            let picks = store.teamPicks()
+            if !picks.isEmpty {
+                // Small enough to read without scrolling past it, so the composition is
+                // the first thing on the wrist rather than something to hunt for.
+                HStack(spacing: 4) {
+                    ForEach(picks, id: \.pick.slot) { entry in
+                        HeroPortrait(hero: entry.hero, size: 26)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .strokeBorder(entry.pick.isSelf
+                                                  ? AnyShapeStyle(Palette.amber)
+                                                  : AnyShapeStyle(entry.hero.role.tint.opacity(0.6)),
+                                                  lineWidth: entry.pick.isSelf ? 2 : 1)
+                            }
+                            .accessibilityLabel(entry.pick.isSelf
+                                                ? "You, \(entry.hero.name)"
+                                                : entry.hero.name)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 4)
+                .padding(.bottom, 4)
+            }
+
             LazyVGrid(columns: columns, spacing: 6) {
                 ForEach(store.selectableHeroes()) { hero in
                     Button {

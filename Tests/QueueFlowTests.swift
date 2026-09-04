@@ -211,3 +211,90 @@ final class QueueFlowTests: XCTestCase {
         _ = Text.countdown(to: Date().addingTimeInterval(40))
     }
 }
+
+/// Commands that outlive the socket they were meant for.
+///
+/// This is the watch's problem specifically: with the phone app off screen its socket is
+/// already gone, and a pick from the wrist arrives via a background wake-up. It used to be
+/// handed to a dead transport and lost without a trace.
+@MainActor
+final class PendingCommandTests: XCTestCase {
+
+    /// `ClientCommand` isn't `Equatable`, and the wire encoding is the identity that
+    /// actually matters here — two commands the server can't tell apart are the same
+    /// command for the purposes of these tests.
+    private func wire(_ commands: [ClientCommand]) -> [String] {
+        commands.map { String(data: (try? Wire.encode($0)) ?? Data(), encoding: .utf8) ?? "" }
+    }
+
+    private final class FakeTransport: QueueTransport {
+        let name = "Fake"
+        var status: TransportStatus = .offline
+        var onEvent: ((QueueEvent) -> Void)?
+        var onStatusChange: ((TransportStatus) -> Void)?
+        private(set) var sent: [ClientCommand] = []
+
+        func connect() { report(.connecting) }
+        func disconnect() { status = .offline }
+        func send(_ command: ClientCommand) { sent.append(command) }
+
+        func report(_ status: TransportStatus) {
+            self.status = status
+            onStatusChange?(status)
+        }
+    }
+
+    func testACommandSentWithNoSocketIsDeliveredOnceOneOpens() {
+        let store = QueueStore()
+        let transport = FakeTransport()
+        store.use(transport)                       // connects, but stays .connecting
+
+        store.send(.selectHero(heroKey: "mercy"))
+        XCTAssertTrue(transport.sent.isEmpty, "nothing can be sent before the socket is live")
+
+        transport.report(.connected)
+        XCTAssertEqual(wire(transport.sent), wire([.selectHero(heroKey: "mercy")]))
+    }
+
+    func testAHeldCommandIsSentOnceAndNotAgainOnAReconnect() {
+        let store = QueueStore()
+        let transport = FakeTransport()
+        store.use(transport)
+
+        store.send(.cancelQueue)
+        transport.report(.connected)
+        XCTAssertEqual(transport.sent.count, 1)
+
+        // A socket that drops and comes back must not replay it — the registrations are
+        // re-offered on every connect, commands are not.
+        transport.report(.offline)
+        transport.report(.connected)
+        XCTAssertEqual(transport.sent.count, 1, "a held command is delivered once, not on every reconnect")
+    }
+
+    func testVotingOnceSendsOneVote() {
+        let store = QueueStore()
+        let transport = FakeTransport()
+        store.use(transport)
+        transport.report(.connected)
+
+        store.vote(map: "kings-row")
+
+        // The server counts each `voteMap` it receives, so a duplicate here is a double
+        // vote — which is what routing a watch vote through both `send` and `vote` did.
+        XCTAssertEqual(wire(transport.sent), wire([.voteMap(mapKey: "kings-row")]))
+    }
+
+    func testTheHoldingQueueIsBounded() {
+        let store = QueueStore()
+        let transport = FakeTransport()
+        store.use(transport)
+
+        for index in 0..<40 { store.send(.selectHero(heroKey: "hero-\(index)")) }
+        transport.report(.connected)
+
+        XCTAssertLessThanOrEqual(transport.sent.count, 8, "an unreachable phone must not queue without limit")
+        XCTAssertEqual(wire(Array(transport.sent.suffix(1))), wire([.selectHero(heroKey: "hero-39")]),
+                       "the newest pick is the one that matters when older ones are dropped")
+    }
+}

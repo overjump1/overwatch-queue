@@ -10,14 +10,16 @@ way to reach a widget from another thread.
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt, QObject, pyqtSignal
+import threading
+
+from PyQt6.QtCore import Qt, QObject, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QImage, QPixmap
 from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout, QGroupBox,
                              QHBoxLayout, QLabel, QLineEdit, QListWidget, QMainWindow,
                              QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy,
                              QSlider, QVBoxLayout, QWidget)
 
-from . import protocol, qr
+from . import protocol, qr, queueroles, queuevision, queuewatch, vision
 from .controls import Controls
 from .pairing import local_addresses
 from .queueserver import SCENARIOS
@@ -28,6 +30,13 @@ LOG_LINES = 400
 JUMPS = [("Match Found", "matchFound"), ("Map Vote", "mapVote"),
          ("Hero Select", "heroSelect"), ("In Game", "inGame"), ("Cancelled", "cancelled")]
 ROLES = ["tank", "damage", "support", "flex"]
+
+QUEUE_STATE_NAMES = {
+    queuewatch.SEARCHING_MENU: "Searching, in the menu",
+    queuewatch.SEARCHING_IN_GAME: "Searching, in a game",
+    queuewatch.SEARCHING_HIDDEN: "Searching, banner out of sight",
+    queuewatch.GAME_FOUND: "Game found",
+}
 
 PHASE_NAMES = {"idle": "Idle", "searching": "Searching", "matchFound": "Match found",
                "mapVote": "Map vote", "heroSelect": "Hero select", "inGame": "In game",
@@ -79,6 +88,7 @@ QListWidget, QPlainTextEdit {
     padding: 6px; color: %(white)s;
 }
 QLabel#muted { color: %(muted)s; }
+QLabel#queue { color: %(muted)s; padding-top: 2px; }
 QLabel#status { color: %(muted)s; padding: 4px 2px; }
 QSlider::groove:horizontal { height: 4px; background: #24365a; border-radius: 2px; }
 QSlider::handle:horizontal {
@@ -107,6 +117,7 @@ class _Bridge(QObject):
     """Carries socket-thread callbacks onto the GUI thread."""
     logged = pyqtSignal(str)
     changed = pyqtSignal()
+    role_scanned = pyqtSignal(object)
 
 
 class ControlPanel(QMainWindow):
@@ -127,8 +138,20 @@ class ControlPanel(QMainWindow):
         self._bridge = _Bridge()
         self._bridge.logged.connect(self._write_log)
         self._bridge.changed.connect(self._refresh)
+        self._bridge.role_scanned.connect(self._role_scanned)
         server.log = self._bridge.logged.emit
         server.on_change = self._bridge.changed.emit
+
+        watcher = server.watch_queue(self.controls)
+        if watcher is not None:
+            watcher.on_role_detected = self._bridge.role_scanned.emit
+        # The watcher only calls back when the state *moves*, but the wait it is
+        # reporting goes up every second, so the line showing it is ticked from here
+        # rather than from the poll thread.
+        self._queue_tick = QTimer(self)
+        self._queue_tick.timeout.connect(self._refresh_queue_vision)
+        self._queue_tick.start(1000)
+        self._refresh_queue_vision()
 
     # ------------------------------------------------------------ layout
 
@@ -149,8 +172,9 @@ class ControlPanel(QMainWindow):
 
         right = QVBoxLayout()
         right.setSpacing(14)
-        for panel in (self._queue_box(), self._jump_box(),
-                      self._scenario_box(), self._options_row()):
+        for panel in (self._queue_box(), self._jump_box(), self._scenario_box(),
+                      self._options_row(), self._vision_row(),
+                      self._queue_vision_row()):
             panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
             right.addWidget(panel)
         right.addWidget(self._log_box(), 1)      # only the log takes the slack
@@ -230,6 +254,16 @@ class ControlPanel(QMainWindow):
         grid.addWidget(_label("Role"), 0, 2)
         grid.addWidget(self.role_picker, 0, 3)
 
+        self.detect_role_button = QPushButton("Detect from screen")
+        self.detect_role_button.setEnabled(queueroles.QUEUE_ROLES_AVAILABLE)
+        self.detect_role_button.setToolTip(
+            "Reads the checked boxes on Overwatch's own Select a Role screen and sets "
+            "the dropdown to match. Only works while that screen is actually up."
+            if queueroles.QUEUE_ROLES_AVAILABLE else
+            "Not installed here — see server/requirements.txt.")
+        self.detect_role_button.clicked.connect(self._detect_role)
+        grid.addWidget(self.detect_role_button, 0, 4)
+
         self.estimate_label = QLabel()
         self.estimate_slider = QSlider(Qt.Orientation.Horizontal)
         self.estimate_slider.setRange(10, 600)
@@ -263,7 +297,7 @@ class ControlPanel(QMainWindow):
         self.jump_buttons = {}
         for title, kind in JUMPS:
             button = QPushButton(title)
-            button.clicked.connect(lambda _, k=kind: self.controls.jump(k))
+            button.clicked.connect(lambda _, k=kind: self._jump(k))
             row.addWidget(button)
             self.jump_buttons[kind] = button
         reset = QPushButton("Reset to idle")
@@ -311,6 +345,54 @@ class ControlPanel(QMainWindow):
         layout.addStretch(1)
         return row
 
+    def _vision_row(self) -> QWidget:
+        row = QFrame()
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(4, 0, 4, 0)
+        layout.setSpacing(12)
+
+        self.read_screen = QCheckBox("Read the game screen")
+        self.read_screen.setChecked(self.server.vision_enabled)
+        self.read_screen.setEnabled(vision.VISION_AVAILABLE)
+        self.read_screen.toggled.connect(self._vision_changed)
+        layout.addWidget(self.read_screen)
+
+        if vision.VISION_AVAILABLE:
+            note = ("Hero select scans the roster and everyone's pick, and a pick from the "
+                    "phone clicks it in-game and confirms. Both take the mouse.")
+        else:
+            note = ("Not installed here — see server/requirements.txt. Hero select stays "
+                    "hand-driven.")
+        layout.addWidget(_muted(note, wrap=True), 1)
+        return row
+
+    def _queue_vision_row(self) -> QWidget:
+        row = QFrame()
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(4, 0, 4, 0)
+        layout.setSpacing(4)
+
+        self.watch_queue = QCheckBox("Watch for a queue")
+        self.watch_queue.setChecked(self.server.queue_vision_enabled)
+        self.watch_queue.setEnabled(queuevision.QUEUE_VISION_AVAILABLE)
+        self.watch_queue.toggled.connect(self._queue_vision_changed)
+        layout.addWidget(self.watch_queue)
+
+        if queuevision.QUEUE_VISION_AVAILABLE:
+            note = ("Reads the queue banner at the top of the screen and moves the phase "
+                    "on its own — searching, then match found. Looks only; never takes "
+                    "the mouse. The jump buttons above still work either way.")
+        else:
+            note = ("Not installed here — see server/requirements.txt. The queue stays "
+                    "hand-driven.")
+        layout.addWidget(_muted(note, wrap=True))
+
+        self.queue_state = QLabel("Not watching.")
+        self.queue_state.setObjectName("queue")
+        self.queue_state.setWordWrap(True)
+        layout.addWidget(self.queue_state)
+        return row
+
     def _log_box(self) -> QGroupBox:
         box = QGroupBox("Traffic")
         layout = QVBoxLayout(box)
@@ -323,12 +405,116 @@ class ControlPanel(QMainWindow):
 
     # ------------------------------------------------------------ widget events
 
+    def _queue_vision_changed(self, on: bool):
+        self.server.queue_vision_enabled = on and queuevision.QUEUE_VISION_AVAILABLE
+        if on:
+            watcher = self.server.watch_queue(self.controls)
+            if watcher is not None:
+                watcher.on_role_detected = self._bridge.role_scanned.emit
+        elif self.server.queue_watcher:
+            self.server.queue_watcher.stop()
+            self.server.queue_watcher = None
+        self._refresh_queue_vision()
+
+    def _refresh_queue_vision(self):
+        watcher = self.server.queue_watcher
+        seen = watcher.latest if watcher else None
+        if not watcher or not watcher.running:
+            return self._say_queue("Not watching.", MUTED)
+        if seen is None or not seen.in_queue:
+            if seen is not None and not seen.looking:
+                return self._say_queue("Watching — Overwatch isn't in front.", MUTED)
+            return self._say_queue("Watching — no queue on screen.", MUTED)
+
+        self._sync_mode_picker()
+        # The mode shown is the one being broadcast, not the hue of the latest frame.
+        # They agree once `_correct_mode` has settled, and while they don't it is the
+        # broadcast one the phone is showing — a panel that disagreed with the watch
+        # would send you looking for a bug in the wrong half of the project. The raw
+        # per-frame reading is a tuning question, and `queuewatch_debug.py` prints it.
+        #
+        # "read off the screen" or "timed from here" rather than the wire's own word for
+        # it: the difference being pointed at is whether the number came off the game's
+        # clock or ours, which is the one thing about it worth knowing at a glance.
+        self._say_queue(
+            "%s   ·   %s   ·   %s waited (%s)"
+            % (QUEUE_STATE_NAMES.get(seen.state, seen.state),
+               protocol.MODE_NAMES.get(self.controls.mode, self.controls.mode),
+               _clock(int(seen.queue_elapsed)),
+               "read off the screen" if seen.source == "timer" else "timed from here")
+            + ("" if seen.looking else "   ·   Overwatch isn't in front, so this is the "
+                                       "last thing actually seen"),
+            ORANGE if seen.state == queuewatch.GAME_FOUND else WHITE)
+
+    def _say_queue(self, text: str, colour: str):
+        self.queue_state.setText(text)
+        self.queue_state.setStyleSheet("color: %s;" % colour)
+
+    def _sync_mode_picker(self):
+        """Follows `controls.mode` when the watcher has changed it underneath the panel.
+
+        Without this the dropdown keeps saying whatever was last chosen by hand while the
+        queue on screen — and on the phone — is a different mode, which makes the panel
+        disagree with itself. Signals are blocked because `setCurrentIndex` would fire
+        `_mode_changed` and write the value straight back: harmless today, and exactly
+        the shape of loop that stops being harmless the moment either side grows a side
+        effect.
+        """
+        index = protocol.MODES.index(self.controls.mode)
+        if self.mode_picker.currentIndex() == index:
+            return
+        self.mode_picker.blockSignals(True)
+        self.mode_picker.setCurrentIndex(index)
+        self.mode_picker.blockSignals(False)
+        self.role_picker.setEnabled(self.controls.queues_by_role)
+
     def _mode_changed(self, index: int):
         self.controls.mode = protocol.MODES[index]
         self.role_picker.setEnabled(self.controls.queues_by_role)
 
     def _role_changed(self, index: int):
         self.controls.role = ROLES[index]
+
+    def _detect_role(self):
+        """Reads the checkboxes on the real Select a Role screen, one look, on request.
+
+        Unlike hero select this never runs by itself: a full look takes a moment and
+        brings Overwatch to the front the same way `_jump("heroSelect")` does, so it goes
+        to a worker for the same reason — freezing the panel on the GUI thread would look
+        like a crash. `role_scanned` carries the answer back rather than `changed`,
+        because applying it means writing to `self.controls.role`, and that has to happen
+        on the GUI thread same as any other widget-adjacent write.
+        """
+        if not self.server.vision_enabled:
+            self.server.log("Turn on screen reading to detect a role from it")
+            return
+        self.detect_role_button.setEnabled(False)
+        self.server.log("Reading the Select a Role screen…")
+
+        def work():
+            result = self.server.scan_role_select()
+            self._bridge.role_scanned.emit(result)
+
+        threading.Thread(target=work, daemon=True, name="role-select-scan").start()
+
+    def _role_scanned(self, result):
+        self.detect_role_button.setEnabled(queueroles.QUEUE_ROLES_AVAILABLE)
+        if result is None:
+            self.server.log("Select a Role isn't on screen — nothing to read")
+            return
+
+        role = result.effective_role
+        if role is None:
+            self.server.log("Read the screen, but nothing on it is checked yet")
+            return
+
+        self.controls.role = role
+        self.role_picker.blockSignals(True)
+        self.role_picker.setCurrentIndex(ROLES.index(role))
+        self.role_picker.blockSignals(False)
+        if result.mode and result.mode != self.controls.mode and self.controls.queues_by_role:
+            self.controls.mode = result.mode
+            self._sync_mode_picker()
 
     def _estimate_changed(self, value: int):
         self.controls.set_estimate(value)
@@ -337,10 +523,40 @@ class ControlPanel(QMainWindow):
     def _honour_cancel_changed(self, checked: bool):
         self.server.honour_cancel = checked
 
+    def _vision_changed(self, checked: bool):
+        self.server.vision_enabled = checked and vision.VISION_AVAILABLE
+        self.server.log("Screen reading %s" % ("on" if self.server.vision_enabled else "off"))
+
     def _stop_scenario(self):
         self.server.stop_scenario()
         self.server.log("Scenario stopped")
         self._refresh()
+
+    # ------------------------------------------------------------ jumps
+
+    def _jump(self, kind: str):
+        """Hero select is the one jump that reads the screen first, and reading it takes a
+        couple of seconds — during which it also brings Overwatch to the front, taking the
+        focus off this window. Doing that on the GUI thread would freeze the panel mid-jump
+        and look like a crash, so it goes to a worker and the phase is applied when the
+        answer comes back. Every other jump is instant and stays inline."""
+        if kind != "heroSelect" or not self.server.vision_enabled:
+            self.controls.jump(kind)
+            return
+
+        button = self.jump_buttons[kind]
+        button.setEnabled(False)
+        self.server.log("Reading the hero-select screen…")
+
+        def work():
+            try:
+                self.controls.jump(kind)
+            finally:
+                # Back onto the GUI thread to re-enable the button; `_refresh` is already
+                # wired through the bridge and will settle its real state from the session.
+                self._bridge.changed.emit()
+
+        threading.Thread(target=work, daemon=True, name="hero-select-scan").start()
 
     # ------------------------------------------------------------ pairing
 
@@ -429,6 +645,7 @@ class ControlPanel(QMainWindow):
         if not clients:
             self.devices.addItem("Waiting for a phone to scan the code…")
 
+        self._refresh_queue_vision()
         self.status.setText("%s   ·   sequence %d   ·   %d device%s connected"
                             % (PHASE_NAMES.get(session.kind, session.kind), session.sequence,
                                len(clients), "" if len(clients) == 1 else "s"))

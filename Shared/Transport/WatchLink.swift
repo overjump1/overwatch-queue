@@ -244,21 +244,39 @@ public final class WatchRelayTransport: QueueTransport {
     private let staleTimeout: TimeInterval
     private let pollInterval: TimeInterval
 
+    /// The same, but for a relay that has never produced anything at all — much shorter,
+    /// because there is nothing to lose. `staleTimeout` is long so a *working* relay isn't
+    /// abandoned over one late snapshot; before the first one there is no working relay to
+    /// protect, only a wrist showing something out of date.
+    private let openingTimeout: TimeInterval
+
+    /// Whether the phone has ever actually said anything on this connection. Reachability
+    /// is not that: WatchConnectivity reports the counterpart reachable whenever the
+    /// iPhone is in range, whether or not its app is running to answer.
+    private var hasHeardFromThePhone = false
+
     public convenience init() {
-        self.init(staleTimeout: 25, pollInterval: 5)
+        self.init(staleTimeout: 25, pollInterval: 5, openingTimeout: 6)
     }
 
-    init(staleTimeout: TimeInterval, pollInterval: TimeInterval) {
+    init(staleTimeout: TimeInterval, pollInterval: TimeInterval,
+         openingTimeout: TimeInterval? = nil) {
         self.staleTimeout = staleTimeout
         self.pollInterval = pollInterval
+        self.openingTimeout = openingTimeout ?? staleTimeout
     }
 
     public func connect() {
         status = .connecting
-        lastSnapshotAt = .distantPast
+        // The clock starts now, not at the first snapshot. Waiting for one before the
+        // watchdog would even begin means the case with nothing to wait on — a phone in
+        // range whose app is suspended — is the one case it can never catch.
+        lastSnapshotAt = .now
+        hasHeardFromThePhone = false
         link.onSnapshot = { [weak self] snapshot in
             guard let self else { return }
             self.lastSnapshotAt = .now
+            self.hasHeardFromThePhone = true
             self.status = .connected
             self.onEvent?(.snapshot(snapshot))
         }
@@ -289,18 +307,26 @@ public final class WatchRelayTransport: QueueTransport {
     /// alone can't see that. Poll for freshness so a stalled phone is reported as failed
     /// instead of parked at `.connected` forever, which is what lets `WatchTransport` fail
     /// over to a direct connection.
+    ///
+    /// Both halves of that matter. A relay that went quiet after working is given the full
+    /// `staleTimeout`; one that has never said anything is given only `openingTimeout`,
+    /// because a phone that is merely *in range* is enough to report reachable and read as
+    /// connected here. That combination — reachable, never any data — is what left the
+    /// watch showing a stage the queue had long since moved past, updating only when the
+    /// phone app was opened by hand.
     private func startStaleWatchdog() {
         staleWatchdog?.cancel()
         let pollInterval = self.pollInterval
-        let staleTimeout = self.staleTimeout
         staleWatchdog = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(pollInterval))
                 guard !Task.isCancelled, let self else { return }
                 guard case .connected = self.status else { continue }
-                guard self.lastSnapshotAt != .distantPast else { continue }
-                if Date.now.timeIntervalSince(self.lastSnapshotAt) > staleTimeout {
-                    self.status = .failed("iPhone's connection is stale")
+                let deadline = self.hasHeardFromThePhone ? self.staleTimeout : self.openingTimeout
+                if Date.now.timeIntervalSince(self.lastSnapshotAt) > deadline {
+                    self.status = .failed(self.hasHeardFromThePhone
+                                          ? "iPhone's connection is stale"
+                                          : "iPhone isn't answering")
                 }
             }
         }

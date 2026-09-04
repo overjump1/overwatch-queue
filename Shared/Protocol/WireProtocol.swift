@@ -53,7 +53,11 @@ public enum ClientCommand: Codable, Sendable {
     case requestSnapshot
     /// Hands over this device's APNs token, so the PC can wake it with a push once it's
     /// no longer holding this socket open. Sent once per launch, right after `hello`.
-    case registerPushToken(token: String, environment: PushEnvironment)
+    /// `kind` says which device this token belongs to, and is not redundant with the
+    /// `hello` on this socket: a watch with no socket of its own sends through the paired
+    /// iPhone, and without this the server can only read the identity of whoever relayed
+    /// it — filing the watch's token under `phone`, on top of the phone's own.
+    case registerPushToken(token: String, environment: PushEnvironment, kind: ClientIdentity.Kind)
     /// The push token for one running Live Activity — lets the PC update or end that
     /// specific activity directly, without the phone process needing to be alive. Sent
     /// once per activity, the moment `Activity.pushTokenUpdates` first yields one.

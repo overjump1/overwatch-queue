@@ -6,6 +6,15 @@
 
 PyQt6 is the only dependency, and only for the window — `--headless` runs the server
 without it, printing the pairing code into the terminal instead.
+
+Hero select reads the real screen where the optional vision extras are installed, which
+also means it focuses Overwatch and drives the mouse. `--no-vision` turns that off and
+leaves the panel driving the queue entirely by hand.
+
+The queue itself is read the same way and by default: the banner at the top of the screen
+says whether you are searching, in which mode, and for how long, and the server moves the
+phase to match with nobody pressing anything. That half only ever looks — it never takes
+the mouse — so it is on unless `--no-queue-vision` says otherwise.
 """
 from __future__ import annotations
 
@@ -18,6 +27,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from owqserver import qr                                          # noqa: E402
 from owqserver.catalog import Catalog                             # noqa: E402
+from owqserver.controls import Controls                           # noqa: E402
 from owqserver.pairing import Pairing, local_addresses            # noqa: E402
 from owqserver.queueserver import QueueServer                     # noqa: E402
 
@@ -35,6 +45,10 @@ def main():
                         help="no window; prints the pairing code in the terminal")
     parser.add_argument("--new-token", action="store_true",
                         help="generate a new pairing token, unpairing every device")
+    parser.add_argument("--no-vision", action="store_true",
+                        help="never read the game screen or move the mouse")
+    parser.add_argument("--no-queue-vision", action="store_true",
+                        help="don't watch the screen for a queue; drive it by hand")
     options = parser.parse_args()
 
     pairing = Pairing.load()
@@ -45,7 +59,8 @@ def main():
         pairing.regenerate()
         print("New pairing token. Every device has to scan again.")
 
-    server = QueueServer(pairing, Catalog())
+    server = QueueServer(pairing, Catalog(), vision_enabled=not options.no_vision,
+                         queue_vision_enabled=not options.no_queue_vision)
 
     if options.headless:
         return run_headless(server)
@@ -62,6 +77,10 @@ def run_headless(server) -> int:
     """The server with no window: still pairs, still drives every screen in the app."""
     server.log = print
     server.start()
+    # No panel to take the mode and role from, so the watcher gets a `Controls` of its
+    # own with the defaults. The banner's colour still supplies the mode; only the role
+    # is left at whatever `Controls` starts with, since nothing on screen names it.
+    server.watch_queue(Controls(server))
     address = local_addresses()[0]
     url = server.pairing.url(address)
 

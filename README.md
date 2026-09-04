@@ -4,9 +4,15 @@ Your Overwatch queue on your iPhone and Apple Watch: which mode you're in, how l
 waited, and a loud, unmissable moment when a match lands — then map vote and hero pick from
 the phone or the wrist.
 
-The state comes from a server on your PC. Reading it out of the running game is still to
-come — until then the same server hands you a control panel and you drive the queue by
-hand, over the real socket, into the real app.
+The state comes from a server on your PC, which reads the queue off the screen: the banner
+at the top of Overwatch says whether you're searching, in which mode, and for how long, and
+the server watches it and moves the phase to match. It keeps up across the gap where the
+banner disappears into a while-you-wait deathmatch, and it takes the wait straight off the
+game's own clock rather than guessing at one.
+
+The same server also hands you a control panel, which still drives every phase by hand —
+map vote and hero select are not read off the screen yet, and the panel is how those get
+exercised, over the real socket, into the real app.
 
 ## Running it
 

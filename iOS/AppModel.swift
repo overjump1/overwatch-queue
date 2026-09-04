@@ -26,6 +26,7 @@ public final class AppModel {
     public var isPaired: Bool { pairing != nil }
 
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
+    private var watchRelayTask: UIBackgroundTaskIdentifier = .invalid
 
     public init() {
         pairing = Pairing.load()
@@ -63,11 +64,27 @@ public final class AppModel {
         LiveActivityController.shared.observePushToStartToken()
         WatchLink.shared.activate()
         WatchLink.shared.onCommand = { [weak self] command in
+            guard let self else { return }
             // A vote or hero pick made on the wrist is handled exactly as if it had been
             // tapped on the phone, so both surfaces stay in agreement.
-            self?.store.transport?.send(command)
-            if case .voteMap(let key) = command { self?.store.vote(map: key) }
-            if case .selectHero(let key) = command { self?.store.select(hero: key) }
+            //
+            // When the phone isn't the app on screen this arrives via `transferUserInfo`,
+            // which wakes this app in the background — where `didEnterBackground` has
+            // already torn the socket down. Handing the command straight to the transport
+            // dropped it in silence, while the wrist went on showing the pick as made. So
+            // ask for the socket back, hold the process open long enough for it to open,
+            // and let the store carry the command until it does.
+            if self.store.status.isLive != true {
+                self.relayFromWatch()
+            }
+            // `vote` and `select` send the command themselves as well as recording it
+            // locally, so they are the whole job — sending it here too counted every vote
+            // from the wrist twice on the server.
+            switch command {
+            case .voteMap(let key): self.store.vote(map: key)
+            case .selectHero(let key): self.store.select(hero: key)
+            default: self.store.send(command)
+            }
         }
         // The watch is configured by the same scan the phone was: hand it over on every
         // launch, so one that was off, flat or freshly installed catches up.
@@ -134,7 +151,7 @@ public final class AppModel {
     }
 
     public func didReceive(deviceToken: Data) {
-        store.registerPushToken(deviceToken.hexEncoded, environment: .current)
+        store.registerPushToken(deviceToken.hexEncoded, environment: .current, kind: .phone)
     }
 
     /// A background push arrived. The system gives a background launch only a short window
@@ -197,6 +214,10 @@ public final class AppModel {
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(3))
             guard let self, self.backgroundTask != .invalid else { return }
+            // The wrist may have brought the socket back up while this was waiting — the
+            // player put the phone away and kept playing from the watch. Tearing it down
+            // here would drop the very pick that revived it.
+            guard self.watchRelayTask == .invalid else { self.endBackgroundTask(); return }
             self.store.transport?.disconnect()
             self.endBackgroundTask()
         }
@@ -211,6 +232,37 @@ public final class AppModel {
             // hold, and the socket that survived it never re-measured.
             store.syncClock()
         }
+    }
+
+    /// Reconnects for a command that came from the wrist while this app was in the
+    /// background.
+    ///
+    /// The assertion is the point. Without one iOS is free to suspend the process as soon
+    /// as the `transferUserInfo` delivery returns, which is long before a WebSocket has
+    /// finished opening — the reconnect would be started and then frozen mid-handshake,
+    /// and the pick would sit in `pendingCommands` until the player next opened the app.
+    /// It is deliberately separate from the drain assertion in `didEnterBackground`: that
+    /// one is winding the socket down and would end this one out from under us.
+    private func relayFromWatch() {
+        // A second pick arriving while the first is still opening the socket must not call
+        // `connect()` again: that swaps the transport wholesale and restarts the handshake,
+        // so a player changing their mind twice would keep resetting the connection that
+        // both picks are waiting on.
+        if store.status != .connecting { connect() }
+        guard watchRelayTask == .invalid else { return }
+        watchRelayTask = UIApplication.shared.beginBackgroundTask(withName: "watch-command-relay") { [weak self] in
+            self?.endWatchRelayTask()
+        }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            self?.endWatchRelayTask()
+        }
+    }
+
+    private func endWatchRelayTask() {
+        guard watchRelayTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(watchRelayTask)
+        watchRelayTask = .invalid
     }
 
     private func endBackgroundTask() {

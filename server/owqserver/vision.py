@@ -1,0 +1,574 @@
+"""Reading the hero-select screen, and clicking on it.
+
+This is the first piece of the server that looks at the real game rather than waiting for
+someone to press a button. It answers two questions about the "Select a Hero" screen —
+which heroes are on the roster and where each one sits, and what every player has picked
+so far — and it can act on the first answer by clicking a hero and confirming it.
+
+How it recognises a hero: `cv2.matchTemplate` with `TM_CCOEFF_NORMED`, sliding each
+hero's catalog portrait over the screenshot and scoring how well the pixels line up. That
+score is brightness-independent, which matters on a screen this animated. Everything else
+here is about making that primitive fast enough and honest enough to trust:
+
+- Only the strip of screen holding the roster is searched. Matching the whole screen was
+  measurably worse, not just slower — the big splash-art panel behind the grid produced
+  confident matches on the wrong hero.
+- The search runs against a half-resolution copy. On a 1440p screen that turned ~830ms of
+  matching into ~200ms, and costs a couple of pixels of precision on an icon some sixty
+  wide, which is nothing next to the icon's own size.
+- Templates are tried at several scales, because the roster icon is far smaller than the
+  catalog portrait and the ratio moves with resolution and UI scale.
+
+The awkward part is the *selected* hero. Overwatch draws a glow border and the hero's name
+across whichever icon is currently chosen, which distorts exactly the pixels the matcher
+wants; a badly-lit icon can score below an unrelated one elsewhere in the grid, so the
+failure isn't a low number, it's a confident match on the wrong hero. The fix is to press
+right three times, which walks the highlight somewhere else, and look again — see
+`scan_roster`. Only the heroes that scored poorly are re-matched, since only one hero is
+ever obscured at a time and re-running all fifty-three would double the cost of the scan
+to re-answer fifty-two questions that were already answered well.
+
+None of this is importable on a Mac, which is where this project is developed. Every
+dependency below is optional and `VISION_AVAILABLE` says whether they arrived; callers
+are expected to check it and fall back to driving the queue by hand.
+"""
+from __future__ import annotations
+
+import ctypes
+import os
+import time
+
+try:                                    # pragma: no cover - trivial import guard
+    import cv2
+    import numpy as np
+    import mss
+    import pyautogui
+    import pygetwindow
+    VISION_AVAILABLE = True
+except ImportError:                     # pragma: no cover - the Mac dev path
+    cv2 = np = mss = pyautogui = pygetwindow = None
+    VISION_AVAILABLE = False
+
+WINDOW_TITLE = "Overwatch"
+FOCUS_SETTLE_SECONDS = 0.5
+# A window doesn't always come forward first time — the game may be mid-frame, or the
+# panel may still be releasing focus. Worth a couple of tries before giving up on it.
+FOCUS_ATTEMPTS = 3
+
+# Fractions of the monitor rather than pixels, so a different resolution doesn't need a
+# different build. Calibrated against a 2560x1440 capture of the hero-select screen.
+GRID_REGION_FRACTION = (0.06, 0.71, 0.88, 0.146)        # x, y, w, h of the roster strip
+SLOT_CENTER_FRACTION = (0.247, 0.559)                   # centre of the first player slot
+SLOT_SPACING_FRACTION = 0.127                           # gap between slot centres
+SLOT_SIZE_FRACTION = (0.045, 0.076)                     # crop taken around each centre
+SLOT_COUNT = 5
+
+# The roster icon is a fraction of the catalog portrait's size, and which fraction depends
+# on resolution and UI scale, so the template is tried at each of these.
+SCALES = [0.14, 0.17, 0.20, 0.24, 0.28]
+SLOT_SCALES = [0.35, 0.4, 0.45, 0.5, 0.55, 0.6]
+DOWNSCALE = 0.5
+
+# Below this a grid match is treated as possibly-obscured and looked at again after the
+# nudge. Set from measurement: a clean icon scores 0.75-0.9, an obscured one well under.
+RECHECK_THRESHOLD = 0.65
+# Below this a hero isn't considered to be on the roster at all.
+GRID_MIN_SCORE = 0.60
+# ...but acting on a match needs more confidence than merely listing one. Being wrong in
+# `availableHeroKeys` shows the player one hero too many; being wrong here puts them on
+# the wrong hero in a live game, which they then have to notice and undo mid-match.
+#
+# Measured on a real roster: median 0.80, and the single hero the highlight was sitting on
+# came back at 0.59 — then 0.83 once nudged, which is the whole point of the nudge. Two
+# others sat at 0.58 and 0.61 and *stayed* there after nudging; those are heroes the
+# matcher genuinely cannot place, and clicking their best guess is precisely how you end
+# up on the wrong hero. Refusing is the better answer.
+CLICK_MIN_SCORE = 0.65
+
+# Whether the roster is on screen at all, which is *not* answerable per hero.
+#
+# `matchTemplate` always reports its best guess however poor the fit, so every hero
+# "matches" something on any screen. Measured against a live game: with the roster open,
+# 49 of 53 heroes scored at or above the recheck threshold and they landed on 52 distinct
+# positions. Pointed at ordinary scenery with no roster in sight, 23 still cleared that
+# same score — the best of them at 0.777 — but they piled onto only 31 distinct spots,
+# because a handful of scenery features attract many templates at once.
+#
+# So the honest signal is structural: a real roster is *many* heroes each matching
+# *somewhere different*. Both numbers sit far from either measurement, so this
+# distinguishes a hero-select screen from a killcam or a spawn room rather than merely
+# from a black frame. Getting this wrong is not cosmetic — it's the difference between
+# telling the phone about a roster and inventing one, and between nudging the selection in
+# a menu and typing arrow keys into a live match.
+POSITION_BUCKET = 30
+MIN_CONFIDENT_HEROES = 35
+MIN_DISTINCT_POSITIONS = 40
+# An unfilled player slot is a flat placeholder; a real portrait has far more going on.
+# Measured 69.6 for a filled slot against 38-46 for empty ones on the same screen.
+EMPTY_STD_THRESHOLD = 50.0
+# Below this a slot's best match isn't worth reporting as a pick at all.
+#
+# Measured on the same screen: a real pick reads 0.67-0.76, while an empty slot's best
+# guess — and the splash art that briefly fills these regions while the menu animates in —
+# lands at 0.42-0.46. This sat at 0.45, inside that noise, and the visible symptom was the
+# panel announcing teammates ("Jetpack Cat", "Brigitte") in a solo practice range. Those
+# names go straight to the watch, so a slot we can't read confidently is better reported
+# as empty than as somebody.
+SLOT_MIN_SCORE = 0.55
+# ...and one hero has to win the slot clearly, not narrowly.
+#
+# A score on its own turned out to be the wrong question. Reading a slot showing Wuyang,
+# the best match was Junker Queen at 0.62 — over any sane threshold — with Brigitte right
+# behind at 0.58, and the correct hero nowhere in the top three. What separates that from
+# a real reading isn't the score, it's the gap: a genuine identification wins by a mile
+# (Tracer, correctly read, scored 0.69 with the runner-up at 0.46) while every wrong one
+# measured here won by about 0.04, because nothing actually matched and the field was a
+# pile of near-ties.
+#
+# The own slot is the hard case — it carries a coloured frame, a rank badge and a name
+# over the portrait — and it is also the one whose hero the server usually knows anyway.
+# So an ambiguous slot is reported as empty. A missing teammate is a gap on the watch; a
+# wrongly-named one is a lie about the team you're about to play with.
+SLOT_MARGIN = 0.10
+
+NUDGE_PRESSES = 3
+NUDGE_SETTLE_SECONDS = 0.35
+# The hero list animates in, and a slot read during that animation is a read of a
+# half-drawn portrait. The margin check below makes such a read come back empty rather
+# than wrong, so this is about not wasting the look, not about safety.
+MENU_SETTLE_SECONDS = 0.9
+CLICK_SETTLE_SECONDS = 0.4
+# The click only highlights; space confirms. Long enough for the game to paint the
+# highlight before the key lands, or the confirm applies to whoever was highlighted before.
+HIGHLIGHT_SETTLE_SECONDS = 0.25
+
+
+class RosterHit:
+    """One hero found in the roster grid, in absolute screen coordinates."""
+
+    __slots__ = ("hero_key", "score", "x", "y", "w", "h")
+
+    def __init__(self, hero_key: str, score: float, x: int, y: int, w: int, h: int):
+        self.hero_key = hero_key
+        self.score = float(score)
+        self.x, self.y, self.w, self.h = int(x), int(y), int(w), int(h)
+
+    @property
+    def center(self) -> tuple:
+        return self.x + self.w // 2, self.y + self.h // 2
+
+    def __repr__(self):
+        return "RosterHit(%s, %.2f, at %d,%d)" % (self.hero_key, self.score, self.x, self.y)
+
+
+class SlotPick:
+    """What one player slot is showing. `hero_key` is None for an empty slot."""
+
+    __slots__ = ("slot", "hero_key", "score", "is_self")
+
+    def __init__(self, slot: int, hero_key, score: float, is_self: bool = False):
+        self.slot = int(slot)
+        self.hero_key = hero_key
+        self.score = float(score)
+        self.is_self = bool(is_self)
+
+    def as_wire(self) -> dict:
+        return {"slot": self.slot, "heroKey": self.hero_key, "isSelf": self.is_self}
+
+    def __repr__(self):
+        return "SlotPick(%d, %s, %.2f, self=%s)" % (
+            self.slot, self.hero_key, self.score, self.is_self)
+
+
+class ScanResult:
+    """Everything one look at the screen produced.
+
+    `on_hero_select` is False when the roster wasn't there to read, in which case the
+    other two are empty — an answer of "I looked and there's nothing", which is different
+    from the caller never having looked at all.
+    """
+
+    def __init__(self, roster: dict, picks: list, on_hero_select: bool = True):
+        self.roster = roster            # hero key -> RosterHit
+        self.picks = picks              # list of SlotPick, occupied slots only
+        self.on_hero_select = on_hero_select
+
+    @property
+    def available_hero_keys(self) -> list:
+        return sorted(self.roster)
+
+    def taken_hero_keys(self, my_hero_key=None) -> list:
+        """The heroes other players are on — what the app greys out.
+
+        Whose pick is "mine" comes from the slot flagged during the scan; when nothing
+        could be flagged, fall back to the hero the server already believes is ours rather
+        than guessing at a slot and crediting someone else's pick to the player.
+        """
+        mine = next((pick for pick in self.picks if pick.is_self), None)
+        if mine is not None:
+            return [p.hero_key for p in self.picks if p is not mine and p.hero_key]
+        return [p.hero_key for p in self.picks
+                if p.hero_key and p.hero_key != my_hero_key]
+
+
+# ---------------------------------------------------------------- the window
+
+def _game_window():
+    """The game's window — specifically not this server's own.
+
+    `getWindowsWithTitle` matches on substring, and the control panel is called "Overwatch
+    Queue Server", so asking for "Overwatch" cheerfully returns the panel too. Taking the
+    first match meant sometimes "focusing" our own window and then reading it: the panel
+    covers the middle of the screen, the player-slot row lands squarely on its buttons, and
+    the matcher dutifully reported a lobby full of heroes that were really list items. Only
+    an exact title will do, and nothing rather than a guess.
+    """
+    try:
+        candidates = pygetwindow.getWindowsWithTitle(WINDOW_TITLE)
+    except Exception:                   # pragma: no cover - platform-specific failure
+        return None
+    for window in candidates:
+        if (window.title or "").strip() == WINDOW_TITLE:
+            return window
+    return None
+
+
+def _foreground_is_game() -> bool:
+    try:
+        active = pygetwindow.getActiveWindow()
+    except Exception:                   # pragma: no cover - platform-specific failure
+        return False
+    return active is not None and (active.title or "").strip() == WINDOW_TITLE
+
+
+def _raise_window(window):
+    """`activate()` reports success on Windows while quietly doing nothing — measured
+    returning True with the panel still frontmost. Going through user32 directly does
+    work, and is allowed here because the process asking already owns the foreground."""
+    if os.name == "nt":
+        user32 = ctypes.windll.user32
+        user32.ShowWindow(window._hWnd, 9)          # SW_RESTORE
+        user32.SetForegroundWindow(window._hWnd)
+    else:                                           # pragma: no cover - not the target OS
+        window.activate()
+
+
+def focus_game_window(log=None) -> bool:
+    """Brings Overwatch to the front, and says so honestly.
+
+    Everything below reads the screen and sends real clicks and keystrokes, so they land
+    on whatever is actually in front. Returning True while the game is still buried is
+    how a scan ends up describing the control panel and a click ends up in it, so this
+    checks that the game really came forward and returns False when it didn't — leaving
+    callers to decline rather than act on a covered screen.
+    """
+    if not VISION_AVAILABLE:
+        return False
+    log = log or (lambda message: None)
+
+    window = _game_window()
+    if window is None:
+        log("No Overwatch window is open.")
+        return False
+
+    for _ in range(FOCUS_ATTEMPTS):
+        try:
+            if window.isMinimized:
+                window.restore()
+            _raise_window(window)
+        except Exception as problem:    # pragma: no cover - platform-specific failure
+            log("Couldn't focus the Overwatch window: %s" % problem)
+            return False
+        time.sleep(FOCUS_SETTLE_SECONDS)
+        if _foreground_is_game():
+            return True
+
+    log("Overwatch wouldn't come to the front — nothing read from here would be the game.")
+    return False
+
+
+def capture():
+    """The whole primary monitor, as (colour BGR, grayscale)."""
+    with mss.MSS() as sct:
+        monitor = sct.monitors[1]
+        shot = sct.grab(monitor)
+        color = cv2.cvtColor(np.array(shot), cv2.COLOR_BGRA2BGR)
+    return color, cv2.cvtColor(color, cv2.COLOR_BGR2GRAY)
+
+
+# ---------------------------------------------------------------- matching
+
+def _resized(gray, factor: float):
+    return cv2.resize(gray, (int(gray.shape[1] * factor), int(gray.shape[0] * factor)),
+                      interpolation=cv2.INTER_AREA)
+
+
+def best_match(screen_gray, template_gray, scales=SCALES, downscale: float = DOWNSCALE):
+    """Where `template_gray` best fits in `screen_gray`, as (score, x, y, w, h).
+
+    Searched at half size and scaled back up — see the module docstring for why that
+    trade is worth it. Returns None when the template can't fit at any scale.
+    """
+    small = _resized(screen_gray, downscale)
+    best = None
+    for scale in scales:
+        w = int(template_gray.shape[1] * scale * downscale)
+        h = int(template_gray.shape[0] * scale * downscale)
+        if w < 6 or h < 6 or w > small.shape[1] or h > small.shape[0]:
+            continue
+        result = cv2.matchTemplate(small, cv2.resize(template_gray, (w, h),
+                                                     interpolation=cv2.INTER_AREA),
+                                   cv2.TM_CCOEFF_NORMED)
+        _, score, _, location = cv2.minMaxLoc(result)
+        if best is None or score > best[0]:
+            best = (score, location[0], location[1], w, h)
+    if best is None:
+        return None
+    score, x, y, w, h = best
+    back = 1.0 / downscale
+    return score, int(x * back), int(y * back), int(w * back), int(h * back)
+
+
+def grid_region(gray) -> tuple:
+    h, w = gray.shape
+    fx, fy, fw, fh = GRID_REGION_FRACTION
+    x0, y0 = int(w * fx), int(h * fy)
+    return x0, y0, x0 + int(w * fw), y0 + int(h * fh)
+
+
+def slot_region(index: int, gray) -> tuple:
+    h, w = gray.shape
+    cx = SLOT_CENTER_FRACTION[0] * w + index * SLOT_SPACING_FRACTION * w
+    cy = SLOT_CENTER_FRACTION[1] * h
+    half_w, half_h = SLOT_SIZE_FRACTION[0] * w / 2, SLOT_SIZE_FRACTION[1] * h / 2
+    return (max(0, int(cx - half_w)), max(0, int(cy - half_h)),
+            min(w, int(cx + half_w)), min(h, int(cy + half_h)))
+
+
+def looks_like_roster(hits: dict) -> bool:
+    """Whether `hits` came from a real hero-select roster or from ordinary scenery.
+
+    See the constants above for the measurements behind the two thresholds. Judged on the
+    unfiltered hits on purpose: how badly the *worst* matches are spread is exactly the
+    signal, and filtering to the good ones first would throw it away.
+    """
+    confident = sum(1 for hit in hits.values() if hit.score >= RECHECK_THRESHOLD)
+    spread = {(hit.x // POSITION_BUCKET, hit.y // POSITION_BUCKET) for hit in hits.values()}
+    return confident >= MIN_CONFIDENT_HEROES and len(spread) >= MIN_DISTINCT_POSITIONS
+
+
+def _match_grid(gray, templates, hero_keys) -> dict:
+    x0, y0, x1, y1 = grid_region(gray)
+    strip = gray[y0:y1, x0:x1]
+    found = {}
+    for key in hero_keys:
+        template = templates.template(key)
+        if template is None:
+            continue
+        hit = best_match(strip, template)
+        if hit is None:
+            continue
+        score, x, y, w, h = hit
+        found[key] = RosterHit(key, score, x0 + x, y0 + y, w, h)
+    return found
+
+
+# ---------------------------------------------------------------- scanning
+
+def scan_player_slots(gray, templates, hero_keys) -> list:
+    """What each player slot is showing, occupied slots only.
+
+    These hexagons are the trustworthy source for who picked what: unlike the roster grid
+    they're drawn plain, with no glow or name over them, so a straight match is reliable
+    here in a way it isn't down in the grid.
+
+    An empty slot is a flat placeholder, so its pixels barely vary; checking that first
+    costs one standard deviation and skips fifty-three matches for a slot nobody is in.
+    """
+    picks = []
+    for index in range(SLOT_COUNT):
+        x0, y0, x1, y1 = slot_region(index, gray)
+        patch = gray[y0:y1, x0:x1]
+        if patch.size == 0 or float(patch.std()) < EMPTY_STD_THRESHOLD:
+            continue
+
+        best_key, best_score, runner_up = None, -1.0, -1.0
+        for key in hero_keys:
+            template = templates.template(key)
+            if template is None:
+                continue
+            hit = best_match(patch, template, scales=SLOT_SCALES, downscale=1.0)
+            if not hit:
+                continue
+            if hit[0] > best_score:
+                best_key, best_score, runner_up = key, hit[0], best_score
+            elif hit[0] > runner_up:
+                runner_up = hit[0]
+
+        if best_key is None or best_score < SLOT_MIN_SCORE:
+            continue
+        if best_score - runner_up < SLOT_MARGIN:
+            # A near-tie is the shape of nothing matching, not of a close call between two
+            # heroes who happen to look alike. Leaving the slot empty is the honest read.
+            continue
+        picks.append(SlotPick(index + 1, best_key, best_score))
+    return picks
+
+
+def resolve_self_slot(picks: list, my_hero_key=None) -> list:
+    """Flags which slot is the player's own.
+
+    The player is *not* reliably slot one — role queue orders the slots by role, so the
+    position moves with the role queued for. Rather than assume, match against the hero
+    the server already knows we picked: if exactly one occupied slot is on that hero, it's
+    ours. Anything less certain leaves every slot unflagged, because the clients can live
+    with no "you" marker but not with one pointing at a stranger.
+    """
+    for pick in picks:
+        pick.is_self = False
+    if not my_hero_key:
+        return picks
+    candidates = [pick for pick in picks if pick.hero_key == my_hero_key]
+    if len(candidates) == 1:
+        candidates[0].is_self = True
+    return picks
+
+
+def scan(templates, hero_keys, my_hero_key=None, nudge: bool = True, log=None) -> ScanResult:
+    """One full look at the hero-select screen.
+
+    The player slots are read from the *first* capture, before any nudge. Pressing right
+    doesn't merely move a cursor in this UI — it moves the actual selection, and the
+    player's own slot follows it. Reading the slots first means what's reported is what
+    the player had chosen when asked, not what the scan itself just did to them.
+    """
+    log = log or (lambda message: None)
+    hero_keys = list(hero_keys)
+
+    _, gray = capture()
+    hits = _match_grid(gray, templates, hero_keys)
+
+    # Before anything else, and before touching a key: is the roster even there? The nudge
+    # below presses arrow keys, and pressing those into a live match instead of a menu is
+    # exactly the kind of thing this check exists to prevent.
+    if not looks_like_roster(hits):
+        log("Hero select isn't on screen")
+        return ScanResult({}, [], on_hero_select=False)
+
+    roster = {key: hit for key, hit in hits.items() if hit.score >= GRID_MIN_SCORE}
+    picks = resolve_self_slot(scan_player_slots(gray, templates, hero_keys), my_hero_key)
+
+    if nudge:
+        unsure = [key for key in hero_keys
+                  if key not in roster or roster[key].score < RECHECK_THRESHOLD]
+        if unsure:
+            log("Looking again at %d hero%s the highlight may have been sitting on"
+                % (len(unsure), "" if len(unsure) == 1 else "es"))
+            _nudge_selection()
+            _, after = capture()
+            for key, hit in _match_grid(after, templates, unsure).items():
+                if hit.score < GRID_MIN_SCORE:
+                    continue
+                if key not in roster or hit.score > roster[key].score:
+                    roster[key] = hit
+
+    return ScanResult(roster, picks)
+
+
+def _nudge_selection():
+    for _ in range(NUDGE_PRESSES):
+        pyautogui.press("right")
+    time.sleep(NUDGE_SETTLE_SECONDS)
+
+
+def reopen_hero_menu():
+    """`H` is Overwatch's own shortcut back to the hero list. Once a hero is locked the
+    roster isn't on screen to be matched against, so there's nothing to scan and nothing
+    to click until this puts it back."""
+    pyautogui.press("h")
+    time.sleep(MENU_SETTLE_SECONDS)
+
+
+# ---------------------------------------------------------------- acting
+
+def click_and_confirm(point: tuple):
+    """Highlights the hero with a click, then locks it in with space.
+
+    A synthetic double-click is the obvious way to do this and it doesn't take: the game
+    reads the two presses as separate clicks rather than one gesture, so the icon is left
+    highlighted and never confirmed. Clicking once and pressing the confirm key is the same
+    two steps the menu offers a person, and each half lands on its own terms.
+    """
+    pyautogui.moveTo(point[0], point[1])
+    pyautogui.click()
+    time.sleep(HIGHLIGHT_SETTLE_SECONDS)
+    pyautogui.press("space")
+    time.sleep(CLICK_SETTLE_SECONDS)
+
+
+def _look_at_roster(templates, hero_keys):
+    """A fresh match of the whole roster, or None if it isn't on screen.
+
+    Always the whole catalog, never just the hero being looked for: a lone template
+    "matches" something on any screen at all, so how *all* of them landed is the only
+    evidence that what's in front of us is a roster.
+    """
+    _, gray = capture()
+    hits = _match_grid(gray, templates, hero_keys)
+    return hits if looks_like_roster(hits) else None
+
+
+def looks_at_hero_select(templates, hero_keys) -> bool:
+    """Whether the roster is on screen right now. Confirming a pick closes the menu, so
+    this is also how the caller tells a committed pick from one that never landed."""
+    return _look_at_roster(templates, hero_keys) is not None
+
+
+def select_hero(templates, hero_keys, hero_key: str, roster=None, log=None) -> bool:
+    """Puts the player on `hero_key` by clicking its icon and confirming.
+
+    Looks again rather than trusting `roster`, which is only a hint that a scan happened
+    at all: those coordinates were true when they were taken, and between then and now the
+    player may have picked, the menu may have closed, or the highlight may have moved onto
+    the very hero we're being asked to click.
+
+    That last case is why this nudges. The highlight distorts the icon under it badly
+    enough to push its match down among the wrong answers — measured at 0.59 for the
+    highlighted hero against a median of 0.80, recovering to 0.83 once the highlight was
+    walked away with three right presses. Scanning has always done this; picking did not,
+    and would happily click the best of a bad set of guesses. That is the wrong-hero bug.
+    """
+    log = log or (lambda message: None)
+
+    hits = _look_at_roster(templates, hero_keys)
+    if hits is None:
+        log("Hero list isn't up — reopening it")
+        reopen_hero_menu()
+        hits = _look_at_roster(templates, hero_keys)
+        if hits is None:
+            log("The hero list didn't come back — not clicking blind")
+            return False
+
+    hit = hits.get(hero_key)
+    if hit is None or hit.score < CLICK_MIN_SCORE:
+        # Too weak to act on. If the highlight is what's sitting on it, moving the
+        # highlight is exactly what fixes it, so it's worth one more look before refusing.
+        log("%s only matched at %.2f — nudging the highlight and looking again"
+            % (hero_key, hit.score if hit else 0.0))
+        _nudge_selection()
+        again = _look_at_roster(templates, hero_keys)
+        better = (again or {}).get(hero_key)
+        if better is not None and (hit is None or better.score > hit.score):
+            hit = better
+
+    if hit is None or hit.score < CLICK_MIN_SCORE:
+        # Deliberately no click. The best guess for a hero this badly matched is some
+        # other hero's icon, and picking the wrong one in a live game is worse than
+        # picking none and saying so.
+        log("Couldn't place %s confidently (best %.2f, need %.2f) — not clicking"
+            % (hero_key, hit.score if hit else 0.0, CLICK_MIN_SCORE))
+        return False
+
+    log("Clicking %s at %.2f confidence" % (hero_key, hit.score))
+    click_and_confirm(hit.center)
+    return True

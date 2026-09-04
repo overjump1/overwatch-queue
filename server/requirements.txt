@@ -3,3 +3,18 @@ PyQt6>=6.4
 # fine without them — see server/README.md for the one-time Apple Developer setup.
 httpx[http2]>=0.27
 PyJWT[crypto]>=2.8
+
+# Optional: only needed to read the hero-select screen and click heroes in-game. Without
+# them hero select is driven by hand from the panel, exactly as it always was — which is
+# also the only option on macOS, where `pygetwindow` can't focus the game.
+opencv-python>=4.8
+numpy>=1.24
+mss>=9.0
+pyautogui>=0.9.54
+pygetwindow>=0.0.9
+
+# Optional: only needed to read which real maps are on the vote screen. Without it,
+# map vote falls back to plausible-but-not-real catalog options, exactly as it always
+# did — a real OCR model, not a system binary to install alongside it the way
+# `pytesseract` would need, but a meaningfully larger download than anything else here.
+rapidocr-onnxruntime>=1.3

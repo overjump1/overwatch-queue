@@ -13,9 +13,10 @@ import random
 import threading
 import time
 
-from . import protocol
+from . import protocol, queuemapvote, queueroles, queuevision, queuewatch, vision
 from .activitytokens import ActivityTokens
 from .apns import APNsClient, APNsConfig
+from .heroimages import TemplateStore
 from .protocol import QueueSession
 from .pushrelay import PushRelayClient, PushRelayConfig
 from .pushtokens import PushTokens
@@ -27,7 +28,8 @@ HELLO_TIMEOUT_SECONDS = 10
 
 
 class QueueServer:
-    def __init__(self, pairing, catalog, log=None, push_tokens=None, activity_tokens=None):
+    def __init__(self, pairing, catalog, log=None, push_tokens=None, activity_tokens=None,
+                 vision_enabled=False, queue_vision_enabled=False):
         self.pairing = pairing
         self.catalog = catalog
         self.session = QueueSession()
@@ -41,6 +43,28 @@ class QueueServer:
         self._scenario = None
         self._scenario_stop = threading.Event()
         self.on_change = None            # called (on any thread) after state moves
+
+        # Reading the game is opt-in, and off by default even where it would work.
+        #
+        # Defaulting to "on wherever the libraries import" was tried and is a trap: the
+        # test suite constructs a real server, and on a machine with the extras installed
+        # a single `phase_for("heroSelect")` reached out, focused whatever Overwatch was
+        # running and typed arrow keys into it. Nothing that merely *builds* a server
+        # should be able to take the mouse. `run.py` turns it on for the actual app.
+        self.vision_enabled = bool(vision_enabled) and vision.VISION_AVAILABLE
+        # Watching for a queue is opt-in for the same reason, though the stakes are lower:
+        # it only ever reads the top of the screen and never takes the mouse. What it does
+        # do is *drive the session on its own*, so a test that built a server with it on
+        # would find its phase moving underneath it.
+        self.queue_vision_enabled = (bool(queue_vision_enabled) and
+                                     queuevision.QUEUE_VISION_AVAILABLE)
+        self.queue_watcher = None
+        self.templates = TemplateStore(catalog, log=lambda message: self.log(message))
+        self.role_templates = queueroles.RoleIconStore(log=lambda message: self.log(message))
+        # Where each hero sat the last time we looked, so picking one doesn't have to pay
+        # for a fresh scan. Cleared whenever the phase moves, since the roster is only on
+        # screen during hero select and stale coordinates would click on nothing.
+        self._roster = {}
 
         # Pushing is entirely optional: with neither of these configured, a backgrounded
         # phone or watch just won't be woken until it reconnects on its own.
@@ -73,6 +97,10 @@ class QueueServer:
         self._activity_start_first_sent_at = None
         self._activity_fallback_sent_for = None
         self._activity_fallback_delay_seconds = 15
+        # The phase an update alert was last sent for, so a patch to the *same* phase's
+        # data — the estimate ticking, a mode correction — never earns one of its own.
+        # See `_push_activity` for why every real phase change now does.
+        self._last_activity_kind = None
         self.apns = self._make_push_client()
 
         self.ws = WebSocketServer(port=pairing.port,
@@ -107,9 +135,28 @@ class QueueServer:
         self._heartbeat.start()
         self.log("Listening on port %d" % self.pairing.port)
 
+    def watch_queue(self, controls):
+        """Starts reading the queue off the screen, and returns the watcher or None.
+
+        Takes the panel's `Controls` rather than building its own, because the mode and
+        role a queue is in are only half readable — see `queuewatch.QueueWatcher`. Called
+        from `run.py` and the panel; doing it here keeps the enabled-or-not decision in
+        the one place that already makes it for hero select.
+        """
+        if not self.queue_vision_enabled or self.queue_watcher is not None:
+            return self.queue_watcher
+        self.queue_watcher = queuewatch.QueueWatcher(
+            controls, log=lambda message: self.log(message),
+            role_templates=self.role_templates,
+            hero_templates=self.templates, hero_keys=self.hero_keys)
+        self.queue_watcher.start()
+        return self.queue_watcher
+
     def stop(self):
         self._running = False
         self.stop_scenario()
+        if self.queue_watcher:
+            self.queue_watcher.stop()
         self.ws.stop()
         if self.apns:
             self.apns.close()
@@ -127,6 +174,10 @@ class QueueServer:
                 self.log("Refused %s → %s (the app would refuse it too)"
                          % (self.session.kind, phase["type"]))
                 return False
+            if phase["type"] != "heroSelect":
+                # The roster is only on screen during hero select; anywhere else those
+                # coordinates point at whatever has replaced it.
+                self._roster = {}
             self._broadcast_snapshot()
         self._changed()
         return True
@@ -158,7 +209,15 @@ class QueueServer:
 
     def _broadcast_snapshot(self):
         self.ws.broadcast(self.session.snapshot())
-        self._push_apns()
+        # Off-thread: `_push_apns` makes blocking HTTP calls (10s timeout apiece, two in a
+        # row for an urgent kind), and this runs from inside the same lock that every vote,
+        # pick and phase change goes through. Left inline, a slow push relay doesn't just
+        # delay itself — it stalls the scan loop's next frame *and* the next client message
+        # waiting on this lock, which is the opposite of what a "tell everyone now" call
+        # should do. The push itself already tolerates running late or twice (see its own
+        # docstring: a client discards anything not newer than its current sequence), so
+        # nothing here needs the lock still held or the read of `self.session` still fresh.
+        threading.Thread(target=self._push_apns, daemon=True, name="apns-push").start()
 
     def _push_apns(self):
         """Reaches whichever paired kinds have registered a device token — regardless of
@@ -207,15 +266,18 @@ class QueueServer:
           above, since only that wake-up gives the app a chance to attach to the activity
           and register a real per-activity token for every update after this one.
 
-        An urgent phase's *update* carries a real alert — sound, haptic, a brief peek —
-        the same way a delivery app's Live Activity announces "your order is on the way"
-        without a separate notification alongside it. Routine updates stay silent; the
-        card changing is signal enough once it's already on screen.
+        Every real phase change carries a real alert — sound, haptic, a brief peek — the
+        way a transit app's Live Activity buzzes at each stop rather than only the ones
+        it judges important: the point is feeling the trip move, not just being able to
+        check it. A *patch* to the phase already showing — the estimate ticking down, a
+        mode correction — is not that: nothing about the queue actually moved, so it
+        stays silent, which is what `_last_activity_kind` is for telling apart from a
+        real `apply`.
 
-        A *start* always carries one, urgent or not. A wholly silent push-to-start was
-        never once seen to arrive, while an identical one with an alert sometimes does —
-        which makes some sense, since there's nothing on screen yet for a silent content
-        refresh to land on.
+        A *start* always carries one. A wholly silent push-to-start was never once seen
+        to arrive, while an identical one with an alert sometimes does — which makes some
+        sense, since there's nothing on screen yet for a silent content refresh to land
+        on.
 
         "Sometimes" is the honest word. Push-to-start is accepted with a 200 and then, often
         enough to design around, simply never delivered — with nothing on this side to say
@@ -227,7 +289,8 @@ class QueueServer:
         timestamp = int(protocol.now().timestamp())
         title, body = protocol.notification_copy(kind)
         start_alert = {"title": title, "body": body}
-        update_alert = start_alert if kind in protocol.URGENT_KINDS else None
+        changed_kind = kind != self._last_activity_kind
+        update_alert = start_alert if changed_kind else None
 
         activity = self.activity_tokens.update_token(session_id)
         if activity:
@@ -236,10 +299,14 @@ class QueueServer:
             self._activity_start_first_sent_at = None
             token, environment = activity
             if kind in ("idle", "cancelled"):
-                self.apns.send_activity_end(token, environment, content_state, timestamp)
+                end_alert = start_alert if kind == "cancelled" and changed_kind else None
+                self.apns.send_activity_end(token, environment, content_state, timestamp,
+                                            alert=end_alert)
                 self.activity_tokens.forget_update()
                 self._activity_session_id = None
+                self._last_activity_kind = None
             else:
+                self._last_activity_kind = kind
                 self.apns.send_activity_update(token, environment, content_state,
                                                timestamp, alert=update_alert)
             return
@@ -268,6 +335,7 @@ class QueueServer:
 
         token, environment = start
         attributes = {"sessionID": session_id, "startedAt": self._activity_started_at}
+        self._last_activity_kind = kind
         self.apns.send_activity_start(token, environment, attributes, content_state,
                                       timestamp, alert=start_alert)
         if self._activity_start_first_sent_at is None:
@@ -326,6 +394,160 @@ class QueueServer:
         if self.on_change:
             self.on_change()
 
+    # ------------------------------------------------------------ reading the game
+
+    @property
+    def hero_keys(self) -> list:
+        """Every hero the catalog knows, unfiltered by role — the roster on screen shows
+        all three roles at once, so a scan restricted to the queued role would be looking
+        for two-thirds of what's in front of it."""
+        return [hero["key"] for hero in self.catalog.heroes if hero.get("key")]
+
+    def scan_hero_select(self):
+        """Looks at the hero-select screen. `None` when there's nothing to look at.
+
+        Deliberately outside `self._lock`: this takes a couple of seconds, and every state
+        change in the server waits on that same lock. Holding it across a scan would stall
+        the heartbeat and every broadcast for the duration. Nothing here touches session
+        state — the caller decides what to do with the answer.
+        """
+        if not self.vision_enabled:
+            return None
+        if not vision.focus_game_window(log=lambda message: self.log(message)):
+            return None
+
+        started = time.time()
+        try:
+            result = vision.scan(self.templates, self.hero_keys,
+                                 my_hero_key=self._my_hero_key(),
+                                 log=lambda message: self.log(message))
+        except Exception as problem:     # pragma: no cover - depends on a live screen
+            # A scan is a convenience over driving by hand, never a reason to take the
+            # server down with it.
+            self.log("Screen scan failed: %s" % problem)
+            return None
+
+        if not result.on_hero_select:
+            # Looked, and the roster wasn't there. The caller falls back to building the
+            # phase from the catalog rather than reporting a roster that isn't on screen.
+            return None
+
+        self._roster = result.roster
+        self.log("Scanned in %.1fs — %d heroes on screen, %d slot%s filled"
+                 % (time.time() - started, len(result.roster), len(result.picks),
+                    "" if len(result.picks) == 1 else "s"))
+        for pick in result.picks:
+            self.log("  slot %d: %s%s" % (pick.slot, self.catalog.name_for_hero(pick.hero_key),
+                                          " (you)" if pick.is_self else ""))
+        return result
+
+    def _my_hero_key(self):
+        with self._lock:
+            return (self.session.phase.get("data") or {}).get("myHeroKey")
+
+    def scan_role_select(self):
+        """Looks at the "Select a Role" screen. `None` when there's nothing to look at.
+
+        On demand, for a person's own click on the panel's own button. `queuewatch.
+        QueueWatcher._check_role_select` reads the same screen continuously and does not
+        call this — same underlying `queueroles.scan`, but on its own idle poll rather
+        than a focus grab this method still takes for a manual read's sake.
+        """
+        if not self.vision_enabled:
+            return None
+        if not vision.focus_game_window(log=lambda message: self.log(message)):
+            return None
+
+        try:
+            result = queueroles.scan(self.role_templates,
+                                     log=lambda message: self.log(message))
+        except Exception as problem:      # pragma: no cover - depends on a live screen
+            self.log("Role-select scan failed: %s" % problem)
+            return None
+
+        if not result.on_screen:
+            return None
+
+        self.log("Scanned — %s checked%s" % (
+            ", ".join(sorted(result.roles)) or "nothing",
+            " (%s)" % result.mode if result.mode else ""))
+        return result
+
+    def scan_map_vote(self):
+        """Looks at the "Vote for a Map" screen and reads which real maps its cards
+        name. `None` when there's nothing to look at, or when fewer than two cards read
+        as a real map — see `queuemapvote.scan` for why that's treated the same as the
+        screen not being up.
+
+        No focus grab first, unlike hero select's own scan: reading a screenshot never
+        needed the window foregrounded to begin with, the same reason `scan_role_select`
+        and the queue banner's own continuous poll don't take one either, and nothing
+        this reads back needs a real click to land anywhere.
+        """
+        if not self.vision_enabled:
+            return None
+        try:
+            result = queuemapvote.scan(self.catalog, log=lambda message: self.log(message))
+        except Exception as problem:      # pragma: no cover - depends on a live screen
+            self.log("Map vote scan failed: %s" % problem)
+            return None
+        if not result.on_screen:
+            return None
+        self.log("Scanned the vote screen — %s" % ", ".join(
+            self.catalog.name_for_map(key) for key in result.map_keys))
+        return result
+
+    def _drive_hero_pick(self, hero_key: str):
+        """Puts the game on `hero_key`, then re-reads the slots to see if it took.
+
+        Runs on its own thread — see `_select_hero`. The re-scan is the honest part: the
+        click is a guess that the icon is where we last saw it, and looking again
+        is what turns that into something worth telling the phone.
+        """
+        if not vision.focus_game_window(log=lambda message: self.log(message)):
+            return
+        try:
+            clicked = vision.select_hero(self.templates, self.hero_keys, hero_key,
+                                         roster=self._roster,
+                                         log=lambda message: self.log(message))
+            if not clicked:
+                self.log("Pick %s wasn't made on screen — do it on the PC"
+                         % self.catalog.name_for_hero(hero_key))
+                return
+            still_open = vision.looks_at_hero_select(self.templates, self.hero_keys)
+            picks = []
+            if still_open:
+                _, gray = vision.capture()
+                picks = vision.resolve_self_slot(
+                    vision.scan_player_slots(gray, self.templates, self.hero_keys), hero_key)
+        except Exception as problem:     # pragma: no cover - depends on a live screen
+            self.log("Couldn't pick %s on screen: %s" % (hero_key, problem))
+            return
+
+        if not still_open:
+            # Confirming a hero closes the menu, so the roster being gone is what success
+            # looks like — not a failure to verify. Nothing to re-read, and nothing to
+            # say about the slots: reporting an empty row here would tell the phone
+            # everyone had un-picked.
+            self.log("Picked %s" % self.catalog.name_for_hero(hero_key))
+            return
+
+        # The menu is still up, so the slot row is readable and worth checking against
+        # what was asked for. The click is only ever a guess that an icon was where the
+        # matcher said it was; this is the game's own answer.
+        landed = next((pick for pick in picks if pick.is_self), None)
+        if landed is not None and landed.hero_key != hero_key:
+            self.log("Asked for %s but the game shows %s — the click went wide"
+                     % (self.catalog.name_for_hero(hero_key),
+                        self.catalog.name_for_hero(landed.hero_key)))
+
+        with self._lock:
+            if self.session.kind != "heroSelect":
+                return                   # the phase moved on while we were clicking
+            self.session.patch(teamPicks=[pick.as_wire() for pick in picks])
+            self._broadcast_snapshot()
+        self._changed()
+
     # ------------------------------------------------------------ clients
 
     def _client_connected(self, client):
@@ -369,7 +591,8 @@ class QueueServer:
         elif kind == "cancelQueue":
             self._cancel(client)
         elif kind == "registerPushToken":
-            self._register_push_token(client, data.get("token"), data.get("environment"))
+            self._register_push_token(client, data.get("token"), data.get("environment"),
+                                      data.get("kind"))
         elif kind == "registerActivityPushToken":
             self._register_activity_push_token(
                 data.get("sessionID"), data.get("token"), data.get("environment"))
@@ -425,12 +648,27 @@ class QueueServer:
         self.log("%s picked %s" % (client.name, self.catalog.name_for_hero(hero_key)))
         self._changed()
 
-    def _register_push_token(self, client, token, environment):
-        kind = (client.identity or {}).get("kind")
+        # The phone hears back the moment the state changed, above; the mouse takes a
+        # second or two longer. Doing that here would hold up the socket thread this
+        # arrived on — and every other message on it — for the length of a click and a
+        # re-scan, so it goes to a thread of its own.
+        if self.vision_enabled:
+            threading.Thread(target=self._drive_hero_pick, args=(hero_key,),
+                             daemon=True, name="hero-pick").start()
+
+    def _register_push_token(self, client, token, environment, kind=None):
+        # The device says which it is, and that is believed over the identity of the
+        # socket it arrived on. A watch with no connection of its own registers through
+        # the paired iPhone, so the socket here is the phone's — reading the kind from it
+        # would file the watch's token under `phone`, on top of the phone's own, and leave
+        # both devices unreachable. `kind` is absent from older clients, which only ever
+        # registered over their own socket, so falling back to the identity is right.
+        if kind not in ("phone", "watch"):
+            kind = (client.identity or {}).get("kind")
         if kind not in ("phone", "watch") or not token or environment not in ("sandbox", "production"):
             return
         self.push_tokens.register(kind, token, environment)
-        self.log("%s registered for push notifications" % client.name)
+        self.log("%s registered %s for push notifications" % (client.name, kind))
 
     def _register_activity_push_token(self, session_id, token, environment):
         if not session_id or not token or environment not in ("sandbox", "production"):

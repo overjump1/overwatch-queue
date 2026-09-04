@@ -213,6 +213,60 @@ final class WatchTransportTests: XCTestCase {
         relay.disconnect()
     }
 
+    /// The gap every other test here walked straight past by sending a snapshot first.
+    /// WatchConnectivity calls the counterpart reachable whenever the iPhone is in range,
+    /// running app or not — so a suspended phone reads as a connected relay that simply
+    /// never says anything, and the wrist sits on a stage the queue has moved past.
+    func testAReachableButSilentPhoneIsNotMistakenForAWorkingRelay() async {
+        let relay = WatchRelayTransport(staleTimeout: 5, pollInterval: 0.02, openingTimeout: 0.05)
+        relay.onStatusChange = { _ in }
+        relay.connect()
+
+        WatchLink.shared.onReachabilityChange?(true)     // in range…
+        XCTAssertEqual(relay.status, .connected)
+        // …but its app is suspended, so no snapshot ever arrives.
+        try? await Task.sleep(for: .seconds(0.2))
+
+        XCTAssertNotEqual(relay.status, .connected,
+                          "reachable and silent is not connected, however long we wait")
+        relay.disconnect()
+    }
+
+    /// And the point of noticing: the watch opens its own socket instead of waiting.
+    func testASilentPhoneFailsOverWithoutEverHavingHeardFromIt() async {
+        let relay = WatchRelayTransport(staleTimeout: 5, pollInterval: 0.02, openingTimeout: 0.05)
+        var sockets: [FakeTransport] = []
+        let transport = WatchTransport(pairing: pc, identity: identity, relay: relay) { _ in
+            let socket = FakeTransport(name: "PC")
+            sockets.append(socket)
+            return socket
+        }
+        transport.connect()
+
+        WatchLink.shared.onReachabilityChange?(true)
+        try? await Task.sleep(for: .seconds(0.2))
+
+        XCTAssertEqual(sockets.count, 1, "the watch should stop waiting and go to the PC itself")
+        XCTAssertTrue(sockets[0].isConnected)
+        transport.disconnect()
+    }
+
+    /// A relay that *has* been working gets the longer, more forgiving deadline — one late
+    /// snapshot shouldn't cost it the connection.
+    func testAWorkingRelayIsNotAbandonedOnTheOpeningDeadline() async {
+        let relay = WatchRelayTransport(staleTimeout: 5, pollInterval: 0.02, openingTimeout: 0.05)
+        relay.onStatusChange = { _ in }
+        relay.connect()
+
+        WatchLink.shared.onReachabilityChange?(true)
+        WatchLink.shared.onSnapshot?(QueueSnapshot(sequence: 1, phase: .idle))
+        try? await Task.sleep(for: .seconds(0.2))        // past the opening deadline
+
+        XCTAssertEqual(relay.status, .connected,
+                       "once it has spoken, the phone gets the full stale timeout")
+        relay.disconnect()
+    }
+
     func testAFreshSnapshotResetsTheStaleClock() async {
         let relay = WatchRelayTransport(staleTimeout: 0.05, pollInterval: 0.02)
         relay.onStatusChange = { _ in }

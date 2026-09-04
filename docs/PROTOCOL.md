@@ -188,10 +188,26 @@ player's choice.
 
 ```json
 {"type":"heroSelect","data":{"mode":"competitive","role":"tank","mapKey":"havana",
- "deadline":"2023-11-14T22:13:20Z","takenHeroKeys":["orisa"],"myHeroKey":"reinhardt"}}
+ "deadline":"2023-11-14T22:13:20Z","takenHeroKeys":["orisa"],"myHeroKey":"reinhardt",
+ "availableHeroKeys":["reinhardt","orisa","sigma"],
+ "teamPicks":[{"slot":2,"heroKey":"reinhardt","isSelf":true},
+              {"slot":3,"heroKey":"orisa","isSelf":false}]}}
 ```
 
 `takenHeroKeys` are removed from the grid. `mapKey` is optional.
+
+`availableHeroKeys` and `teamPicks` are what the server read off the PC's screen, and are
+**absent entirely when it didn't look** — no game running, or a server without the vision
+extras. Absent and empty are different answers and clients must treat them differently:
+absent means "nobody looked", so fall back to the shipped catalog; empty would mean the
+roster is genuinely empty, which never happens. Both were added after v1 shipped, so a
+client that has never heard of them decodes the phase exactly as before.
+
+`slot` is a position in the on-screen row of player portraits. **It is not an identity and
+not a role** — role queue orders the slots by role, so the local player is not reliably in
+slot 1. `isSelf` is the only thing that marks the local player's pick; it is `false` on
+every pick when the server couldn't tell which one was ours, and clients should show no
+"you" marker in that case rather than assuming a position.
 
 ### `inGame`
 
@@ -237,7 +253,7 @@ Sent when the player acts on the phone or the watch.
 {"v":1,"body":{"type":"selectHero","data":{"heroKey":"reinhardt"}}}
 {"v":1,"body":{"type":"cancelQueue"}}
 {"v":1,"body":{"type":"requestSnapshot"}}
-{"v":1,"body":{"type":"registerPushToken","data":{"token":"5fceb98...","environment":"sandbox"}}}
+{"v":1,"body":{"type":"registerPushToken","data":{"token":"5fceb98...","environment":"sandbox","kind":"watch"}}}
 {"v":1,"body":{"type":"registerActivityPushToken","data":{"sessionID":"3F2504E0-4F89-41D3-9A0C-0305E82C3301","token":"activity-token...","environment":"sandbox"}}}
 {"v":1,"body":{"type":"registerActivityStartToken","data":{"token":"start-token...","environment":"sandbox"}}}
 {"v":1,"body":{"type":"ping","data":{"clientTime":1700000000.123}}}
@@ -264,6 +280,12 @@ the server's version.
 separate push hosts for each, and a token is only valid against the one it was issued for.
 Sent once per launch, right after `hello`; re-sending overwrites whatever this `kind`
 registered before.
+
+`kind` says which device the token belongs to, and is **not** the same as the identity in
+this connection's `hello`. A watch with no socket of its own registers through the paired
+iPhone, so the arriving connection is the phone's — trust `kind` over it, or the watch's
+token lands under `phone`, on top of the phone's own, and neither device can be reached.
+Fall back to the connection's identity when `kind` is absent.
 
 `registerActivityPushToken` hands over the push token for one running Live Activity —
 what `Activity.pushTokenUpdates` yields once the phone starts it with `pushType: .token`.

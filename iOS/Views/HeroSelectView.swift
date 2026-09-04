@@ -16,9 +16,15 @@ struct HeroSelectView: View {
 
     private let columns = [GridItem(.adaptive(minimum: 84), spacing: 12)]
 
+    private var picks: [(pick: TeamPick, hero: Hero)] { store.teamPicks() }
+
     var body: some View {
         VStack(spacing: 14) {
             header
+
+            if !picks.isEmpty {
+                TeamPicksStrip(picks: picks)
+            }
 
             if heroes.isEmpty {
                 ContentUnavailableView("Loading heroes…",
@@ -81,6 +87,48 @@ struct HeroSelectView: View {
             Spacer()
         }
         .padding(.horizontal, 24)
+    }
+}
+
+/// Who's on what, read off the PC's screen. Shows the composition forming while you're
+/// still choosing — the reason to look at your wrist instead of the monitor.
+///
+/// Role comes from the catalog entry for each hero, not from the slot: role queue orders
+/// slots by role, so position says nothing reliable about either role or identity.
+private struct TeamPicksStrip: View {
+    var picks: [(pick: TeamPick, hero: Hero)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("YOUR TEAM")
+                .font(.caption2.weight(.heavy)).tracking(1.6)
+                .foregroundStyle(Palette.white.opacity(0.4))
+                .padding(.horizontal, 24)
+
+            HStack(spacing: 10) {
+                ForEach(picks, id: \.pick.slot) { entry in
+                    VStack(spacing: 4) {
+                        HeroPortrait(hero: entry.hero, size: 44)
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .strokeBorder(entry.pick.isSelf
+                                                  ? AnyShapeStyle(Palette.amber)
+                                                  : AnyShapeStyle(entry.hero.role.tint.opacity(0.5)),
+                                                  lineWidth: entry.pick.isSelf ? 2.5 : 1)
+                            }
+                        Image(systemName: entry.hero.role.symbolName)
+                            .font(.system(size: 9))
+                            .foregroundStyle(entry.hero.role.tint.opacity(0.9))
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(entry.pick.isSelf
+                                        ? "You, \(entry.hero.name)"
+                                        : "\(entry.hero.name)")
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 24)
+        }
     }
 }
 

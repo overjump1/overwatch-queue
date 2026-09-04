@@ -195,6 +195,34 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(client.receive()["body"]["data"]["code"], "unpaired")
         self.assertIsNone(self.server.push_tokens.get("phone"))
 
+    def test_a_relayed_watch_token_is_not_filed_under_the_phone(self):
+        # The watch has no socket of its own, so this arrives over the iPhone's. Reading
+        # the kind from the connection would put the watch's token on top of the phone's
+        # and leave both unreachable.
+        client = self.connect()
+        client.send(hello())
+        client.receive()
+        client.send({"v": 1, "body": {"type": "registerPushToken",
+                                      "data": {"token": "phone-token",
+                                               "environment": "sandbox", "kind": "phone"}}})
+        client.send({"v": 1, "body": {"type": "registerPushToken",
+                                      "data": {"token": "watch-token",
+                                               "environment": "sandbox", "kind": "watch"}}})
+        time.sleep(0.05)
+        self.assertEqual(self.server.push_tokens.get("phone"), ("phone-token", "sandbox"))
+        self.assertEqual(self.server.push_tokens.get("watch"), ("watch-token", "sandbox"))
+
+    def test_a_token_without_a_kind_falls_back_to_the_connection(self):
+        # Older clients only ever registered over their own socket, so the identity there
+        # is the right answer for them.
+        client = self.connect()
+        client.send(hello())
+        client.receive()
+        client.send({"v": 1, "body": {"type": "registerPushToken",
+                                      "data": {"token": "abc123", "environment": "sandbox"}}})
+        time.sleep(0.05)
+        self.assertEqual(self.server.push_tokens.get("phone"), ("abc123", "sandbox"))
+
     def test_ping_is_answered_with_the_clients_own_time_untouched(self):
         client = self.connect()
         client.send(hello())
@@ -289,8 +317,10 @@ class _FakeAPNs:
         self.activity_updates.append((token, environment, content_state, timestamp, alert, stale_date))
         return "ok"
 
-    def send_activity_end(self, token, environment, content_state, timestamp, dismissal_date=None):
-        self.activity_ends.append((token, environment, content_state, timestamp, dismissal_date))
+    def send_activity_end(self, token, environment, content_state, timestamp, alert=None,
+                          dismissal_date=None):
+        self.activity_ends.append((token, environment, content_state, timestamp, alert,
+                                   dismissal_date))
         return "ok"
 
     @staticmethod
@@ -378,7 +408,7 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.assertEqual(content_state["phase"]["type"], "searching")
         # Every start carries an alert, even a routine phase — verified directly
         # against a real device that a silent push-to-start just doesn't reliably land.
-        self.assertEqual(alert, {"title": "Overwatch Queue", "body": "Status changed."})
+        self.assertEqual(alert, {"title": "Queue Started", "body": "Watching your queue."})
 
     def test_start_is_not_resent_within_the_retry_cooldown(self):
         self.server.activity_tokens.register_start("start-token", "sandbox")
@@ -421,21 +451,57 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.assertEqual(alert, {"title": "Match Found",
                                  "body": "You're being pulled into the game — get back to your PC."})
 
-    def test_routine_updates_carry_no_alert(self):
+    def test_a_patch_to_the_same_phase_carries_no_alert(self):
+        # The estimate ticking down, a mode correction — nothing about the queue itself
+        # moved, so this is the one case that stays silent even though the phase kind it
+        # patches (`searching`, just below) got a real alert of its own a moment earlier.
         self.server.activity_tokens.register_update(
             self.server.session.session_id, "activity-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.server.patch(estimatedWait=99)
         alert = self.fake.activity_updates[-1][4]
         self.assertIsNone(alert)
 
-    def test_an_urgent_update_carries_an_alert(self):
+    def test_every_real_phase_change_carries_an_alert_now(self):
+        # Not just the three that used to be `URGENT_KINDS` — a transit app buzzes at
+        # every stop, not only the ones it judges important, and this is now the same.
         self.server.activity_tokens.register_update(
             self.server.session.session_id, "activity-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.server.apply(protocol.match_found("quickPlay", "damage", 30))
-        alert = self.fake.activity_updates[-1][4]
-        self.assertEqual(alert, {"title": "Match Found",
-                                 "body": "You're being pulled into the game — get back to your PC."})
+        self.server.apply(protocol.map_vote(["kings-row"]))
+        self.server.apply(protocol.hero_select("quickPlay", "damage"))
+        self.server.apply(protocol.in_game("quickPlay"))
+        alerts = [update[4] for update in self.fake.activity_updates]
+        self.assertEqual(alerts, [
+            {"title": "Queue Started", "body": "Watching your queue."},
+            {"title": "Match Found",
+             "body": "You're being pulled into the game — get back to your PC."},
+            {"title": "Map Vote", "body": "Pick where you want to play."},
+            {"title": "Hero Select", "body": "Choose your hero."},
+            {"title": "Match Started", "body": "Good luck, have fun."},
+        ])
+
+    def test_a_cancellation_carries_an_alert_on_its_end_push(self):
+        self.server.activity_tokens.register_update(
+            self.server.session.session_id, "activity-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.server.apply(protocol.cancelled("userLeft"))
+        alert = self.fake.activity_ends[-1][4]
+        self.assertEqual(alert, {"title": "Queue Cancelled",
+                                 "body": "The queue ended without a match."})
+
+    def test_idle_reached_directly_stays_silent(self):
+        # `idle` is bookkeeping, not a real trip ending — `cancelled` is the event
+        # actually worth an alert for. (`reset()` always mints a fresh session id, which
+        # would never match a token registered under the old one; `apply(idle())`
+        # directly is what lets this compare against the same registered token above.)
+        self.server.activity_tokens.register_update(
+            self.server.session.session_id, "activity-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.server.apply(protocol.idle())
+        alert = self.fake.activity_ends[-1][4]
+        self.assertIsNone(alert)
 
     def test_a_registered_update_token_is_used_instead_of_starting_again(self):
         self.server.activity_tokens.register_start("start-token", "sandbox")

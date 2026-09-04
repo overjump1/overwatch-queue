@@ -100,6 +100,23 @@ class PhaseTests(unittest.TestCase):
         known = {entry["key"] for entry in CATALOG.maps}
         self.assertTrue(set(keys) <= known)
 
+    def test_a_real_vote_screen_scan_wins_over_the_catalog_guess(self):
+        # Mirrors `hero_select_phase`'s own fallback shape: a real answer, when the
+        # screen actually has one, beats the plausible-options behaviour every phase
+        # here had before any of them could read a screen.
+        import owqserver.queuemapvote as queuemapvote
+        real = queuemapvote.MapVoteSelection(["nepal", "samoa"], True)
+        self.server.scan_map_vote = lambda: real
+        phase = self.controls.phase_for("mapVote")
+        keys = [option["mapKey"] for option in phase["data"]["options"]]
+        self.assertEqual(keys, ["nepal", "samoa"])
+
+    def test_no_real_scan_falls_back_to_the_catalog_guess(self):
+        self.server.scan_map_vote = lambda: None
+        phase = self.controls.phase_for("mapVote")
+        keys = [option["mapKey"] for option in phase["data"]["options"]]
+        self.assertEqual(len(keys), 3)
+
     def test_hero_select_takes_heroes_from_the_queued_role(self):
         self.controls.mode, self.controls.role = "competitive", "tank"
         phase = self.controls.phase_for("heroSelect")

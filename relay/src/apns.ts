@@ -108,9 +108,10 @@ export function _resetCaches(): void {
   cachedKey = null;
 }
 
-/** `undefined` unless a title or body was actually given — used only where an alert is
- * optional (the two Live Activity push types that can go out silent). The plain `alert`
- * push type below always gets one, defaulted, regardless. */
+/** `undefined` unless a title or body was actually given — used everywhere a Live
+ * Activity push's own alert is optional to the caller (start, update, and end alike,
+ * a patch to the phase already showing being the one case the PC never sends a title or
+ * body for). The plain `alert` push type below always gets one, defaulted, regardless. */
 function optionalAlert(request: PushRequest): { title: string; body: string } | undefined {
   if (!request.title && !request.body) return undefined;
   return { title: request.title ?? "Overwatch Queue", body: request.body ?? "Status changed." };
@@ -147,6 +148,8 @@ function payloadFor(request: PushRequest): object {
       const aps: Record<string, unknown> = {
         timestamp: request.timestamp, event: "end", "content-state": request.contentState,
       };
+      const alert = optionalAlert(request);
+      if (alert) aps.alert = alert;
       if (request.dismissalDate !== undefined) aps["dismissal-date"] = request.dismissalDate;
       return { aps };
     }

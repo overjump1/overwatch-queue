@@ -211,4 +211,36 @@ describe("sendPush", () => {
     expect(fetchMock.mock.calls[0][1].headers["apns-topic"])
       .toBe("com.tomerady.OverwatchQueue.push-type.liveactivity");
   });
+
+  it("carries an alert on a Live Activity end when one is given", async () => {
+    const { config } = await generateConfig();
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendPush(config, {
+      token: "activity-token", environment: "production", pushType: "liveActivityEnd",
+      timestamp: 1700000009, contentState: { phase: { type: "cancelled" } },
+      title: "Queue Cancelled", body: "The queue ended without a match.",
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.aps.event).toBe("end");
+    expect(body.aps.alert).toEqual({
+      title: "Queue Cancelled", body: "The queue ended without a match.",
+    });
+  });
+
+  it("leaves a Live Activity end silent when no title or body is given", async () => {
+    const { config } = await generateConfig();
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendPush(config, {
+      token: "activity-token", environment: "production", pushType: "liveActivityEnd",
+      timestamp: 1700000009, contentState: { phase: { type: "idle" } },
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.aps.alert).toBeUndefined();
+  });
 });
