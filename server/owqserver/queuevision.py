@@ -168,6 +168,19 @@ GREEN_ROUNDNESS_MIN = 0.40
 # A check circle is an ornament on the banner. Something green covering half the box is
 # the banner itself, in a mode whose colour nobody has measured yet.
 GREEN_MAX_SHARE = 0.35
+# A full-video sweep found a shape none of the checks above rule out: a control point's
+# own contest-meter diamond, green when a team holds the lead, is square enough in
+# bounding box and round enough in fill — a diamond inscribed in its own bounding square
+# fills almost exactly the same 0.5-0.6 `GREEN_ROUNDNESS_MIN` was set to admit for a
+# check circle with its tick bitten out — that it passed every test above for the better
+# part of nine minutes of one real match. What actually tells a disc from a diamond is
+# how much *perimeter* it takes to enclose that fill: 4*pi*area/perimeter^2, 1.0 for a
+# perfect circle. Measured on three real check circles, the tick's own bite brought this
+# down further than a clean circular cutout would (0.40-0.63, not the 0.79-0.88 a tidy
+# bite suggested before real ones were measured); measured on six real diamonds, it
+# stayed at 0.18-0.33. The floor sits in the gap between those two real ranges, not at
+# either edge of it.
+GREEN_CIRCULARITY_MIN = 0.36
 
 # Where the timer sits inside each kind of box, as (x0, y0, x1, y1) fractions of the box.
 # The in-game bar right-aligns it; the pill puts it beside the icon on the upper row.
@@ -299,6 +312,28 @@ def dominant_hue(hues):
     return float(np.degrees(np.arctan2(y, x)) % 360.0), near.size / float(hues.size), spread
 
 
+def _circularity(mask, box) -> float:
+    """4*pi*area/perimeter^2 of the single blob in `mask` near `box` — 1.0 for a perfect
+    circle, well under it for anything with corners. `stats`' bounding-box fill ratio
+    can't tell a disc from a diamond, which fills almost exactly the same share of its
+    own bounding square; a contour's actual perimeter can, because a diamond's corners
+    buy it far more perimeter per unit of area than a circle's smooth arc ever needs."""
+    x, y, w, h = box
+    pad = 2
+    x0, y0 = max(0, x - pad), max(0, y - pad)
+    x1, y1 = min(mask.shape[1], x + w + pad), min(mask.shape[0], y + h + pad)
+    contours, _ = cv2.findContours(mask[y0:y1, x0:x1], cv2.RETR_EXTERNAL,
+                                   cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return 0.0
+    contour = max(contours, key=cv2.contourArea)
+    area = cv2.contourArea(contour)
+    perimeter = cv2.arcLength(contour, True)
+    if perimeter <= 0:
+        return 0.0
+    return float(4.0 * np.pi * area / (perimeter * perimeter))
+
+
 def green_check(patch) -> bool:
     """Whether a green check circle sits inside `patch` (BGR)."""
     if patch is None or patch.size == 0:
@@ -312,7 +347,7 @@ def green_check(patch) -> bool:
     count, _, stats, _ = cv2.connectedComponentsWithStats(green, 8)
     box_h, box_w = patch.shape[:2]
     for index in range(1, count):
-        _, _, w, h, area = (int(value) for value in stats[index])
+        x, y, w, h, area = (int(value) for value in stats[index])
         if w <= 0 or h <= 0:
             continue
         diameter = max(w, h)
@@ -323,6 +358,8 @@ def green_check(patch) -> bool:
         if area < GREEN_ROUNDNESS_MIN * w * h:
             continue
         if area > GREEN_MAX_SHARE * box_w * box_h:
+            continue
+        if _circularity(green * 255, (x, y, w, h)) < GREEN_CIRCULARITY_MIN:
             continue
         return True
     return False

@@ -120,6 +120,30 @@ def check_circle(strip, box):
     return strip
 
 
+def green_ornament(strip, box, size_ratio=0.30):
+    """Something green, jagged and roughly check-circle-sized that is not a circle —
+    standing in for a control point's own contest-meter diamond, which passed every
+    *other* check here on a real capture (right bounding-box shape, fill ratio 0.48-0.60,
+    comfortably over `GREEN_ROUNDNESS_MIN`) and was measured at 0.18-0.33 on this one. The
+    real blob was an irregular fragment of icon and text, not a clean geometric diamond —
+    a mathematically perfect diamond's own circularity turns out to be a rounder 0.785,
+    which would pass — so this is a sawtoothed star instead: not a literal reproduction of
+    the real pixels, but a shape a test can build deterministically that keeps the fill
+    ratio a real one had while adding the real one's actual jagged perimeter, which is
+    what circularity is built to catch and fill ratio alone was measured not to."""
+    x, y, _, h = box
+    cx, cy = x + h // 2, y + h // 2
+    count = 24
+    outer, inner = h * size_ratio, h * size_ratio * 0.61
+    corners = []
+    for i in range(count):
+        radius = outer if i % 2 == 0 else inner
+        angle = i * 2 * np.pi / count
+        corners.append((cx + radius * np.cos(angle), cy + radius * np.sin(angle)))
+    cv2.fillPoly(strip, [np.array(corners, np.int32)], (60, 200, 60))
+    return strip
+
+
 def timer_crop(seconds, hue=340):
     """The corner of a banner holding `M:SS` in white on flat colour."""
     patch = np.zeros((70, 110, 3), np.uint8)
@@ -175,6 +199,30 @@ class ShapeTests(unittest.TestCase):
 
     def test_shapes_between_the_two_are_neither(self):
         self.assertIsNone(queuevision.classify((12, 14, 300, 72), SCREEN[0]))
+
+
+@unittest.skipUnless(HAVE_CV2, "vision extras aren't installed")
+class GreenCheckTests(unittest.TestCase):
+    """The shape a green check circle has to have, tested against the one other shape
+    that shares almost every other measured property with it.
+
+    Added after a full-video sweep found a control point's own contest-meter diamond —
+    green when a team holds the lead — passing every existing test here for the better
+    part of nine minutes of one real match: it is square enough in bounding box and its
+    fill ratio sits right where a check circle's own tick-mark bite was measured to
+    leave one. `GREEN_CIRCULARITY_MIN` is what was added to tell them apart; these are
+    the two shapes it exists to separate.
+    """
+
+    BOX = (0, 0, 200, 200)
+
+    def test_a_real_check_circle_passes(self):
+        patch = check_circle(np.zeros((200, 200, 3), np.uint8), self.BOX)
+        self.assertTrue(queuevision.green_check(patch))
+
+    def test_an_angular_green_ornament_the_same_size_does_not(self):
+        patch = green_ornament(np.zeros((200, 200, 3), np.uint8), self.BOX)
+        self.assertFalse(queuevision.green_check(patch))
 
 
 class ModeHueTests(unittest.TestCase):
