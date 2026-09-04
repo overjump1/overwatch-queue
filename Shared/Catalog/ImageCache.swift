@@ -54,8 +54,18 @@ public final class ImageCache {
             do {
                 var request = URLRequest(url: url)
                 request.cachePolicy = .returnCacheDataElseLoad
-                let (data, _) = try await session.data(for: request)
+                let (data, response) = try await session.data(for: request)
                 guard let image = UIImage(data: data) else { return nil }
+
+                // Art URLs are content-addressed, so once fetched they're good forever —
+                // don't leave that to whatever Cache-Control the CDN happens to send.
+                // Without this, a response marked no-store (or with no heuristic-caching
+                // headers at all) would sail through `URLCache` uncached and get re-fetched
+                // over the network on every fresh launch.
+                session.configuration.urlCache?.storeCachedResponse(
+                    CachedURLResponse(response: response, data: data, storagePolicy: .allowed),
+                    for: request)
+
                 return image
             } catch {
                 return nil
