@@ -146,6 +146,16 @@ HUD_PILL_TIMER_REGION = (0.963, 0.10, 0.99, 0.126)
 # busiest hue — not nothing, but well short of the 0.94-0.98 the real pill covered on
 # every capture it was measured on.
 HUD_PILL_COVERAGE_MIN = 0.85
+# `coverage` alone measures agreement only *among* the saturated pixels, which a tiny
+# fleck can have every bit as perfectly as a real pill can — found on a real capture, a
+# teammate's translucent through-walls glimpse sitting in this exact corner covered 0.04
+# of the region yet scored a clean, single-hue coverage, and passed `green_check` too,
+# because a small enough green blob is indistinguishable from a check circle by shape
+# alone. `keep.mean()` — how much of the region is saturated at all, not just how well
+# the saturated part agrees with itself — is what that fleck actually lacked: 0.04
+# against 0.60 for a real pill on the same capture. Both tests are needed; coverage alone
+# passed the fleck, and fill alone would still pass a large but multi-hued mess.
+HUD_PILL_FILL_MIN = 0.3
 
 GREEN_HUE_RANGE = (85.0, 165.0)
 GREEN_SATURATION_MIN = 110
@@ -481,6 +491,13 @@ def hud_pill(strip, screen_w: int, screen_h: int, modes=None):
 
     hsv = cv2.cvtColor(body, cv2.COLOR_BGR2HSV)
     keep = (hsv[:, :, 1] >= SATURATION_MIN) & (hsv[:, :, 2] >= VALUE_MIN)
+    fill = float(keep.mean())
+    if fill < HUD_PILL_FILL_MIN:
+        # Ruled out before `dominant_hue` is even asked: a small fleck can agree with
+        # itself on one hue every bit as cleanly as a real pill does, and can pass
+        # `green_check` below too — see `HUD_PILL_FILL_MIN`. This is what that check
+        # alone can't rule out and fill can.
+        return None
     hue, coverage, spread = dominant_hue(hsv[:, :, 0][keep].astype(np.float32) * 2.0)
     if coverage < HUD_PILL_COVERAGE_MIN or spread > HUE_STD_MAX:
         # Ordinary content in that corner — an idle HUD, someone else's UI — is not one
@@ -490,13 +507,13 @@ def hud_pill(strip, screen_w: int, screen_h: int, modes=None):
     mode = match_mode(hue, hues, tolerance)
 
     if green_check(body):
-        return BannerHit(HUD_PILL, box, mode, hue, True, coverage, float(keep.mean()))
+        return BannerHit(HUD_PILL, box, mode, hue, True, coverage, fill)
 
     timer = _fractional_box(HUD_PILL_TIMER_REGION, screen_w, screen_h)
     tx, ty, tw, th = timer
     if queuedigits.segment(strip[max(0, ty):ty + th, max(0, tx):tx + tw]) is None:
         return None
-    return BannerHit(HUD_PILL, box, mode, hue, False, coverage, float(keep.mean()))
+    return BannerHit(HUD_PILL, box, mode, hue, False, coverage, fill)
 
 
 def find_banner(strip, screen_w: int = 0, screen_h: int = 0, modes=None):

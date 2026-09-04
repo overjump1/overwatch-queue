@@ -348,6 +348,18 @@ class HudPillTests(unittest.TestCase):
         strip = _fill(scenery(5), box, 216.0)
         self.assertIsNone(queuevision.find_banner(strip, *SCREEN))
 
+    def test_a_small_green_fleck_alone_is_not_a_game_found(self):
+        """The regression a full-video sweep found: a teammate's translucent
+        through-walls glimpse sat in this exact corner on a real capture, covering only
+        0.04 of the region — and `dominant_hue` still reported clean single-hue coverage
+        for it, because that measures agreement only *among* the saturated pixels, which
+        a small fleck has plenty of. What it lacks, and a real pill has, is *fill* — see
+        `HUD_PILL_FILL_MIN`. A lone check circle on otherwise empty scenery, with no pill
+        filled in behind it, is that fleck."""
+        box = queuevision._fractional_box(queuevision.HUD_PILL_REGION, *SCREEN)
+        strip = check_circle(scenery(6), box)
+        self.assertIsNone(queuevision.find_banner(strip, *SCREEN))
+
 
 # ---------------------------------------------------------------- the timer
 
