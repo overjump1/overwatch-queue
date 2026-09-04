@@ -57,7 +57,7 @@ public final class WatchModel {
         // *simulators* is unreliable, so without this the watch UI would only be testable
         // on hardware.
         if let pairing = Self.launchPairing() {
-            store.use(WebSocketTransport(pairing: pairing, identity: identity))
+            store.use(MQTTTransport(pairing: pairing, identity: identity))
             Task { await catalog.load() }
             return
         }

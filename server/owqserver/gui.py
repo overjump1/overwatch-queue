@@ -591,8 +591,7 @@ class ControlPanel(QMainWindow):
         self.pairing.regenerate()
         self.server.push_tokens.clear()
         self.server.activity_tokens.clear()
-        for client in self.server.ws.clients:
-            client.close(reason="unpaired")
+        self.server.restart_broker()
         self._refresh_qr()
         self.server.log("New pairing token — every device has to scan again")
 

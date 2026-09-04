@@ -24,10 +24,16 @@ SCHEME = "owq"
 class Pairing:
     """The stored token and port, and the URL that goes in the QR code."""
 
-    def __init__(self, token: str = None, port: int = DEFAULT_PORT, path: str = CONFIG_PATH):
+    def __init__(self, token: str = None, port: int = DEFAULT_PORT, path: str = CONFIG_PATH,
+                 server_password: str = None):
         self.path = path
         self.token = token or new_token()
         self.port = port
+        # The Python server's own MQTT broker credential — separate from `token` (the
+        # phone/watch's credential) so the ACL in `mqttbroker.py` can grant the server
+        # write access to `owq/snapshot` without handing that out to a paired device.
+        # Never shown in the QR code or pairing link.
+        self.server_password = server_password or new_token()
 
     @classmethod
     def load(cls, path: str = CONFIG_PATH) -> "Pairing":
@@ -36,7 +42,8 @@ class Pairing:
             with open(path) as handle:
                 stored = json.load(handle)
             pairing = cls(token=str(stored["token"]),
-                          port=int(stored.get("port", DEFAULT_PORT)), path=path)
+                          port=int(stored.get("port", DEFAULT_PORT)), path=path,
+                          server_password=stored.get("server_password"))
         except (OSError, ValueError, KeyError):
             pairing = cls(path=path)
             pairing.save()
@@ -47,7 +54,8 @@ class Pairing:
         if directory:
             os.makedirs(directory, exist_ok=True)
         with open(self.path, "w") as handle:
-            json.dump({"token": self.token, "port": self.port}, handle, indent=2)
+            json.dump({"token": self.token, "port": self.port,
+                      "server_password": self.server_password}, handle, indent=2)
         try:
             os.chmod(self.path, stat.S_IRUSR | stat.S_IWUSR)     # owner only
         except OSError:

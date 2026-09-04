@@ -15,15 +15,17 @@ from owqserver.pairing import Pairing                            # noqa: E402
 from owqserver.activitytokens import ActivityTokens              # noqa: E402
 from owqserver.pushtokens import PushTokens                      # noqa: E402
 from owqserver.queueserver import QueueServer                    # noqa: E402
-from wsclient import TestClient                                  # noqa: E402
+from mqtttestclient import TestClient                             # noqa: E402
 
 PORT = 8899
 TOKEN = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
 HELLO = {"kind": "phone", "name": "Test iPhone", "appVersion": "1.0"}
 
 
-def hello(token=TOKEN):
-    return {"v": 1, "body": {"type": "hello", "data": {"token": token, "client": HELLO}}}
+def hello():
+    # No token here any more — the broker already required it as this connection's MQTT
+    # password before a single message could be published. `hello` is now just identity.
+    return {"v": 1, "body": {"type": "hello", "data": {"client": HELLO}}}
 
 
 class ServerTests(unittest.TestCase):
@@ -40,48 +42,40 @@ class ServerTests(unittest.TestCase):
         self.server.stop()
         time.sleep(0.05)
 
-    def connect(self, path="/queue"):
-        client = TestClient(port=PORT, path=path)
+    def connect(self, token=TOKEN):
+        client = TestClient(port=PORT, token=token)
         self.clients.append(client)
         return client
-
-    # ------------------------------------------------------------ handshake
-
-    def test_upgrades_on_the_queue_path(self):
-        self.assertTrue(self.connect().upgraded)
-
-    def test_refuses_other_paths(self):
-        self.assertIn("404", self.connect(path="/nope").response.splitlines()[0])
 
     # ------------------------------------------------------------ pairing
 
     def test_a_valid_token_gets_a_snapshot(self):
+        # No `hello` needed for this any more: `owq/snapshot` is retained, so subscribing
+        # with the right credentials is what hands back the current state instantly —
+        # the same thing that makes a reconnect after a dead Wi-Fi recover with no gap.
         client = self.connect()
-        client.send(hello())
         message = client.receive()
         self.assertEqual(message["body"]["type"], "snapshot")
         self.assertEqual(message["v"], 1)
         self.assertEqual(message["body"]["data"]["phase"]["type"], "idle")
 
-    def test_a_wrong_token_is_told_why_and_hung_up_on(self):
-        client = self.connect()
-        client.send(hello(token="00000000-0000-0000-0000-000000000000"))
-        message = client.receive()
-        self.assertEqual(message["body"]["type"], "error")
-        self.assertEqual(message["body"]["data"]["code"], "pairing_required")
-        self.assertIsNone(client.receive())          # socket closed behind the error
+    def test_a_wrong_token_cannot_even_connect(self):
+        # The pairing token is the MQTT password now — a bad one is refused by the
+        # broker at CONNECT time, before any application code sees the connection.
+        client = TestClient(port=PORT, token="00000000-0000-0000-0000-000000000000")
+        try:
+            self.assertFalse(client.connected)
+        finally:
+            client.close()
 
-    def test_commands_before_hello_are_refused(self):
+    def test_commands_are_answered_without_a_hello(self):
+        # `hello` is an identity announcement now (for the device list, and for filing a
+        # push token under the right kind), not an authorization gate — the broker
+        # already gated the connection itself.
         client = self.connect()
+        client.receive()                                        # the retained snapshot
         client.send({"v": 1, "body": {"type": "requestSnapshot"}})
-        self.assertEqual(client.receive()["body"]["data"]["code"], "unpaired")
-
-    def test_an_unpaired_client_gets_no_snapshots(self):
-        listener = self.connect()
-        listener.send(hello(token="nope"))
-        listener.receive()                            # the error
-        self.server.apply(protocol.searching("competitive", "tank", protocol.now(), 240))
-        self.assertIsNone(listener.receive())
+        self.assertEqual(client.receive()["body"]["type"], "snapshot")
 
     # ------------------------------------------------------------ state
 
@@ -188,11 +182,15 @@ class ServerTests(unittest.TestCase):
         time.sleep(0.05)
         self.assertEqual(self.server.push_tokens.get("phone"), ("abc123", "sandbox"))
 
-    def test_registering_before_hello_is_ignored(self):
+    def test_registering_without_a_kind_or_hello_is_ignored(self):
+        # No `unpaired` gate any more — the broker already required the pairing token to
+        # connect at all — but a registration still needs to know which kind of device
+        # it's for, and that comes from `hello`'s identity or an explicit `kind` field.
         client = self.connect()
+        client.receive()                                        # the retained snapshot
         client.send({"v": 1, "body": {"type": "registerPushToken",
                                       "data": {"token": "abc123", "environment": "sandbox"}}})
-        self.assertEqual(client.receive()["body"]["data"]["code"], "unpaired")
+        time.sleep(0.05)
         self.assertIsNone(self.server.push_tokens.get("phone"))
 
     def test_a_relayed_watch_token_is_not_filed_under_the_phone(self):
@@ -560,6 +558,10 @@ class ActivityFallbackTests(unittest.TestCase):
 
     def _queue_and_wait_out_the_delay(self):
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        # `apply` only kicks off the push (including `_activity_start_first_sent_at`
+        # getting set) on a background thread, same as it always did — this just gives
+        # it a moment to actually run before rewinding the clock on it.
+        time.sleep(0.05)
         self.server._activity_start_first_sent_at -= self.server._activity_fallback_delay_seconds + 1
 
     def test_nothing_before_the_delay_elapses(self):

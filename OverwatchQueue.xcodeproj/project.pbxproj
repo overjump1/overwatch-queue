@@ -32,7 +32,7 @@
 		01FF57CFF52F4F83DB638E00 /* QueueTransport.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 10EAB8B4B5CA95BCFBD5164A /* QueueTransport.swift */; };
 		17EA3D24D77C30136D9D1A68 /* WatchLink.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = B01D383136E7D0B6E795A21D /* WatchLink.swift */; };
 		E8D721F2D4A5DAA9C4FDA2E1 /* WatchTransport.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 2FA2642931C01B205A8F7D45 /* WatchTransport.swift */; };
-		D035368F363A7C2368AAA3CF /* WebSocketTransport.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = A518902990126A92235D0710 /* WebSocketTransport.swift */; };
+		D035368F363A7C2368AAA3CF /* MQTTTransport.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = A518902990126A92235D0710 /* MQTTTransport.swift */; };
 		67C53318C2D9A7A71A14E659 /* QueueStatusShared.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 6897941C613857FBCC154938 /* QueueStatusShared.swift */; };
 		178A3F75CB855806FFC10F29 /* AppDelegate.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 01587191C9109C1DAC67D85D /* AppDelegate.swift */; };
 		3853D23F77FAC598649016A0 /* AppModel.swift in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = 29DF2B8BE2EF5C493858746B /* AppModel.swift */; };
@@ -74,7 +74,7 @@
 		F4F5E673605E932506D30225 /* QueueTransport.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 10EAB8B4B5CA95BCFBD5164A /* QueueTransport.swift */; };
 		D29C827381628C4AF66D11E7 /* WatchLink.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = B01D383136E7D0B6E795A21D /* WatchLink.swift */; };
 		223F391BA460A2CDE4C9DF98 /* WatchTransport.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 2FA2642931C01B205A8F7D45 /* WatchTransport.swift */; };
-		CEE736B8745A48F9629DADC7 /* WebSocketTransport.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = A518902990126A92235D0710 /* WebSocketTransport.swift */; };
+		CEE736B8745A48F9629DADC7 /* MQTTTransport.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = A518902990126A92235D0710 /* MQTTTransport.swift */; };
 		6906F45714731CBC6B8D8753 /* QueueStatusShared.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 6897941C613857FBCC154938 /* QueueStatusShared.swift */; };
 		DEB8B2D920504AA9B3854C2A /* QueueActivityWatchView.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 549B5A70375368168EFFDA7E /* QueueActivityWatchView.swift */; };
 		4573FB1577013B7B244AC279 /* QueueLiveActivityWidget.swift in QueueWidgets */ = {isa = PBXBuildFile; fileRef = 7A636B92BC4F8FA1BD065E82 /* QueueLiveActivityWidget.swift */; };
@@ -108,7 +108,7 @@
 		63DA72EDE9304D368C93F2F1 /* QueueTransport.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 10EAB8B4B5CA95BCFBD5164A /* QueueTransport.swift */; };
 		E3738665E7D490FC57426B30 /* WatchLink.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = B01D383136E7D0B6E795A21D /* WatchLink.swift */; };
 		0583DFDE3AEC0219C45DBFB2 /* WatchTransport.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 2FA2642931C01B205A8F7D45 /* WatchTransport.swift */; };
-		1489CE31880BF9BB65219FA4 /* WebSocketTransport.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = A518902990126A92235D0710 /* WebSocketTransport.swift */; };
+		1489CE31880BF9BB65219FA4 /* MQTTTransport.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = A518902990126A92235D0710 /* MQTTTransport.swift */; };
 		B5747CFA5316F19C6C7A57BD /* QueueStatusShared.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 6897941C613857FBCC154938 /* QueueStatusShared.swift */; };
 		918FEFDCC8492CF0B6C19158 /* WatchRootView.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 424F9DEAE361BC342368A9D0 /* WatchRootView.swift */; };
 		011AC4EBD5A8833C9264BB07 /* WatchApp.swift in OverwatchQueue Watch App */ = {isa = PBXBuildFile; fileRef = 36C42BD053D66D8FFF12B658 /* WatchApp.swift */; };
@@ -142,7 +142,7 @@
 		6E79224953B7C67E51ECE6F1 /* QueueTransport.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 10EAB8B4B5CA95BCFBD5164A /* QueueTransport.swift */; };
 		ACF886D40377B2F8BA3D43A4 /* WatchLink.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = B01D383136E7D0B6E795A21D /* WatchLink.swift */; };
 		C0EAE60336945E53E66C7888 /* WatchTransport.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 2FA2642931C01B205A8F7D45 /* WatchTransport.swift */; };
-		6BB4C97641575C471288FF6A /* WebSocketTransport.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = A518902990126A92235D0710 /* WebSocketTransport.swift */; };
+		6BB4C97641575C471288FF6A /* MQTTTransport.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = A518902990126A92235D0710 /* MQTTTransport.swift */; };
 		682364D2F2C6502B76A70367 /* QueueStatusShared.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 6897941C613857FBCC154938 /* QueueStatusShared.swift */; };
 		B36345E59D7F296D70C8A660 /* WatchWidgetsBundle.swift in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = 0A9A41F77A0BF6C1852394B5 /* WatchWidgetsBundle.swift */; };
 		901A0080FE4472DD5E36853D /* Assets.xcassets in WatchQueueWidgets */ = {isa = PBXBuildFile; fileRef = C244CEFDB0279941691593D0 /* Assets.xcassets */; };
@@ -173,7 +173,7 @@
 		6590E270B203986BD9DF4D9A /* QueueTransport.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 10EAB8B4B5CA95BCFBD5164A /* QueueTransport.swift */; };
 		62CF52A1F3922E683B57697E /* WatchLink.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = B01D383136E7D0B6E795A21D /* WatchLink.swift */; };
 		5410C0F5BA5D65F9A201677A /* WatchTransport.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 2FA2642931C01B205A8F7D45 /* WatchTransport.swift */; };
-		C3BDEDD25CA31C00140184B7 /* WebSocketTransport.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = A518902990126A92235D0710 /* WebSocketTransport.swift */; };
+		C3BDEDD25CA31C00140184B7 /* MQTTTransport.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = A518902990126A92235D0710 /* MQTTTransport.swift */; };
 		1281BAF29B1FB332DC26E02B /* QueueStatusShared.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 6897941C613857FBCC154938 /* QueueStatusShared.swift */; };
 		581EBCB27826E2E23AD3EA0B /* DeepLinkTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = EC9259A65DC652AD88872EA3 /* DeepLinkTests.swift */; };
 		7974AB10858DC333A6BACEAA /* PairingTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 42A8C109434B734937E3F222 /* PairingTests.swift */; };
@@ -267,7 +267,7 @@
 		10EAB8B4B5CA95BCFBD5164A /* QueueTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueTransport.swift"; path = "Shared/Transport/QueueTransport.swift"; sourceTree = "<group>"; };
 		B01D383136E7D0B6E795A21D /* WatchLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchLink.swift"; path = "Shared/Transport/WatchLink.swift"; sourceTree = "<group>"; };
 		2FA2642931C01B205A8F7D45 /* WatchTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchTransport.swift"; path = "Shared/Transport/WatchTransport.swift"; sourceTree = "<group>"; };
-		A518902990126A92235D0710 /* WebSocketTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WebSocketTransport.swift"; path = "Shared/Transport/WebSocketTransport.swift"; sourceTree = "<group>"; };
+		A518902990126A92235D0710 /* MQTTTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "MQTTTransport.swift"; path = "Shared/Transport/MQTTTransport.swift"; sourceTree = "<group>"; };
 		6897941C613857FBCC154938 /* QueueStatusShared.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueStatusShared.swift"; path = "Shared/Widgets/QueueStatusShared.swift"; sourceTree = "<group>"; };
 		01587191C9109C1DAC67D85D /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AppDelegate.swift"; path = "iOS/AppDelegate.swift"; sourceTree = "<group>"; };
 		29DF2B8BE2EF5C493858746B /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AppModel.swift"; path = "iOS/AppModel.swift"; sourceTree = "<group>"; };
@@ -461,7 +461,7 @@
 				10EAB8B4B5CA95BCFBD5164A /* QueueTransport.swift */,
 				B01D383136E7D0B6E795A21D /* WatchLink.swift */,
 				2FA2642931C01B205A8F7D45 /* WatchTransport.swift */,
-				A518902990126A92235D0710 /* WebSocketTransport.swift */,
+				A518902990126A92235D0710 /* MQTTTransport.swift */,
 			);
 			name = "Transport";
 			sourceTree = "<group>";
@@ -605,7 +605,7 @@
 				01FF57CFF52F4F83DB638E00 /* QueueTransport.swift */,
 				17EA3D24D77C30136D9D1A68 /* WatchLink.swift */,
 				E8D721F2D4A5DAA9C4FDA2E1 /* WatchTransport.swift */,
-				D035368F363A7C2368AAA3CF /* WebSocketTransport.swift */,
+				D035368F363A7C2368AAA3CF /* MQTTTransport.swift */,
 				67C53318C2D9A7A71A14E659 /* QueueStatusShared.swift */,
 				178A3F75CB855806FFC10F29 /* AppDelegate.swift */,
 				3853D23F77FAC598649016A0 /* AppModel.swift */,
@@ -651,7 +651,7 @@
 				F4F5E673605E932506D30225 /* QueueTransport.swift */,
 				D29C827381628C4AF66D11E7 /* WatchLink.swift */,
 				223F391BA460A2CDE4C9DF98 /* WatchTransport.swift */,
-				CEE736B8745A48F9629DADC7 /* WebSocketTransport.swift */,
+				CEE736B8745A48F9629DADC7 /* MQTTTransport.swift */,
 				6906F45714731CBC6B8D8753 /* QueueStatusShared.swift */,
 				DEB8B2D920504AA9B3854C2A /* QueueActivityWatchView.swift */,
 				4573FB1577013B7B244AC279 /* QueueLiveActivityWidget.swift */,
@@ -689,7 +689,7 @@
 				63DA72EDE9304D368C93F2F1 /* QueueTransport.swift */,
 				E3738665E7D490FC57426B30 /* WatchLink.swift */,
 				0583DFDE3AEC0219C45DBFB2 /* WatchTransport.swift */,
-				1489CE31880BF9BB65219FA4 /* WebSocketTransport.swift */,
+				1489CE31880BF9BB65219FA4 /* MQTTTransport.swift */,
 				B5747CFA5316F19C6C7A57BD /* QueueStatusShared.swift */,
 				918FEFDCC8492CF0B6C19158 /* WatchRootView.swift */,
 				011AC4EBD5A8833C9264BB07 /* WatchApp.swift */,
@@ -727,7 +727,7 @@
 				6E79224953B7C67E51ECE6F1 /* QueueTransport.swift */,
 				ACF886D40377B2F8BA3D43A4 /* WatchLink.swift */,
 				C0EAE60336945E53E66C7888 /* WatchTransport.swift */,
-				6BB4C97641575C471288FF6A /* WebSocketTransport.swift */,
+				6BB4C97641575C471288FF6A /* MQTTTransport.swift */,
 				682364D2F2C6502B76A70367 /* QueueStatusShared.swift */,
 				B36345E59D7F296D70C8A660 /* WatchWidgetsBundle.swift */,
 			);
@@ -762,7 +762,7 @@
 				6590E270B203986BD9DF4D9A /* QueueTransport.swift */,
 				62CF52A1F3922E683B57697E /* WatchLink.swift */,
 				5410C0F5BA5D65F9A201677A /* WatchTransport.swift */,
-				C3BDEDD25CA31C00140184B7 /* WebSocketTransport.swift */,
+				C3BDEDD25CA31C00140184B7 /* MQTTTransport.swift */,
 				1281BAF29B1FB332DC26E02B /* QueueStatusShared.swift */,
 				581EBCB27826E2E23AD3EA0B /* DeepLinkTests.swift */,
 				7974AB10858DC333A6BACEAA /* PairingTests.swift */,

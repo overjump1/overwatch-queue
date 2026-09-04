@@ -20,11 +20,12 @@ from .heroimages import TemplateStore
 from .protocol import QueueSession
 from .pushrelay import PushRelayClient, PushRelayConfig
 from .pushtokens import PushTokens
-from .wsserver import CLOSE_POLICY_VIOLATION, WebSocketServer
+from .mqttbroker import MQTTBroker, SERVER_USER
+from .mqttclient import MQTTClient
 
+# Not a liveness check any more (MQTT's own keepalive/LWT covers that) — just how often
+# a connected client gets a fresh clock sample to re-anchor against. See `_tick_loop`.
 HEARTBEAT_SECONDS = 10
-# A client that hasn't said a valid hello by then is not a phone of ours.
-HELLO_TIMEOUT_SECONDS = 10
 
 
 class QueueServer:
@@ -103,15 +104,17 @@ class QueueServer:
         self._last_activity_kind = None
         self.apns = self._make_push_client()
 
-        self.ws = WebSocketServer(port=pairing.port,
-                                  on_open=self._client_connected,
-                                  on_message=self._client_said,
-                                  on_close=self._client_gone,
-                                  # Resolved late: the GUI replaces `log` after the
-                                  # server is built, and socket-level messages should
-                                  # follow it there rather than into the original.
-                                  log=lambda message: self.log(message))
-        self._heartbeat = None
+        self.broker = MQTTBroker(port=pairing.port, log=lambda message: self.log(message))
+        self.mqtt = MQTTClient(host="127.0.0.1", port=pairing.port,
+                               username=SERVER_USER, password=pairing.server_password,
+                               on_open=self._client_connected,
+                               on_message=self._client_said,
+                               on_close=self._client_gone,
+                               # Resolved late: the GUI replaces `log` after the
+                               # server is built, and broker-level messages should
+                               # follow it there rather than into the original.
+                               log=lambda message: self.log(message))
+        self._activity_timer = None
         self._running = False
 
     def _make_push_client(self):
@@ -127,13 +130,26 @@ class QueueServer:
     # ------------------------------------------------------------ lifecycle
 
     def start(self):
-        self.ws.port = self.pairing.port
-        self.ws.start()
+        self.broker.port = self.pairing.port
+        self.broker.start(self.pairing.token, self.pairing.server_password)
+        self.mqtt.port = self.pairing.port
+        self.mqtt.password = self.pairing.server_password
+        self.mqtt.start()
+        # Seeds the retained topic with the current state immediately, so a phone that
+        # connects before anything has actually changed yet — the common case, right
+        # after pairing — still gets a snapshot the instant it subscribes, rather than
+        # waiting on the first real state change to populate `owq/snapshot` at all.
+        self.mqtt.publish_snapshot(self.session.snapshot())
         self._running = True
-        self._heartbeat = threading.Thread(target=self._heartbeat_loop, daemon=True,
-                                           name="heartbeat")
-        self._heartbeat.start()
+        self._activity_timer = threading.Thread(target=self._tick_loop,
+                                                 daemon=True, name="server-tick")
+        self._activity_timer.start()
         self.log("Listening on port %d" % self.pairing.port)
+
+    def restart_broker(self):
+        """Rotates auth and bounces the broker — used after the pairing token changes,
+        since that's the only way to force every previously-paired device off."""
+        self.broker.restart(self.pairing.token, self.pairing.server_password)
 
     def watch_queue(self, controls):
         """Starts reading the queue off the screen, and returns the watcher or None.
@@ -157,13 +173,14 @@ class QueueServer:
         self.stop_scenario()
         if self.queue_watcher:
             self.queue_watcher.stop()
-        self.ws.stop()
+        self.mqtt.stop()
+        self.broker.stop()
         if self.apns:
             self.apns.close()
 
     @property
     def clients(self) -> list:
-        return [c for c in self.ws.clients if c.authorized]
+        return [c for c in self.mqtt.clients if c.authorized]
 
     # ------------------------------------------------------------ state
 
@@ -208,7 +225,11 @@ class QueueServer:
         self._changed()
 
     def _broadcast_snapshot(self):
-        self.ws.broadcast(self.session.snapshot())
+        # Retained + QoS 1: the broker itself now guarantees delivery to every connected
+        # subscriber and hands the latest snapshot straight to anyone who (re)subscribes,
+        # including a phone that just reconnected after a dead Wi-Fi — no more silent
+        # drops the way the old socket `broadcast()` had on a write failure.
+        self.mqtt.publish_snapshot(self.session.snapshot())
         # Off-thread: `_push_apns` makes blocking HTTP calls (10s timeout apiece, two in a
         # row for an urgent kind), and this runs from inside the same lock that every vote,
         # pick and phase change goes through. Left inline, a slow push relay doesn't just
@@ -551,7 +572,6 @@ class QueueServer:
     # ------------------------------------------------------------ clients
 
     def _client_connected(self, client):
-        client.connected_at = time.time()
         self.log("%s connected" % client.host)
 
     def _client_gone(self, client):
@@ -568,7 +588,7 @@ class QueueServer:
             return
 
         if message.get("v") != protocol.VERSION:
-            client.send(protocol.error(
+            self.mqtt.reply(client.client_id, protocol.error(
                 "version", "This server speaks protocol v%d." % protocol.VERSION))
             return
 
@@ -576,14 +596,13 @@ class QueueServer:
             self._handle_hello(client, body.get("data") or {})
             return
 
-        if not client.authorized:
-            client.send(protocol.error("unpaired", "Say hello with a pairing token first."))
-            client.close(CLOSE_POLICY_VIOLATION, "unpaired")
-            return
-
+        # No token check here any more: the broker already refused the connection at
+        # CONNECT time if `owq/command/<clientID>`'s credentials didn't match the current
+        # pairing token (see `mqttbroker.py`'s ACL). Anything reaching this point already
+        # passed that gate.
         data = body.get("data") or {}
         if kind == "requestSnapshot":
-            client.send(self.session.snapshot())
+            self.mqtt.reply(client.client_id, self.session.snapshot())
         elif kind == "voteMap":
             self._vote(client, data.get("mapKey"))
         elif kind == "selectHero":
@@ -603,25 +622,20 @@ class QueueServer:
             # client can only read as distance to the server.
             client_time = data.get("clientTime")
             if isinstance(client_time, (int, float)):
-                client.send(protocol.pong(float(client_time)))
+                self.mqtt.reply(client.client_id, protocol.pong(float(client_time)))
         elif kind == "diagnostic":
             self._log_diagnostic(client, data.get("message"))
         else:
             self.log("%s sent an unknown command: %s" % (client.name, kind))
 
     def _handle_hello(self, client, data: dict):
-        identity = data.get("client") or {}
-        client.identity = identity
-        if not self.pairing.matches(data.get("token")):
-            self.log("%s tried to connect without a valid token" % client.host)
-            client.send(protocol.error(
-                "pairing_required",
-                "This phone isn't paired. Scan the QR code in the server window."))
-            client.close(CLOSE_POLICY_VIOLATION, "pairing required")
-            return
+        # An identity announcement now, not a gate — the broker already required the
+        # right pairing token as this client's MQTT password before it could publish
+        # here at all. `client.authorized` just means "has said hello", for the GUI's
+        # device list.
+        client.identity = data.get("client") or {}
         client.authorized = True
         self.log("%s paired" % client.name)
-        client.send(self.session.snapshot())
         self._changed()
 
     # -- commands from the phone --------------------------------------------
@@ -703,31 +717,30 @@ class QueueServer:
             # What the real thing does when the game won't let go: say so, and keep
             # sending the true state rather than faking a cancellation.
             self.log("%s asked to cancel — refused" % client.name)
-            client.send(protocol.error("no_cancel", "Too late to leave this one."))
-            client.send(self.session.snapshot())
+            self.mqtt.reply(client.client_id, protocol.error("no_cancel", "Too late to leave this one."))
+            self.mqtt.reply(client.client_id, self.session.snapshot())
             return
         self.log("%s cancelled the queue" % client.name)
         self.stop_scenario()
         self.apply(protocol.cancelled("userLeft"))
 
-    # ------------------------------------------------------------ heartbeat
+    # ------------------------------------------------------------ once-a-second work
 
-    def _heartbeat_loop(self):
+    def _tick_loop(self):
+        # This used to be a "heartbeat loop" that also kept sockets alive and dropped
+        # clients that never said hello — both jobs MQTT itself absorbs now (broker
+        # keepalive/LWT for liveness, the ACL for auth). What's left: the activity
+        # fallback's own check, and a lightweight heartbeat publish — not for liveness,
+        # just so a connected client's clock stays freshly re-anchored (see
+        # `protocol.heartbeat`).
+        last_heartbeat = 0.0
         while self._running:
             time.sleep(1)
             self._check_activity_fallback()
-            beat = protocol.heartbeat()
-            for client in self.ws.clients:
-                if client.authorized:
-                    if time.time() - getattr(client, "last_beat", 0) >= HEARTBEAT_SECONDS:
-                        client.last_beat = time.time()
-                        try:
-                            client.send(beat)
-                        except OSError:
-                            pass
-                elif time.time() - getattr(client, "connected_at", 0) > HELLO_TIMEOUT_SECONDS:
-                    self.log("%s never said hello — dropping" % client.host)
-                    client.close(CLOSE_POLICY_VIOLATION, "no hello")
+            now = time.time()
+            if now - last_heartbeat >= HEARTBEAT_SECONDS:
+                last_heartbeat = now
+                self.mqtt.publish_heartbeat(protocol.heartbeat())
 
     # ------------------------------------------------------------ scenarios
 

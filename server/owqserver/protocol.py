@@ -215,6 +215,10 @@ def envelope(body: dict) -> str:
 
 
 def heartbeat() -> str:
+    """A fresh timestamp, published every few seconds — not for liveness any more (MQTT's
+    own keepalive/LWT covers that, see `mqttclient.py`), but because it's the sample the
+    client trusts for clock re-anchoring: fresh by construction, unlike a snapshot that
+    can sit retained/relayed for an unknown age. See `QueueStore.observeClock` (Swift)."""
     return envelope({"type": "heartbeat", "data": {"serverTime": iso(now())}})
 
 

@@ -22,11 +22,6 @@ final class PairingTests: XCTestCase {
         XCTAssertEqual(pairing.token, token)
     }
 
-    func testBuildsTheSocketURLTheServerListensOn() throws {
-        let pairing = try XCTUnwrap(Pairing(pairingCode: code()))
-        XCTAssertEqual(pairing.socketURL?.absoluteString, "ws://192.168.1.14:8787/queue")
-    }
-
     func testMissingPortFallsBackToTheDefault() throws {
         let pairing = try XCTUnwrap(Pairing(pairingCode: code(port: nil)))
         XCTAssertEqual(pairing.port, Pairing.defaultPort)
@@ -80,7 +75,6 @@ final class PairingTests: XCTestCase {
         let carried = try Wire.decoder.decode(Pairing.self,
                                               from: try Wire.encoder.encode(original))
         XCTAssertEqual(carried, original)
-        XCTAssertEqual(carried.socketURL, original.socketURL)
     }
 
     func testAHelloWithoutATokenStillDecodes() throws {

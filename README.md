@@ -68,8 +68,8 @@ together. See **[server/README.md](server/README.md)**.
 
 ## The wire
 
-The client connects to `ws://<host>:<port>/queue`, reconnects on its own with backoff, and
-corrects every timer for clock drift between your PC and your phone.
+The client connects over MQTT to a local broker the PC server manages, reconnects on its
+own, and corrects every timer for clock drift between your PC and your phone.
 
 **[docs/PROTOCOL.md](docs/PROTOCOL.md)** documents every message with samples taken
 directly from the app's encoder. `Tests/WireFormatTests.swift` fails if the Swift side

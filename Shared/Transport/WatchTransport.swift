@@ -44,7 +44,7 @@ public final class WatchTransport: QueueTransport {
         self.pairing = pairing
         self.relay = relay ?? WatchRelayTransport()
         self.makeDirect = makeDirect ?? { pairing in
-            WebSocketTransport(pairing: pairing, identity: identity)
+            MQTTTransport(pairing: pairing, identity: identity)
         }
     }
 
