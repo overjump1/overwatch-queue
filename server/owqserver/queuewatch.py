@@ -93,7 +93,12 @@ GAME_FOUND_HOLD_SECONDS = 12.0
 # How far the read timer and our own clock may disagree before the read one wins.
 TIMER_DISAGREE_SECONDS = 2.0
 
-IDLE_POLL_SECONDS = 1.5
+# Was 1.5s. A queue starting is only ever caught on the *next* idle poll after the
+# player clicks Play, so this interval is a direct, visible part of "how long until my
+# phone notices" — unlike `SEARCHING_POLL_SECONDS`, which a full-video test tuned against
+# real footage, this one was just a default. A plain screenshot-and-box-check is cheap
+# enough that running it three times as often costs nothing worth trading against that.
+IDLE_POLL_SECONDS = 0.5
 SEARCHING_POLL_SECONDS = 0.25
 # How often the fast trip-wire actually looks, inside a `SEARCHING_POLL_SECONDS` budget.
 # The real check circle's own ramp (0 to 2000+ matching pixels within two frames) has
@@ -531,6 +536,15 @@ class QueueWatcher:
         if observation.in_queue or self.tracker.pending:
             # One promising frame is enough to speed up — the second frame that confirms
             # it then arrives a quarter-second later rather than a second and a half.
+            return SEARCHING_POLL_SECONDS
+        if self.server.session.kind in ("matchFound", "mapVote", "heroSelect"):
+            # The tracker's own state resets to IDLE once the found banner's hold expires
+            # (`GAME_FOUND_HOLD_SECONDS`), well before the map vote and hero select screens
+            # are done — but `_check_match_progress` is exactly what's watching for a vote
+            # landing or a pick locking in during that stretch, on the same idle-poll
+            # thread. Falling back to `IDLE_POLL_SECONDS` here would mean the phone finds
+            # out about a teammate's pick up to a second and a half late, which is the
+            # slowest the app ever feels precisely when it's being watched most closely.
             return SEARCHING_POLL_SECONDS
         return IDLE_POLL_SECONDS
 

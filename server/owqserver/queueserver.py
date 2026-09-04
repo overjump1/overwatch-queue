@@ -209,7 +209,15 @@ class QueueServer:
 
     def _broadcast_snapshot(self):
         self.ws.broadcast(self.session.snapshot())
-        self._push_apns()
+        # Off-thread: `_push_apns` makes blocking HTTP calls (10s timeout apiece, two in a
+        # row for an urgent kind), and this runs from inside the same lock that every vote,
+        # pick and phase change goes through. Left inline, a slow push relay doesn't just
+        # delay itself — it stalls the scan loop's next frame *and* the next client message
+        # waiting on this lock, which is the opposite of what a "tell everyone now" call
+        # should do. The push itself already tolerates running late or twice (see its own
+        # docstring: a client discards anything not newer than its current sequence), so
+        # nothing here needs the lock still held or the read of `self.session` still fresh.
+        threading.Thread(target=self._push_apns, daemon=True, name="apns-push").start()
 
     def _push_apns(self):
         """Reaches whichever paired kinds have registered a device token — regardless of

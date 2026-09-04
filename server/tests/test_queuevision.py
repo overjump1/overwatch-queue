@@ -1163,6 +1163,18 @@ class WatcherPacingTests(unittest.TestCase):
         self.assertEqual(self._interval(queuewatch.IDLE),
                          queuewatch.SEARCHING_POLL_SECONDS)
 
+    def test_stays_quick_through_map_vote_and_hero_select_even_once_the_tracker_resets(self):
+        """The found banner's own hold (`GAME_FOUND_HOLD_SECONDS`) is well short of how
+        long map vote and hero select actually take, so the tracker is back to `IDLE`
+        for most of both — but `_check_match_progress` is watching the screen for a vote
+        landing or a pick locking in the whole time, on this same poll. Falling back to
+        the idle interval here would mean exactly the moments this app is supposed to be
+        fastest about are the ones it's slowest about."""
+        for kind in ("matchFound", "mapVote", "heroSelect"):
+            self.watcher.server.session.phase = {"type": kind, "data": {}}
+            self.assertEqual(self._interval(queuewatch.IDLE),
+                             queuewatch.SEARCHING_POLL_SECONDS)
+
 
 @unittest.skipUnless(HAVE_CV2, "vision extras aren't installed")
 class WatcherFastWaitTests(unittest.TestCase):
