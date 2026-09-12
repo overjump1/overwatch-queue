@@ -97,8 +97,23 @@ public final class MQTT {
 
     /// Reconnect attempts since the last successful connection — drives the backoff in
     /// `reconnect()` so a long outage (PC asleep/off) doesn't hammer a retry every 5s
-    /// forever. Reset to 0 on every successful CONNACK.
+    /// forever. Reset to 0 on every successful CONNACK. Unbounded: a PC left off for a
+    /// day can run this into the hundreds, which is exactly why `backoffSeconds(forAttempt:)`
+    /// caps the exponent rather than trusting this count to stay small.
     private var reconnectAttempts = 0
+
+    /// Exponential backoff capped at 30s — a long outage (PC asleep or off) should back
+    /// off instead of hammering a connect attempt every few seconds forever.
+    ///
+    /// The exponent itself has to be capped, not just the final result: at 2^5 = 32 the
+    /// value already clears the 30s ceiling, but `attempt` can climb into the hundreds
+    /// over a long outage, and `pow(2, Double(attempt))` overflows Int64 long before
+    /// `min` ever gets a chance to clamp it — Swift's `Int(Double)` traps on that
+    /// overflow instead of saturating, crashing the app on what should be a routine
+    /// retry. Internal (not private) so it can be tested without standing up a transport.
+    static func backoffSeconds(forAttempt attempt: Int) -> Int {
+        min(30, Int(pow(2, Double(min(attempt, 5)))))
+    }
 
     private var connAckHandler: ((Result<Bool, MQTT.ConnectError>) -> Void)?
     
@@ -258,9 +273,7 @@ private extension MQTT {
                 }
             }
         }
-        // Exponential backoff capped at 30s — a long outage (PC asleep or off) should
-        // back off instead of hammering a connect attempt every few seconds forever.
-        let backoffSeconds = min(30, Int(pow(2, Double(reconnectAttempts))))
+        let backoffSeconds = MQTT.backoffSeconds(forAttempt: reconnectAttempts)
         reconnectAttempts += 1
         let deadline = DispatchTime.now() + .seconds(backoffSeconds)
         transportQueue.asyncAfter(deadline: deadline) { [weak self] in

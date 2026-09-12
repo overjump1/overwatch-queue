@@ -212,6 +212,7 @@
 		1281BAF29B1FB332DC26E02B /* QueueStatusShared.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 6897941C613857FBCC154938 /* QueueStatusShared.swift */; };
 		581EBCB27826E2E23AD3EA0B /* DeepLinkTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = EC9259A65DC652AD88872EA3 /* DeepLinkTests.swift */; };
 		7974AB10858DC333A6BACEAA /* PairingTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 42A8C109434B734937E3F222 /* PairingTests.swift */; };
+		0540D8063F944216B27231B3 /* MQTTBackoffTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 1C20F186CB9F464595656074 /* MQTTBackoffTests.swift */; };
 		C398537B44F77B3E9C37440C /* QueueFlowTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = E6C011C75766DAFBD287BE49 /* QueueFlowTests.swift */; };
 		1F7AC518CEA70B427A1E7BB2 /* WatchTransportTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = A02A3426807971E70BEF33DE /* WatchTransportTests.swift */; };
 		F56C4CC6D58ADA38D9673AC5 /* WireFormatTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 3F6ABE9B0A695EEC57459C64 /* WireFormatTests.swift */; };
@@ -338,6 +339,7 @@
 		0A9A41F77A0BF6C1852394B5 /* WatchWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchWidgetsBundle.swift"; path = "WatchWidgets/WatchWidgetsBundle.swift"; sourceTree = "<group>"; };
 		EC9259A65DC652AD88872EA3 /* DeepLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "DeepLinkTests.swift"; path = "Tests/DeepLinkTests.swift"; sourceTree = "<group>"; };
 		42A8C109434B734937E3F222 /* PairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "PairingTests.swift"; path = "Tests/PairingTests.swift"; sourceTree = "<group>"; };
+		1C20F186CB9F464595656074 /* MQTTBackoffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "MQTTBackoffTests.swift"; path = "Tests/MQTTBackoffTests.swift"; sourceTree = "<group>"; };
 		E6C011C75766DAFBD287BE49 /* QueueFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueFlowTests.swift"; path = "Tests/QueueFlowTests.swift"; sourceTree = "<group>"; };
 		A02A3426807971E70BEF33DE /* WatchTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchTransportTests.swift"; path = "Tests/WatchTransportTests.swift"; sourceTree = "<group>"; };
 		3F6ABE9B0A695EEC57459C64 /* WireFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WireFormatTests.swift"; path = "Tests/WireFormatTests.swift"; sourceTree = "<group>"; };
@@ -528,6 +530,7 @@
 			children = (
 				EC9259A65DC652AD88872EA3 /* DeepLinkTests.swift */,
 				42A8C109434B734937E3F222 /* PairingTests.swift */,
+				1C20F186CB9F464595656074 /* MQTTBackoffTests.swift */,
 				E6C011C75766DAFBD287BE49 /* QueueFlowTests.swift */,
 				A02A3426807971E70BEF33DE /* WatchTransportTests.swift */,
 				3F6ABE9B0A695EEC57459C64 /* WireFormatTests.swift */,
@@ -850,6 +853,7 @@
 				1281BAF29B1FB332DC26E02B /* QueueStatusShared.swift */,
 				581EBCB27826E2E23AD3EA0B /* DeepLinkTests.swift */,
 				7974AB10858DC333A6BACEAA /* PairingTests.swift */,
+				0540D8063F944216B27231B3 /* MQTTBackoffTests.swift */,
 				C398537B44F77B3E9C37440C /* QueueFlowTests.swift */,
 				1F7AC518CEA70B427A1E7BB2 /* WatchTransportTests.swift */,
 				F56C4CC6D58ADA38D9673AC5 /* WireFormatTests.swift */,
