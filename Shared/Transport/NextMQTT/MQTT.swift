@@ -236,6 +236,14 @@ private extension MQTT {
     }
     
     func resetTransport() {
+        // Stop it before dropping it. Discarding the old Transport (and the
+        // URLSessionStreamTask it owns) without telling it to stop leaves that task
+        // running in CFNetwork's own internal machinery with nothing keeping the objects
+        // its in-flight callbacks reference alive — when one of those callbacks then
+        // fires (connection-established, a read completing) it messages already-freed
+        // memory. Reproduced directly: a reconnect racing this exact teardown crashed
+        // with SIGSEGV inside `_onqueue_ioTick` / `_onqueue_connectionEstablishedWithError:`.
+        _transport?.stop()
         transport = nil
     }
     
