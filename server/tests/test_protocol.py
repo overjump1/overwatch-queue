@@ -36,6 +36,14 @@ class EnvelopeTests(unittest.TestCase):
         for raw in (protocol.heartbeat(), protocol.error("no_game", "Overwatch isn't running")):
             self.assertEqual(json.loads(raw)["v"], 1)
 
+    def test_heartbeat_says_presence_is_fine_by_default(self):
+        data = json.loads(protocol.heartbeat())["body"]["data"]
+        self.assertEqual(data["presenceDegraded"], False)
+
+    def test_heartbeat_carries_a_degraded_presence_link(self):
+        data = json.loads(protocol.heartbeat(presence_degraded=True))["body"]["data"]
+        self.assertEqual(data["presenceDegraded"], True)
+
     def test_snapshot_carries_what_the_client_needs(self):
         session = protocol.QueueSession()
         data = json.loads(session.snapshot())["body"]["data"]

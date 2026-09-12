@@ -24,8 +24,8 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.join(ROOT, "server"))
 
-from owqserver import (protocol, queuedigits, queueroles, queuevision,  # noqa: E402
-                       queuewatch, vision)
+from owqserver import (protocol, queuedigits, queuepresence, queueroles,  # noqa: E402
+                       queuevision, queuewatch, vision)
 from owqserver import stagevision as sv_stage                           # noqa: E402
 from owqserver.catalog import Catalog                                   # noqa: E402
 from owqserver.controls import Controls                                 # noqa: E402
@@ -853,6 +853,256 @@ class TrackerAudioTests(unittest.TestCase):
         self.assertEqual(self.tracker.update(hit(), 6.0).state, queuewatch.GAME_FOUND)
 
 
+def presence(state, mode=None, text="", battletag="me#1", at=0.0):
+    """A `PresenceReading` built by hand — no Battle.net, just the answer."""
+    return queuepresence.PresenceReading(state, mode, text, battletag, at)
+
+
+class TrackerPresenceTests(unittest.TestCase):
+    """`QueueTracker.presence` — Battle.net's own rich presence, folded into the same
+    state machine `audio_found` above already showed a non-vision signal could join.
+
+    Unlike `audio_found`, this isn't a second opinion weighed against the screen: once a
+    known reading has proven the source alive (`presence_authoritative`), presence alone
+    decides whether a queue exists, what mode it's in, and — `In Game` being the match
+    itself found, confirmed directly — whether it's just been found, with no deferral to
+    whatever vision happens to be seeing at the time. Vision's own fast green check
+    keeps running in parallel and can still land `GAME_FOUND` first; both paths reach
+    the same state, so this is a race with no wrong answer, not a contest. The on-screen
+    timer stays vision's job regardless, since rich presence carries no elapsed time at
+    all — exercised via plain `update(hit(...))` calls below.
+    """
+
+    def setUp(self):
+        self.tracker = queuewatch.QueueTracker()
+
+    # ---- authority: off until proven alive, handed back the moment it isn't ----
+
+    def test_starts_false(self):
+        self.assertFalse(self.tracker.presence_authoritative)
+
+    def test_a_known_reading_turns_it_on(self):
+        self.tracker.presence(presence(queuepresence.MENUS), 0.0)
+        self.assertTrue(self.tracker.presence_authoritative)
+
+    def test_an_unknown_reading_does_not(self):
+        self.tracker.presence(presence(queuepresence.UNKNOWN), 0.0)
+        self.assertFalse(self.tracker.presence_authoritative)
+
+    def test_vision_starts_a_queue_normally_before_presence_ever_speaks(self):
+        """The default, unchanged behaviour — presence never being enabled, or never
+        having answered yet, is exactly today's vision-only app."""
+        self.tracker.update(hit(), 0.0)
+        self.assertTrue(self.tracker.update(hit(), 0.25).searching)
+
+    def test_presence_lost_hands_authority_back_to_vision(self):
+        self.tracker.presence(presence(queuepresence.QUEUEING), 0.0)
+        self.tracker.presence_lost(1.0)
+        self.assertFalse(self.tracker.presence_authoritative)
+        self.tracker.update(hit(), 2.0)
+        self.assertTrue(self.tracker.update(hit(), 2.25).searching)
+
+    # ---- the headline: it works exactly where vision cannot ----
+
+    def test_starts_a_queue_while_alt_tabbed(self):
+        self.tracker.update(None, 0.0, visible=False)
+        self.tracker.update(None, 5.0, visible=False)
+        self.tracker.presence(presence(queuepresence.QUEUEING, "quickPlay"), 6.0)
+        self.assertTrue(self.tracker.searching)
+        self.assertEqual(self.tracker.state, queuewatch.SEARCHING_HIDDEN)
+        self.assertEqual(self.tracker.source, "presence")
+
+    def test_one_reading_is_enough_no_enter_frames_wait(self):
+        self.tracker.presence(presence(queuepresence.QUEUEING), 0.0)
+        self.assertTrue(self.tracker.searching)
+
+    def test_keeps_a_blind_queue_alive_past_the_backstop(self):
+        """The direct inverse of vision's own `test_but_it_gives_up_eventually`: the
+        same 400-second blind stretch, but with presence confirming the queue every two
+        seconds, so `HIDDEN_BLIND_SECONDS` (240s) never gets the chance to fire."""
+        self.tracker.presence(presence(queuepresence.QUEUEING), 0.0)
+        for when in range(2, 400, 2):
+            self.tracker.update(None, float(when), visible=False)
+            self.tracker.presence(presence(queuepresence.QUEUEING), float(when))
+        self.assertTrue(self.tracker.searching)
+
+    def test_an_unknown_reading_changes_nothing(self):
+        self.tracker.update(None, 0.0, visible=False)
+        self.tracker.presence(presence(queuepresence.UNKNOWN), 1.0)
+        self.assertEqual(self.tracker.state, queuewatch.IDLE)
+        self.tracker.presence(None, 2.0)               # no reading at all
+        self.assertEqual(self.tracker.state, queuewatch.IDLE)
+
+    # ---- role select: presence says "In Queue" for this too, so vision gets a veto ----
+
+    def test_queueing_is_held_off_while_role_select_is_confirmed_on_screen(self):
+        self.tracker.presence(presence(queuepresence.QUEUEING), 0.0,
+                              role_select_visible=True)
+        self.assertEqual(self.tracker.state, queuewatch.IDLE)
+
+    def test_queueing_starts_the_moment_role_select_is_no_longer_confirmed(self):
+        self.tracker.presence(presence(queuepresence.QUEUEING), 0.0,
+                              role_select_visible=True)
+        self.tracker.presence(presence(queuepresence.QUEUEING), 1.0,
+                              role_select_visible=False)
+        self.assertTrue(self.tracker.searching)
+
+    def test_queueing_starts_normally_when_vision_never_saw_role_select_at_all(self):
+        """The fallback the whole gate exists for: no vision at all (presence-only, or
+        Overwatch backgrounded) never holds a real queue back."""
+        self.tracker.presence(presence(queuepresence.QUEUEING), 0.0)   # default: False
+        self.assertTrue(self.tracker.searching)
+
+    def test_the_hold_off_does_not_apply_once_already_searching(self):
+        """Only the idle → start transition is gated — a confirmation of a queue
+        already running is untouched, same as it always was."""
+        self.tracker.presence(presence(queuepresence.QUEUEING), 0.0)
+        self.tracker.update(None, 30.0, visible=False)
+        self.tracker.presence(presence(queuepresence.QUEUEING), 30.0,
+                              role_select_visible=True)
+        self.assertTrue(self.tracker.searching)
+        self.assertEqual(self.tracker._hidden_total, 0.0)   # still confirmed, not stuck
+
+    # ---- ending a queue outright — no deferral to a banner vision just saw ----
+
+    def test_in_menus_ends_a_queue_immediately_even_with_a_fresh_banner_sighting(self):
+        """The core change from a mere "second opinion": once presence is
+        authoritative, a banner vision saw a moment ago no longer gets to outvote it —
+        see the module note above `PRESENCE_VISION_FRESH_SECONDS`."""
+        self.tracker.update(hit(), 0.0)
+        self.tracker.update(hit(), 0.25)
+        self.tracker.update(hit(), 1.0)                      # a very fresh sighting
+        self.tracker.presence(presence(queuepresence.MENUS), 1.1)
+        self.assertEqual(self.tracker.state, queuewatch.IDLE)
+
+    def test_in_menus_ends_a_blind_queue_in_one_poll_not_the_four_minute_backstop(self):
+        self.tracker.presence(presence(queuepresence.QUEUEING), 0.0)
+        self.tracker.update(None, 30.0, visible=False)
+        self.tracker.presence(presence(queuepresence.MENUS), 30.0)
+        self.assertEqual(self.tracker.state, queuewatch.IDLE)
+
+    def test_elsewhere_ends_a_queue_the_same_way_as_menus(self):
+        self.tracker.update(hit(), 0.0)
+        self.tracker.update(hit(), 0.25)
+        self.tracker.presence(presence(queuepresence.ELSEWHERE), 1.0)
+        self.assertEqual(self.tracker.state, queuewatch.IDLE)
+
+    def test_presence_authority_persists_after_a_queue_ends(self):
+        """A finished queue doesn't hand control back to vision — presence is still
+        alive and answering, so only another presence reading can start the next one."""
+        self.tracker.presence(presence(queuepresence.QUEUEING, "arcade"), 0.0)
+        self.tracker.presence(presence(queuepresence.MENUS), 1.0)
+        self.tracker.update(hit(mode="competitive"), 2.0)
+        self.tracker.update(hit(mode="competitive"), 2.25)
+        self.assertEqual(self.tracker.state, queuewatch.IDLE)    # vision alone can't start one
+        self.assertIsNone(self.tracker.mode)                     # nor touch the mode
+
+    # ---- match found: the green check stays authoritative either way ----
+
+    def test_does_not_retract_a_vision_confirmed_match(self):
+        self.tracker.update(hit(), 0.0)
+        self.tracker.update(hit(), 0.25)
+        self.tracker.update(hit(game_found=True), 5.0)
+        self.tracker.presence(presence(queuepresence.QUEUEING), 7.0)
+        self.assertEqual(self.tracker.state, queuewatch.GAME_FOUND)
+
+    def test_does_retract_an_audio_claimed_match(self):
+        """The same retraction `_saw_banner` already makes for a screen that keeps
+        disagreeing — an audio `GAME_FOUND` has no confirmation of its own, and presence
+        still saying "queueing" afterward is the missing look."""
+        self.tracker.update(hit(), 0.0)
+        self.tracker.update(hit(), 0.25)
+        started = self.tracker._started
+
+        self.tracker.audio_found(5.0)
+        self.assertEqual(self.tracker.state, queuewatch.GAME_FOUND)
+
+        self.tracker.presence(presence(queuepresence.QUEUEING), 6.0)
+        self.assertEqual(self.tracker.state, queuewatch.SEARCHING_HIDDEN)
+        self.assertEqual(self.tracker.source, "self")
+        self.assertEqual(self.tracker._started, started)      # the queue itself untouched
+
+    # ---- IN_GAME: the match itself found, confirmed directly — no vision deferral ----
+
+    def test_in_game_confirms_a_match_while_searching(self):
+        self.tracker.update(hit(), 0.0)
+        self.tracker.update(hit(), 0.25)
+        self.tracker.presence(presence(queuepresence.IN_GAME), 1.0)
+        self.assertEqual(self.tracker.state, queuewatch.GAME_FOUND)
+        self.assertEqual(self.tracker.source, "presence")
+
+    def test_in_game_confirms_a_match_even_with_a_fresh_banner_still_on_screen(self):
+        """No deferral to vision here either — a fresh in-game bar sighting doesn't
+        hold this back the way it once did; presence's `In Game` is trusted outright."""
+        self.tracker.update(hit(kind=BAR), 0.0)
+        self.tracker.update(hit(kind=BAR), 0.25)
+        self.tracker.update(hit(kind=BAR), 1.0)             # a fresh sighting
+        self.tracker.presence(presence(queuepresence.IN_GAME), 1.1)
+        self.assertEqual(self.tracker.state, queuewatch.GAME_FOUND)
+
+    def test_in_game_while_idle_is_a_no_opinion(self):
+        self.tracker.presence(presence(queuepresence.IN_GAME), 0.0)
+        self.assertEqual(self.tracker.state, queuewatch.IDLE)
+
+    def test_a_vision_confirmed_match_still_wins_the_race_if_it_is_first(self):
+        """Both paths reach the same state; this just confirms landing there via the
+        green check first is still a no-op for presence's own confirmation after it."""
+        self.tracker.update(hit(), 0.0)
+        self.tracker.update(hit(), 0.25)
+        self.tracker.update(hit(game_found=True), 0.5)
+        self.tracker.presence(presence(queuepresence.IN_GAME), 3.0)
+        self.assertEqual(self.tracker.state, queuewatch.GAME_FOUND)
+
+    # ---- the mode: the one thing only text, never a hue, can name ----
+
+    def test_names_a_mode_no_hue_can(self):
+        self.tracker.presence(presence(queuepresence.QUEUEING, "arcade"), 0.0)
+        self.assertEqual(self.tracker.mode, "arcade")
+
+    def test_vision_never_touches_the_mode_once_presence_is_authoritative(self):
+        self.tracker.presence(presence(queuepresence.QUEUEING, "arcade"), 0.0)
+        self.tracker.update(hit(mode="competitive"), 0.25)
+        self.assertEqual(self.tracker.mode, "arcade")
+
+    def test_an_unnamed_mode_never_blanks_one_already_known(self):
+        self.tracker.presence(presence(queuepresence.QUEUEING, "arcade"), 0.0)
+        self.tracker.presence(presence(queuepresence.QUEUEING), 0.25)   # mode not measured
+        self.assertEqual(self.tracker.mode, "arcade")
+
+    def test_vision_names_the_mode_normally_before_presence_ever_speaks(self):
+        self.tracker.update(hit(mode="competitive"), 0.0)
+        self.tracker.update(hit(mode="competitive"), 0.25)
+        self.assertEqual(self.tracker.mode, "competitive")
+
+    # ---- the on-screen timer still wins the clock ----
+
+    def test_the_on_screen_timer_still_wins_once_readable(self):
+        self.tracker.presence(presence(queuepresence.QUEUEING), 0.0)
+        seen = self.tracker.update(hit(), 240.0, timer=180.0)
+        self.assertEqual(seen.source, "timer")
+        self.assertAlmostEqual(seen.queue_elapsed, 180.0, places=3)
+
+    # ---- presence_lost: only ever retracts what only presence ever claimed ----
+
+    def test_presence_lost_resets_a_presence_only_queue(self):
+        self.tracker.presence(presence(queuepresence.QUEUEING), 0.0)
+        self.tracker.presence_lost(1.0)
+        self.assertEqual(self.tracker.state, queuewatch.IDLE)
+
+    def test_presence_lost_leaves_a_vision_corroborated_queue_alone(self):
+        self.tracker.update(hit(), 0.0)
+        self.tracker.update(hit(), 0.25)
+        self.tracker.presence_lost(1.0)
+        self.assertTrue(self.tracker.searching)
+
+    def test_presence_lost_leaves_a_vision_confirmed_match_alone(self):
+        self.tracker.update(hit(), 0.0)
+        self.tracker.update(hit(), 0.25)
+        self.tracker.update(hit(game_found=True), 5.0)
+        self.tracker.presence_lost(6.0)
+        self.assertEqual(self.tracker.state, queuewatch.GAME_FOUND)
+
+
 # ---------------------------------------------------------------- the wiring
 
 class _StubReader:
@@ -917,6 +1167,26 @@ class WatcherRoleDetectionTests(unittest.TestCase):
         queueroles.scan = boom
         self.watcher._check_role_select()          # must not raise
         self.assertEqual(self.detected, [])
+
+    def test_confirmed_visible_records_the_screen_being_up(self):
+        self._stub_scan(queueroles.RoleSelection(frozenset({"tank"}), None, {}, True))
+        self.watcher._check_role_select()
+        self.assertTrue(self.watcher._role_select_confirmed_visible())
+
+    def test_confirmed_visible_records_the_screen_being_gone(self):
+        self._stub_scan(queueroles.RoleSelection(frozenset(), None, {}, False))
+        self.watcher._check_role_select()
+        self.assertFalse(self.watcher._role_select_confirmed_visible())
+
+    def test_confirmed_visible_decays_once_stale(self):
+        self._stub_scan(queueroles.RoleSelection(frozenset({"tank"}), None, {}, True))
+        self.watcher._check_role_select()
+        stale = (self.watcher._role_select_checked_at +
+                queuewatch.ROLE_SELECT_FRESHNESS_SECONDS + 0.1)
+        self.assertFalse(self.watcher._role_select_confirmed_visible(when=stale))
+
+    def test_confirmed_visible_is_false_before_any_check_at_all(self):
+        self.assertFalse(self.watcher._role_select_confirmed_visible())
 
     def test_poll_only_checks_role_while_idle(self):
         """A queue already running has no role-select screen to compete with the
@@ -1140,6 +1410,208 @@ class WatcherWiringTests(unittest.TestCase):
         self.assertEqual(self.server.session.phase["data"]["mode"], "competitive")
 
 
+class WatcherFoldPresenceTests(unittest.TestCase):
+    """`fold_presence`/`fold_presence_lost` — the same `_act` funnel a screen poll uses,
+    reached from Battle.net's own presence instead."""
+
+    def setUp(self):
+        self.server = QueueServer(Pairing(token="t" * 32, port=0), Catalog())
+        self.controls = Controls(self.server)
+        self.watcher = queuewatch.QueueWatcher(self.controls, reader=_StubReader())
+
+    def test_a_queueing_reading_starts_the_session(self):
+        self.watcher.fold_presence(presence(queuepresence.QUEUEING, "quickPlay"), 0.0)
+        self.assertEqual(self.server.session.kind, "searching")
+        self.assertEqual(self.server.session.phase["data"]["mode"], "quickPlay")
+
+    def test_arcade_queues_as_open_not_whatever_role_was_left_selected(self):
+        self.controls.role = "tank"
+        self.watcher.fold_presence(presence(queuepresence.QUEUEING, "arcade"), 0.0)
+        self.assertEqual(self.server.session.phase["data"]["role"], "open")
+
+    def test_a_menus_reading_cancels_a_running_queue(self):
+        self.watcher.fold_presence(presence(queuepresence.QUEUEING), 0.0)
+        self.watcher.fold_presence(presence(queuepresence.MENUS), 1.0)
+        self.assertEqual(self.server.session.kind, "cancelled")
+
+    def test_presence_lost_cancels_a_presence_only_queue(self):
+        self.watcher.fold_presence(presence(queuepresence.QUEUEING), 0.0)
+        self.watcher.fold_presence_lost(1.0)
+        self.assertEqual(self.server.session.kind, "cancelled")
+
+
+class WatcherFoldPresenceRoleSelectTests(unittest.TestCase):
+    """The end-to-end version of `TrackerPresenceTests`' role-select gating — through
+    `fold_presence`, so `_role_select_confirmed_visible` is exercised for real rather
+    than passed in by hand."""
+
+    def setUp(self):
+        server = QueueServer(Pairing(token="t" * 32, port=0), Catalog())
+        self.controls = Controls(server)
+        self.server = server
+        self.watcher = queuewatch.QueueWatcher(self.controls, reader=_StubReader(),
+                                               role_templates=object())
+        self._real_scan = queueroles.scan
+        self.addCleanup(setattr, queueroles, "scan", self._real_scan)
+
+    def _stub_scan(self, on_screen):
+        roles = frozenset({"tank"}) if on_screen else frozenset()
+        queueroles.scan = lambda templates, modes=None, log=None: \
+            queueroles.RoleSelection(roles, None, {}, on_screen)
+
+    def test_a_queueing_reading_is_held_off_while_role_select_is_confirmed_up(self):
+        self._stub_scan(on_screen=True)
+        self.watcher._check_role_select()
+        self.watcher.fold_presence(presence(queuepresence.QUEUEING), 0.0)
+        self.assertEqual(self.server.session.kind, "idle")
+
+    def test_it_starts_once_the_next_check_finds_the_screen_gone(self):
+        self._stub_scan(on_screen=True)
+        self.watcher._check_role_select()
+        self.watcher.fold_presence(presence(queuepresence.QUEUEING), 0.0)
+
+        self._stub_scan(on_screen=False)
+        self.watcher._check_role_select()
+        self.watcher.fold_presence(presence(queuepresence.QUEUEING), 1.0)
+        self.assertEqual(self.server.session.kind, "searching")
+
+    def test_a_queueing_reading_starts_normally_when_never_checked(self):
+        self.watcher.fold_presence(presence(queuepresence.QUEUEING), 0.0)
+        self.assertEqual(self.server.session.kind, "searching")
+
+
+class _ScriptedSource:
+    """A `bnetpresence` source stand-in — hands back exactly what a test tells it to,
+    the same injectable-fake shape `queueaudio.AudioFoundDetector` is tested with."""
+
+    poll_seconds = 0.01
+
+    def __init__(self, readings):
+        self._readings = list(readings)
+        self.closed = False
+
+    def read(self, when):
+        if self._readings:
+            return self._readings.pop(0)
+        return queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, when)
+
+    def close(self):
+        self.closed = True
+
+
+class PresenceWatcherTests(unittest.TestCase):
+    """The thread that polls a source and folds every reading in — never the tracker
+    logic itself, which `TrackerPresenceTests` above already covers without a thread."""
+
+    def test_one_read_is_folded(self):
+        source = _ScriptedSource([presence(queuepresence.QUEUEING)])
+        folded = []
+        watcher = queuewatch.PresenceWatcher(source, lambda r, w: folded.append(r))
+        watcher.poll(0.0)
+        self.assertEqual(len(folded), 1)
+        self.assertEqual(folded[0].state, queuepresence.QUEUEING)
+
+    def test_three_failures_in_a_row_declare_the_source_dead(self):
+        unknown = queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, 0.0)
+        source = _ScriptedSource([unknown, unknown, unknown])
+        lost = []
+        watcher = queuewatch.PresenceWatcher(source, lambda r, w: None,
+                                             fold_lost=lost.append)
+        for when in (0.0, 1.0, 2.0):
+            watcher.poll(when)
+        self.assertEqual(lost, [2.0])
+
+    def test_a_lone_failure_does_not_declare_the_source_dead(self):
+        readings = [queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, 0.0),
+                   presence(queuepresence.QUEUEING)]
+        source = _ScriptedSource(readings)
+        lost = []
+        watcher = queuewatch.PresenceWatcher(source, lambda r, w: None,
+                                             fold_lost=lost.append)
+        watcher.poll(0.0)
+        watcher.poll(1.0)
+        self.assertEqual(lost, [])
+
+    def test_recovering_after_being_declared_dead_clears_it(self):
+        readings = [queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, 0.0)] * 3
+        readings.append(presence(queuepresence.QUEUEING))
+        source = _ScriptedSource(readings)
+        lost = []
+        watcher = queuewatch.PresenceWatcher(source, lambda r, w: None,
+                                             fold_lost=lost.append)
+        for when in range(4):
+            watcher.poll(float(when))
+        self.assertEqual(lost, [2.0])
+        self.assertFalse(watcher._dead)
+
+    def test_close_stops_and_closes_the_source(self):
+        source = _ScriptedSource([])
+        watcher = queuewatch.PresenceWatcher(source, lambda r, w: None)
+        watcher.close()
+        self.assertTrue(source.closed)
+        self.assertTrue(watcher._stop.is_set())
+
+    def test_dead_reflects_declared_death(self):
+        unknown = queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, 0.0)
+        source = _ScriptedSource([unknown, unknown, unknown])
+        watcher = queuewatch.PresenceWatcher(source, lambda r, w: None)
+        self.assertFalse(watcher.dead)
+        for when in (0.0, 1.0, 2.0):
+            watcher.poll(when)
+        self.assertTrue(watcher.dead)
+
+    def test_reopen_is_tried_once_declared_dead(self):
+        unknown = queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, 0.0)
+        source = _ScriptedSource([unknown, unknown, unknown, unknown])
+        calls = []
+
+        def reopen():
+            calls.append(1)
+            return None                      # keep retrying the same source
+
+        watcher = queuewatch.PresenceWatcher(source, lambda r, w: None, reopen=reopen)
+        for when in (0.0, 1.0, 2.0, 3.0):
+            watcher.poll(when)
+        # Not tried before death (2 failures), tried on the 3rd (declares death) and
+        # again on the 4th (still dead).
+        self.assertEqual(len(calls), 2)
+
+    def test_reopen_never_tried_before_death(self):
+        readings = [queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, 0.0),
+                   presence(queuepresence.QUEUEING)]
+        source = _ScriptedSource(readings)
+        calls = []
+        watcher = queuewatch.PresenceWatcher(source, lambda r, w: None,
+                                             reopen=lambda: calls.append(1))
+        watcher.poll(0.0)
+        watcher.poll(1.0)
+        self.assertEqual(calls, [])
+
+    def test_a_replacement_source_is_swapped_in(self):
+        unknown = queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, 0.0)
+        dead_source = _ScriptedSource([unknown, unknown, unknown])
+        fresh_source = _ScriptedSource([presence(queuepresence.QUEUEING)])
+        watcher = queuewatch.PresenceWatcher(dead_source, lambda r, w: None,
+                                             reopen=lambda: fresh_source)
+        for when in (0.0, 1.0, 2.0):
+            watcher.poll(when)
+        self.assertTrue(dead_source.closed)
+        self.assertIs(watcher.source, fresh_source)
+
+    def test_a_failing_reopen_does_not_kill_the_poll(self):
+        unknown = queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, 0.0)
+        source = _ScriptedSource([unknown, unknown, unknown])
+
+        def broken_reopen():
+            raise RuntimeError("no route to Battle.net")
+
+        watcher = queuewatch.PresenceWatcher(source, lambda r, w: None,
+                                             reopen=broken_reopen)
+        for when in (0.0, 1.0, 2.0):
+            watcher.poll(when)          # must not raise
+        self.assertTrue(watcher.dead)
+
+
 class WatcherPacingTests(unittest.TestCase):
     def setUp(self):
         server = QueueServer(Pairing(token="t" * 32, port=0), Catalog())
@@ -1229,6 +1701,25 @@ class ServerIntegrationTests(unittest.TestCase):
         server = QueueServer(Pairing(token="t" * 32, port=0), Catalog())
         self.assertFalse(server.queue_vision_enabled)
         self.assertIsNone(server.queue_watcher)
+
+    def test_presence_is_off_unless_it_is_asked_for(self):
+        """Same rule again: merely building a server must never open a process handle,
+        or a socket, on whatever Battle.net happens to be running on this machine."""
+        server = QueueServer(Pairing(token="t" * 32, port=0), Catalog())
+        self.assertFalse(server.presence_enabled)
+        self.assertIsNone(server.presence_watcher)
+
+    def test_presence_degraded_is_false_with_no_watcher_at_all(self):
+        server = QueueServer(Pairing(token="t" * 32, port=0), Catalog())
+        self.assertFalse(server.presence_degraded)
+
+    def test_presence_degraded_follows_the_watchers_own_dead_flag(self):
+        server = QueueServer(Pairing(token="t" * 32, port=0), Catalog())
+        server.presence_watcher = queuewatch.PresenceWatcher(
+            _ScriptedSource([]), lambda r, w: None)
+        self.assertFalse(server.presence_degraded)
+        server.presence_watcher._dead = True
+        self.assertTrue(server.presence_degraded)
 
     def test_the_phases_it_sends_are_ones_the_app_would_accept(self):
         for phase in (protocol.searching("quickPlay", "tank", protocol.now()),

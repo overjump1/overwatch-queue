@@ -214,12 +214,21 @@ def envelope(body: dict) -> str:
     return json.dumps({"v": VERSION, "body": body}, separators=(",", ":"))
 
 
-def heartbeat() -> str:
+def heartbeat(presence_degraded: bool = False) -> str:
     """A fresh timestamp, published every few seconds — not for liveness any more (MQTT's
     own keepalive/LWT covers that, see `mqttclient.py`), but because it's the sample the
     client trusts for clock re-anchoring: fresh by construction, unlike a snapshot that
-    can sit retained/relayed for an unknown age. See `QueueStore.observeClock` (Swift)."""
-    return envelope({"type": "heartbeat", "data": {"serverTime": iso(now())}})
+    can sit retained/relayed for an unknown age. See `QueueStore.observeClock` (Swift).
+
+    `presenceDegraded` rides along on the same message rather than a message of its own:
+    it changes at most as often as Battle.net's own connection does, so there's nothing
+    for a dedicated topic to buy that a field on an already-periodic broadcast doesn't.
+    True means Battle.net's presence link has gone quiet — see `bnetpresence.
+    PresenceWatcher.dead` — so the app is running on the screen alone again, exactly as
+    it always did before presence was ever involved; it is not itself an error, just
+    something worth a player being able to see rather than a silent downgrade."""
+    return envelope({"type": "heartbeat",
+                     "data": {"serverTime": iso(now()), "presenceDegraded": bool(presence_degraded)}})
 
 
 def pong(client_time: float) -> str:

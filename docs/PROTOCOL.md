@@ -98,13 +98,25 @@ send, and the client is built to accept it at any time.
 ### `heartbeat` — a fresh clock sample
 
 ```json
-{"v":1,"body":{"type":"heartbeat","data":{"serverTime":"2023-11-14T22:13:20Z"}}}
+{"v":1,"body":{"type":"heartbeat","data":{"serverTime":"2023-11-14T22:13:20Z","presenceDegraded":false}}}
 ```
 
 Published to `owq/heartbeat` every ~10 seconds while the server is running. No longer a
 liveness signal (MQTT's own keepalive and each client's Last Will cover that) — its only
 remaining job is giving a connected client a `serverTime` fresh enough to trust for clock
 re-anchoring; see `ping`/`pong` below for why a snapshot's `serverTime` isn't used for this.
+
+`presenceDegraded` is `true` whenever the server was asked to read Battle.net's own
+presence and that link has gone quiet — Battle.net closed, crashed, or its debug port
+stopped answering (see `owqserver.bnetpresence.PresenceWatcher.dead`). It rides along on
+the heartbeat rather than a message of its own, since it changes at most as often as
+Battle.net's connection does — there's nothing a dedicated topic buys over a field on an
+already-periodic broadcast. `false` covers both "presence is fine" and "presence was
+never asked for" — the app is simply running on the screen alone in either case, exactly
+as it always did before presence was ever involved. **Not yet decoded by the Swift
+client** — `Shared/Protocol/WireProtocol.swift`'s `.heartbeat` case and its `WireCoding`
+would need the field added to actually surface a disconnect notice on the phone/watch;
+this document and the server side are ahead of it.
 
 ### `pong` — the answer to `ping`, for verifying the clock
 
