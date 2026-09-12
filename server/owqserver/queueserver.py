@@ -13,7 +13,7 @@ import random
 import threading
 import time
 
-from . import protocol, queuemapvote, queueroles, queuevision, queuewatch, vision
+from . import bnetpresence, protocol, queuemapvote, queueroles, queuevision, queuewatch, vision
 from .activitytokens import ActivityTokens
 from .apns import APNsClient, APNsConfig
 from .heroimages import TemplateStore
@@ -30,7 +30,8 @@ HEARTBEAT_SECONDS = 10
 
 class QueueServer:
     def __init__(self, pairing, catalog, log=None, push_tokens=None, activity_tokens=None,
-                 vision_enabled=False, queue_vision_enabled=False):
+                 vision_enabled=False, queue_vision_enabled=False, presence_enabled=False,
+                 presence_source="auto", presence_port=bnetpresence.DEFAULT_CDP_PORT):
         self.pairing = pairing
         self.catalog = catalog
         self.session = QueueSession()
@@ -59,7 +60,18 @@ class QueueServer:
         # would find its phase moving underneath it.
         self.queue_vision_enabled = (bool(queue_vision_enabled) and
                                      queuevision.QUEUE_VISION_AVAILABLE)
+        # Asking Battle.net is opt-in for the same reason as the two above: it only ever
+        # reads (a debug-port websocket, or a plain `ReadProcessMemory` on Battle.net's
+        # own process — Overwatch itself is never touched), but it *drives the session on
+        # its own*, so a test that built a server with it on would find its phase moving
+        # underneath it, and worse, would open a process handle on whatever Battle.net
+        # happened to be running on the machine the tests execute on.
+        self.presence_enabled = (bool(presence_enabled) and
+                                 bnetpresence.PRESENCE_AVAILABLE)
+        self.presence_source = presence_source
+        self.presence_port = presence_port
         self.queue_watcher = None
+        self.presence_watcher = None
         self.templates = TemplateStore(catalog, log=lambda message: self.log(message))
         self.role_templates = queueroles.RoleIconStore(log=lambda message: self.log(message))
         # Where each hero sat the last time we looked, so picking one doesn't have to pay
@@ -145,27 +157,68 @@ class QueueServer:
         self.broker.restart(self.pairing.token, self.pairing.server_password)
 
     def watch_queue(self, controls):
-        """Starts reading the queue off the screen, and returns the watcher or None.
+        """Starts reading the queue — off the screen, off Battle.net's own presence, or
+        both — and returns the `QueueWatcher` (which holds the shared tracker either way)
+        or `None` if neither is enabled.
 
         Takes the panel's `Controls` rather than building its own, because the mode and
         role a queue is in are only half readable — see `queuewatch.QueueWatcher`. Called
         from `run.py` and the panel; doing it here keeps the enabled-or-not decision in
         the one place that already makes it for hero select.
+
+        The two channels share one tracker on purpose: a presence-only server (no
+        `opencv`/`mss` needed at all) still gets a fully working `QueueWatcher` with its
+        screen thread simply never started, and enabling vision later just starts that
+        thread against the tracker presence has already been talking to.
         """
-        if not self.queue_vision_enabled or self.queue_watcher is not None:
+        if not self.queue_vision_enabled and not self.presence_enabled:
             return self.queue_watcher
-        self.queue_watcher = queuewatch.QueueWatcher(
-            controls, log=lambda message: self.log(message),
-            role_templates=self.role_templates,
-            hero_templates=self.templates, hero_keys=self.hero_keys)
-        self.queue_watcher.start()
+        if self.queue_watcher is None:
+            self.queue_watcher = queuewatch.QueueWatcher(
+                controls, log=lambda message: self.log(message),
+                role_templates=self.role_templates,
+                hero_templates=self.templates, hero_keys=self.hero_keys)
+        if self.queue_vision_enabled and not self.queue_watcher.running:
+            self.queue_watcher.start()
+        if self.presence_enabled and self.presence_watcher is None:
+            source = bnetpresence.open_source(prefer=self.presence_source,
+                                              port=self.presence_port,
+                                              log=lambda message: self.log(message))
+            self.presence_watcher = queuewatch.PresenceWatcher(
+                source, self.queue_watcher.fold_presence,
+                fold_lost=self.queue_watcher.fold_presence_lost,
+                reopen=self._reopen_presence,
+                log=lambda message: self.log(message))
+            self.presence_watcher.start()
         return self.queue_watcher
+
+    def _reopen_presence(self):
+        """Tried by `PresenceWatcher` on every poll while its source is declared dead.
+
+        `relaunch=True` here — and only here — is what lets Battle.net having closed
+        or crashed out from under an already-established connection recover on its
+        own: `bnetpresence.launch_battlenet` starts it back up, but only when it isn't
+        running at all, never interrupting one that's merely lost its debug port or is
+        mid-queue. A fresh `watch_queue()` call never opts into this — see
+        `bnetpresence.open_source`'s own docstring.
+        """
+        source = bnetpresence.open_source(prefer=self.presence_source,
+                                          port=self.presence_port,
+                                          log=lambda message: self.log(message),
+                                          relaunch=True)
+        return None if isinstance(source, bnetpresence.NullSource) else source
+
+    def stop_presence(self):
+        if self.presence_watcher:
+            self.presence_watcher.close()
+            self.presence_watcher = None
 
     def stop(self):
         self._running = False
         self.stop_scenario()
         if self.queue_watcher:
             self.queue_watcher.stop()
+        self.stop_presence()
         self.mqtt.stop()
         self.broker.stop()
         if self.apns:
@@ -174,6 +227,14 @@ class QueueServer:
     @property
     def clients(self) -> list:
         return [c for c in self.mqtt.clients if c.authorized]
+
+    @property
+    def presence_degraded(self) -> bool:
+        """Whether Battle.net's presence link is down — pushed to the phone/watch on
+        every heartbeat (see `protocol.heartbeat`) so a disconnect is visible rather
+        than a silent downgrade to the screen alone. `False` whenever presence was
+        never enabled in the first place, same as it always was."""
+        return bool(self.presence_watcher and self.presence_watcher.dead)
 
     # ------------------------------------------------------------ state
 
@@ -678,7 +739,8 @@ class QueueServer:
             now = time.time()
             if now - last_heartbeat >= HEARTBEAT_SECONDS:
                 last_heartbeat = now
-                self.mqtt.publish_heartbeat(protocol.heartbeat())
+                self.mqtt.publish_heartbeat(
+                    protocol.heartbeat(presence_degraded=self.presence_degraded))
 
     # ------------------------------------------------------------ scenarios
 
