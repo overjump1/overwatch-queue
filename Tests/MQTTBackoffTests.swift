@@ -6,10 +6,17 @@ import XCTest
 /// not just the small ones exercised by a normal reconnect. Reproduced a real crash: an
 /// unclamped exponent overflowed `Int(Double)`, which traps rather than saturating.
 final class MQTTBackoffTests: XCTestCase {
-    func testGrowsExponentiallyForSmallAttempts() {
-        XCTAssertEqual(MQTT.backoffSeconds(forAttempt: 0), 1)
-        XCTAssertEqual(MQTT.backoffSeconds(forAttempt: 1), 2)
-        XCTAssertEqual(MQTT.backoffSeconds(forAttempt: 2), 4)
+    func testFloorsAtFiveSecondsForEarlyAttempts() {
+        // A PC that's simply unreachable (broker down, wrong network) fails each attempt
+        // near-instantly — without a floor, the first few retries would fire in a tight
+        // loop rather than actually backing off, which is what tipped a real crash in
+        // Transport's stream-task setup racing its own teardown.
+        XCTAssertEqual(MQTT.backoffSeconds(forAttempt: 0), 5)
+        XCTAssertEqual(MQTT.backoffSeconds(forAttempt: 1), 5)
+        XCTAssertEqual(MQTT.backoffSeconds(forAttempt: 2), 5)
+    }
+
+    func testGrowsExponentiallyOnceItClearsTheFloor() {
         XCTAssertEqual(MQTT.backoffSeconds(forAttempt: 3), 8)
         XCTAssertEqual(MQTT.backoffSeconds(forAttempt: 4), 16)
     }

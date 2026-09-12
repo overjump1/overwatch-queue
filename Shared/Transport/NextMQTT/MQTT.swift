@@ -102,8 +102,13 @@ public final class MQTT {
     /// caps the exponent rather than trusting this count to stay small.
     private var reconnectAttempts = 0
 
-    /// Exponential backoff capped at 30s — a long outage (PC asleep or off) should back
-    /// off instead of hammering a connect attempt every few seconds forever.
+    /// Exponential backoff floored at 5s and capped at 30s — a long outage (PC asleep or
+    /// off) should back off instead of hammering a connect attempt every few seconds
+    /// forever. The floor matters on its own: a PC that's simply unreachable (broker down,
+    /// wrong network) fails each attempt near-instantly, so a 1s/2s start reconnects in a
+    /// tight loop rather than actually waiting — and doing that fast enough, for long
+    /// enough, is what tipped a real crash in `Transport.handleStart()`'s stream-task
+    /// setup racing its own teardown.
     ///
     /// The exponent itself has to be capped, not just the final result: at 2^5 = 32 the
     /// value already clears the 30s ceiling, but `attempt` can climb into the hundreds
@@ -112,7 +117,7 @@ public final class MQTT {
     /// overflow instead of saturating, crashing the app on what should be a routine
     /// retry. Internal (not private) so it can be tested without standing up a transport.
     static func backoffSeconds(forAttempt attempt: Int) -> Int {
-        min(30, Int(pow(2, Double(min(attempt, 5)))))
+        min(30, max(5, Int(pow(2, Double(min(attempt, 5))))))
     }
 
     private var connAckHandler: ((Result<Bool, MQTT.ConnectError>) -> Void)?
