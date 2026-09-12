@@ -9,6 +9,7 @@ LAN-only, no-transport-encryption stance the WebSocket server always had (see
 """
 from __future__ import annotations
 
+import atexit
 import os
 import shutil
 import subprocess
@@ -50,6 +51,7 @@ class MQTTBroker:
         self.port = port
         self.log = log or (lambda message: None)
         self._process = None
+        self._registered_atexit = False
 
     def start(self, phone_password: str, server_password: str):
         self.stop()
@@ -59,6 +61,14 @@ class MQTTBroker:
             [binary, "-c", CONF_PATH],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        # A real child process, unlike the WebSocket server's daemon threads, outlives a
+        # parent that exits without calling `stop()` — an unhandled exception between here
+        # and a clean shutdown used to leave nothing behind; now it would leave Mosquitto
+        # running and holding the port forever. Guard against that directly rather than
+        # trusting every caller's cleanup path.
+        if not self._registered_atexit:
+            atexit.register(self.stop)
+            self._registered_atexit = True
         time.sleep(0.3)          # a beat, so a bad config fails here rather than on connect
         if self._process.poll() is not None:
             self._process = None

@@ -54,9 +54,13 @@ public final class MQTTTransport: NSObject, QueueTransport {
         wantsConnection = false
         // A clean disconnect, not the Last Will path: this device really is going
         // offline on purpose, so publish that now rather than waiting on the broker to
-        // notice the socket died.
-        mqtt?.publish(to: presenceTopic, qos: .leastOnce, retain: true, message: Self.presenceMessage(online: false))
-        mqtt?.disconnect()
+        // notice the socket died. Only meaningful — and only safe to attempt — while
+        // actually connected; a transport that never got past a rejected CONNACK (or is
+        // already mid-teardown) has nothing to publish through.
+        if let mqtt, mqtt.connectionState == .connected {
+            mqtt.publish(to: presenceTopic, qos: .leastOnce, retain: true, message: Self.presenceMessage(online: false))
+            mqtt.disconnect()
+        }
         mqtt = nil
         status = .offline
     }

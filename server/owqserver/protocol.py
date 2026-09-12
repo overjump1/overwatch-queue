@@ -22,14 +22,6 @@ ROLE_QUEUE_MODES = {"quickPlay", "competitive", "stadium"}
 # Mystery Heroes assigns your hero, so it goes straight from matchFound to inGame.
 NO_HERO_SELECT_MODES = {"mysteryHeroes"}
 
-# Mirrors `QueuePhase.isUrgent` — the phases that get a real alert (sound, haptic, a brief
-# peek) on their Live Activity push, the way a delivery app announces a status change
-# without a separate notification alongside it. Routine changes stay silent.
-# No longer just the kinds worth interrupting the phone's own notification centre for —
-# see `QueueServer._push_activity` for the alert every one of these now also gets on the
-# Live Activity itself, `searching` and `inGame` included, the way a transit app buzzes at
-# every stop rather than only the ones it judges important.
-URGENT_KINDS = {"matchFound", "mapVote", "heroSelect"}
 
 _NOTIFICATION_TITLES = {
     "searching": "Queue Started",
@@ -56,19 +48,6 @@ def notification_copy(kind: str):
     languages."""
     return _NOTIFICATION_TITLES.get(kind, "Overwatch Queue"), \
         _NOTIFICATION_BODIES.get(kind, "Status changed.")
-
-
-def activity_fallback_copy():
-    """`(title, body)` for the notification sent when a Live Activity never appeared.
-
-    Not `notification_copy`: that copy announces an urgent phase, and this is only ever
-    sent for a routine one (an urgent phase already got a real alert of its own). It has to
-    earn the interruption on its own terms, so it says what happened and what tapping does.
-
-    Unlike the copy above there's no Swift counterpart to keep in step — nothing on the
-    device composes this text, it only ever arrives already written.
-    """
-    return "Queue started", "Tap to put it on your Lock Screen."
 
 
 # ---------------------------------------------------------------- Live Activity pushes
