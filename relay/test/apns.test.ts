@@ -170,10 +170,14 @@ describe("sendPush", () => {
     });
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.aps.alert).toEqual({ title: "Match Found", body: "Get back to your PC." });
-    // Without this, iOS updates the card's content silently — no sound, no haptic, no
-    // waking the screen — exactly the "alert" that never actually alerts.
-    expect(body.aps.sound).toBe("default");
+    // `sound` belongs *inside* the alert dict for a Live Activity push, not as a
+    // sibling of `alert` on `aps` (that's the plain-notification shape above). A
+    // sibling `sound` is silently ignored — the card updates with no sound, haptic,
+    // or screen wake. Verified against Apple's own WWDC23 payload example.
+    expect(body.aps.alert).toEqual({
+      title: "Match Found", body: "Get back to your PC.", sound: "default",
+    });
+    expect(body.aps.sound).toBeUndefined();
   });
 
   it("posts a Live Activity update to the plain topic, no .start suffix", async () => {
@@ -213,7 +217,8 @@ describe("sendPush", () => {
     });
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.aps.sound).toBe("default");
+    expect(body.aps.alert.sound).toBe("default");
+    expect(body.aps.sound).toBeUndefined();
   });
 
   it("posts a Live Activity end with the end event and an optional dismissalDate", async () => {
@@ -247,9 +252,9 @@ describe("sendPush", () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.aps.event).toBe("end");
     expect(body.aps.alert).toEqual({
-      title: "Queue Cancelled", body: "The queue ended without a match.",
+      title: "Queue Cancelled", body: "The queue ended without a match.", sound: "default",
     });
-    expect(body.aps.sound).toBe("default");
+    expect(body.aps.sound).toBeUndefined();
   });
 
   it("leaves a Live Activity end silent when no title or body is given", async () => {

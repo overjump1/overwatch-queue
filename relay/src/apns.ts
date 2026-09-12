@@ -132,7 +132,11 @@ function payloadFor(request: PushRequest): object {
         "attributes-type": "QueueActivityAttributes", attributes: request.attributes,
       };
       const alert = optionalAlert(request);
-      if (alert) { aps.alert = alert; aps.sound = "default"; }
+      // `sound` belongs *inside* the alert dict for a Live Activity push — unlike a
+      // plain notification above, where it's a sibling of `alert` on `aps` itself.
+      // Verified against Apple's own WWDC23 payload example after a sibling `sound`
+      // silently updated the card with no sound, haptic, or screen wake at all.
+      if (alert) aps.alert = { ...alert, sound: "default" };
       return { aps };
     }
     case "liveActivityUpdate": {
@@ -140,7 +144,7 @@ function payloadFor(request: PushRequest): object {
         timestamp: request.timestamp, event: "update", "content-state": request.contentState,
       };
       const alert = optionalAlert(request);
-      if (alert) { aps.alert = alert; aps.sound = "default"; }
+      if (alert) aps.alert = { ...alert, sound: "default" };
       if (request.staleDate !== undefined) aps["stale-date"] = request.staleDate;
       return { aps };
     }
@@ -149,7 +153,7 @@ function payloadFor(request: PushRequest): object {
         timestamp: request.timestamp, event: "end", "content-state": request.contentState,
       };
       const alert = optionalAlert(request);
-      if (alert) { aps.alert = alert; aps.sound = "default"; }
+      if (alert) aps.alert = { ...alert, sound: "default" };
       if (request.dismissalDate !== undefined) aps["dismissal-date"] = request.dismissalDate;
       return { aps };
     }
