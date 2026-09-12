@@ -68,8 +68,8 @@ public enum ClientCommand: Codable, Sendable {
     /// whenever the system hands over a new one.
     case registerActivityStartToken(token: String, environment: PushEnvironment)
     /// Asks the server to say what time it is, carrying this device's own clock so the
-    /// reply can be timed. See `pong`, and `ClockSync.observe(offset:roundTrip:)` for why
-    /// a measured round trip is the only honest way to do this.
+    /// reply can be timed. See `pong`, and `ClockSync.verify(clientTime:serverTime:receivedAt:)`
+    /// for why a measured round trip is the only honest way to do this.
     case ping(clientTime: TimeInterval)
     /// Something the device wants written into the server's log.
     ///

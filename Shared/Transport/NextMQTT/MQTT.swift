@@ -94,7 +94,12 @@ public final class MQTT {
     }
     
     private var packetId: UInt16 = 0
-    
+
+    /// Reconnect attempts since the last successful connection — drives the backoff in
+    /// `reconnect()` so a long outage (PC asleep/off) doesn't hammer a retry every 5s
+    /// forever. Reset to 0 on every successful CONNACK.
+    private var reconnectAttempts = 0
+
     private var connAckHandler: ((Result<Bool, MQTT.ConnectError>) -> Void)?
     
     private var _handlerStore: SynchronizedStore<UInt16, CompletionHandler>?
@@ -156,6 +161,7 @@ public extension MQTT {
             guard let self = self else { return }
             switch result {
             case .success(_):
+                self.reconnectAttempts = 0
                 self.connectionState = .connected
                 self.keepAlive()
             case .failure(let error):
@@ -243,6 +249,7 @@ private extension MQTT {
                 guard let self = self else { return }
                 switch result {
                 case .success(_):
+                    self.reconnectAttempts = 0
                     self.connectionState = .connected
                     self.keepAlive()
                 case .failure(let error):
@@ -251,7 +258,11 @@ private extension MQTT {
                 }
             }
         }
-        let deadline = DispatchTime.now() + .seconds(5)
+        // Exponential backoff capped at 30s — a long outage (PC asleep or off) should
+        // back off instead of hammering a connect attempt every few seconds forever.
+        let backoffSeconds = min(30, Int(pow(2, Double(reconnectAttempts))))
+        reconnectAttempts += 1
+        let deadline = DispatchTime.now() + .seconds(backoffSeconds)
         transportQueue.asyncAfter(deadline: deadline) { [weak self] in
             guard let self = self else { return }
             if self.connectionState == .dropped || self.connectionState == .reconnecting {

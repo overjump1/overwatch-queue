@@ -373,6 +373,29 @@ class PushDispatchTests(unittest.TestCase):
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.assertEqual(self.fake.alerts, [])
 
+    def test_a_live_connected_phone_gets_no_activity_push_of_its_own(self):
+        # A phone actively subscribed over MQTT sees this same broadcast directly and
+        # drives its own Live Activity locally — pushing an activity update/start too
+        # would alert the player twice for one phase change.
+        from owqserver.mqttclient import Client as MQTTTestClient
+        phone = MQTTTestClient("phone-client-id")
+        phone.identity = {"kind": "phone", "name": "Test iPhone"}
+        phone.authorized = True
+        self.server.mqtt._clients["phone-client-id"] = phone
+        self.server.activity_tokens.register_start("start-token", "sandbox")
+
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        time.sleep(0.05)
+
+        self.assertEqual(self.fake.activity_starts, [])
+        self.assertEqual(self.fake.activity_updates, [])
+
+    def test_a_disconnected_phone_still_gets_its_activity_push(self):
+        self.server.activity_tokens.register_start("start-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        time.sleep(0.05)
+        self.assertEqual(len(self.fake.activity_starts), 1)
+
 
 class LiveActivityPushDispatchTests(unittest.TestCase):
     """`_push_activity` in isolation: start, update, end, and the no-duplicate-start
@@ -594,12 +617,18 @@ class ActivityFallbackTests(unittest.TestCase):
         self.server._check_activity_fallback()
         self.assertEqual(self.fake.alerts, [])
 
-    def test_nothing_when_no_start_was_ever_attempted(self):
+    def test_the_phone_is_still_told_when_no_start_token_was_ever_registered(self):
+        # A device with no push-to-start token on file (fresh install, Live Activities
+        # off, no notification permission) can never have push-to-start attempted at
+        # all — the fallback clock has to arm anyway, or this phone goes completely
+        # silent for the whole session.
         self.server.activity_tokens.clear()
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.assertIsNone(self.server._activity_start_first_sent_at)
+        time.sleep(0.05)
+        self.assertIsNotNone(self.server._activity_start_first_sent_at)
+        self.server._activity_start_first_sent_at -= self.server._activity_fallback_delay_seconds + 1
         self.server._check_activity_fallback()
-        self.assertEqual(self.fake.alerts, [])
+        self.assertEqual(len(self.fake.alerts), 1)
 
     def test_nothing_once_the_queue_has_ended(self):
         self._queue_and_wait_out_the_delay()

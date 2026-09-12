@@ -501,8 +501,7 @@ class ControlPanel(QMainWindow):
             ORANGE if seen.state == queuewatch.GAME_FOUND else WHITE)
 
     def _say_queue(self, text: str, colour: str):
-        self.queue_state.setText(text)
-        self.queue_state.setStyleSheet("color: %s;" % colour)
+        self._say(self.queue_state, text, colour)
 
     def _refresh_presence(self):
         watcher = self.server.presence_watcher
@@ -531,8 +530,12 @@ class ControlPanel(QMainWindow):
         self._say_presence(note, WHITE)
 
     def _say_presence(self, text: str, colour: str):
-        self.presence_state.setText(text)
-        self.presence_state.setStyleSheet("color: %s;" % colour)
+        self._say(self.presence_state, text, colour)
+
+    @staticmethod
+    def _say(label, text: str, colour: str):
+        label.setText(text)
+        label.setStyleSheet("color: %s;" % colour)
 
     def _sync_mode_picker(self):
         """Follows `controls.mode` when the watcher has changed it underneath the panel.

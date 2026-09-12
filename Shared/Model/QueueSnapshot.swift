@@ -144,6 +144,11 @@ public struct ClockSync: Sendable {
         if isBetter || (isWorse && anchorHasAgedOut) {
             offset = candidate
             self.anchoredAt = receivedAt
+            // This anchor is now an unmeasured one-way reading, not a verified round
+            // trip — even if it replaced a verified anchor that aged out. Leaving the
+            // old (tight) uncertainty in place would misreport this as still verified
+            // and could reject a genuinely better `verify()` sample later via `isSharper`.
+            uncertainty = .infinity
         }
     }
 

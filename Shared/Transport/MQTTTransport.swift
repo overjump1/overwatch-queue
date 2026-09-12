@@ -103,15 +103,44 @@ public final class MQTTTransport: NSObject, QueueTransport {
         client.connect { [weak self] result in
             guard let self else { return }
             Task { @MainActor in
-                guard case .failure = result else { return }
-                // A rejected CONNACK (bad credentials, most likely a stale or revoked
-                // pairing token) on the *initial* connect attempt — retrying with the
-                // same wrong password would never succeed, so this is a terminal
-                // failure, not a transient one.
+                guard case .failure(let error) = result else { return }
+                guard MQTTTransport.isPairingError(error) else {
+                    // A transient, broker-side rejection (e.g. Mosquitto still starting
+                    // up, briefly overloaded) — not a bad token, so retry instead of
+                    // giving up on the pairing.
+                    self.status = .connecting
+                    self.retryAfterTransientFailure()
+                    return
+                }
+                // A rejected CONNACK for a credentials/identity reason (most likely a
+                // stale or revoked pairing token) on the *initial* connect attempt —
+                // retrying with the same wrong password would never succeed, so this is
+                // a terminal failure, not a transient one.
                 self.status = .failed("Not paired with \(self.pairing.displayText) — re-scan the QR code.")
                 self.wantsConnection = false
                 self.mqtt?.disconnect()
             }
+        }
+    }
+
+    /// Whether a CONNACK rejection means the pairing token itself is bad, as opposed to
+    /// a transient broker-side condition (still starting up, briefly overloaded) that a
+    /// retry could clear on its own.
+    private static func isPairingError(_ error: MQTT.ConnectError) -> Bool {
+        switch error {
+        case .invalidClientId, .invalidCredentials, .unauthorized, .banned, .badAuthMethod:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func retryAfterTransientFailure() {
+        guard wantsConnection else { return }
+        mqtt = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, self.wantsConnection else { return }
+            self.openConnection()
         }
     }
 

@@ -318,7 +318,13 @@ class QueueServer:
         plain notification on top of that would just double the same event up in
         Notification Center. `_check_activity_fallback` is the one place the phone still
         gets a plain alert of its own — and only once push-to-start has had its chance
-        and clearly hasn't taken."""
+        and clearly hasn't taken.
+
+        `_push_activity` itself is skipped entirely while a phone is live over MQTT: that
+        phone's own `LiveActivityController` reacts to the very snapshot this broadcast
+        just published, driving the same start/update/end its APNs push would — pushing
+        here too would fire a second, independent alert for the one event this queue only
+        needs told about once. See `_phone_is_live_connected`."""
         if not self.apns:
             return
         session_id, sequence, kind = self.session.session_id, self.session.sequence, self.session.kind
@@ -330,7 +336,15 @@ class QueueServer:
                                             title, body, session_id, sequence)
             if self.apns.token_is_invalid(response):
                 self.push_tokens.forget("watch")
-        self._push_activity(session_id, sequence, kind)
+        if not self._phone_is_live_connected():
+            self._push_activity(session_id, sequence, kind)
+
+    def _phone_is_live_connected(self) -> bool:
+        """Whether a phone is currently subscribed over MQTT — the one signal both sides
+        can check without coordinating a flag over the network, and the reason a phone
+        that's actually looking at the app doesn't also need an APNs-pushed alert for the
+        same phase change its own live connection just delivered."""
+        return any((client.identity or {}).get("kind") == "phone" for client in self.clients)
 
     def _push_activity(self, session_id: str, sequence: int, kind: str):
         """Keeps the Live Activity itself current, independent of whether the phone's
@@ -386,26 +400,39 @@ class QueueServer:
                 self._last_activity_kind = None
             else:
                 self._last_activity_kind = kind
-                self.apns.send_activity_update(token, environment, content_state,
-                                               timestamp, alert=update_alert)
+                response = self.apns.send_activity_update(token, environment, content_state,
+                                                          timestamp, alert=update_alert)
+                if self.apns.token_is_invalid(response):
+                    # Apple will never accept this token again (reinstall, or the token
+                    # was rotated/revoked mid-session) — forgetting it now is what lets
+                    # `_check_activity_fallback` stop treating a dead card as attached
+                    # and actually send its one plain-alert fallback.
+                    self.activity_tokens.forget_update()
             return
 
         if kind in ("idle", "cancelled"):
             self._activity_session_id = None
             self._activity_start_first_sent_at = None
             return
-        start = self.activity_tokens.start_token()
-        if not start:
-            return
 
         if self._activity_session_id != session_id:
             self._activity_session_id = session_id
             self._activity_started_at = protocol.reference_date_seconds(protocol.now())
             self._activity_start_last_sent_at = 0.0            # a new session always retries immediately
-            self._activity_start_first_sent_at = None
+            # Arms the fallback clock the moment the queue needs a card — not only once
+            # push-to-start is actually attempted. A device with no start token on file
+            # yet (fresh install, Live Activities off, no notification permission) would
+            # otherwise never get *this* set, so `_check_activity_fallback` would wait
+            # forever on a push-to-start attempt that can never happen and the phone
+            # would go completely silent for the whole session.
+            self._activity_start_first_sent_at = time.time()
             # A fresh queue gets a fresh chance at both the card and, failing that, the
             # one fallback notification it's allowed.
             self._activity_fallback_sent_for = None
+
+        start = self.activity_tokens.start_token()
+        if not start:
+            return
 
         now = time.time()
         if now - self._activity_start_last_sent_at < self._activity_start_retry_seconds:
@@ -415,13 +442,12 @@ class QueueServer:
         token, environment = start
         attributes = {"sessionID": session_id, "startedAt": self._activity_started_at}
         self._last_activity_kind = kind
-        self.apns.send_activity_start(token, environment, attributes, content_state,
-                                      timestamp, alert=start_alert)
-        if self._activity_start_first_sent_at is None:
-            # The clock the fallback measures against: when this session *first* asked for
-            # a card, not when it last retried, so the retries all happen inside the wait
-            # rather than pushing it further out each time.
-            self._activity_start_first_sent_at = time.time()
+        response = self.apns.send_activity_start(token, environment, attributes, content_state,
+                                                 timestamp, alert=start_alert)
+        if self.apns.token_is_invalid(response):
+            # Same reasoning as the per-activity token above: a dead push-to-start token
+            # would otherwise keep "succeeding" into the void every retry, forever.
+            self.activity_tokens.forget_start()
 
     def _check_activity_fallback(self):
         """Once a session has asked for a Live Activity and not got one, say it plainly.

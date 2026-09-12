@@ -64,12 +64,15 @@ class MQTTClient:
 
         self._clients: dict[str, Client] = {}
         self._clients_lock = threading.Lock()
+        self._pending_subscribe_mids: set = set()
+        self._subscribed_event = threading.Event()
         self._mqtt = self._build_client()
 
     def _build_client(self) -> mqtt.Client:
         client = mqtt.Client(client_id="owqserver", protocol=mqtt.MQTTv311)
         client.username_pw_set(self.username, self.password)
         client.on_connect = self._on_connect
+        client.on_subscribe = self._on_subscribe
         client.on_message = self._on_message
         client.on_disconnect = lambda *a: self.log("Lost the connection to the MQTT broker")
         return client
@@ -77,9 +80,22 @@ class MQTTClient:
     # ------------------------------------------------------------ lifecycle
 
     def start(self):
+        self._pending_subscribe_mids = set()
+        self._subscribed_event = threading.Event()
         self._mqtt = self._build_client()          # picks up any changed host/port/password
         self._mqtt.connect(self.host, self.port, keepalive=15)
         self._mqtt.loop_start()
+        # A client that connects and publishes immediately after this call returns
+        # (right after pairing, or right after a token rotation forces every device to
+        # reconnect) needs the broker to already know about our subscriptions — MQTT
+        # only delivers to subscribers present at publish time, and the command topic
+        # isn't retained, so a subscribe that's still in flight silently drops the
+        # message with no error on either side. Block until the broker has actually
+        # acknowledged both subscriptions (or give up after a few seconds and let the
+        # normal on-connect retry path take over) instead of returning the moment the
+        # TCP connect attempt was merely *started*.
+        if not self._subscribed_event.wait(timeout=5):
+            self.log("Timed out waiting for the MQTT broker to confirm our subscriptions")
 
     def stop(self):
         self._mqtt.loop_stop()
@@ -110,8 +126,14 @@ class MQTTClient:
         if rc != 0:
             self.log("Couldn't connect to the MQTT broker (rc=%s)" % rc)
             return
-        client.subscribe(TOPIC_COMMAND_WILDCARD, qos=1)
-        client.subscribe(TOPIC_PRESENCE_WILDCARD, qos=1)
+        _, command_mid = client.subscribe(TOPIC_COMMAND_WILDCARD, qos=1)
+        _, presence_mid = client.subscribe(TOPIC_PRESENCE_WILDCARD, qos=1)
+        self._pending_subscribe_mids = {command_mid, presence_mid}
+
+    def _on_subscribe(self, client, userdata, mid, granted_qos):
+        self._pending_subscribe_mids.discard(mid)
+        if not self._pending_subscribe_mids:
+            self._subscribed_event.set()
 
     def _on_message(self, client, userdata, msg):
         parts = msg.topic.split("/", 2)

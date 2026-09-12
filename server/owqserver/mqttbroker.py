@@ -101,6 +101,7 @@ class MQTTBroker:
                 "user %s\n"
                 "topic read owq/snapshot\n"
                 "topic read owq/reply/#\n"
+                "topic read owq/heartbeat\n"
                 "topic write owq/command/#\n"
                 "topic readwrite owq/presence/#\n"
                 "\n"

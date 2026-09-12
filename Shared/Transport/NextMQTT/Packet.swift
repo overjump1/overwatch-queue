@@ -375,7 +375,7 @@ struct PublishPacket: CodablePacket {
     
     let topicName: String
     let packetId: UInt16?
-    let propertyLength: UInt8
+    let propertyLength: UIntVar
     let message: Data?
     
     init(topicName: String, qos: MQTT.QoS, packetId: UInt16? = nil, retain: Bool = false, message: Data?) throws {
@@ -392,7 +392,7 @@ struct PublishPacket: CodablePacket {
         self.propertyLength = 0
         self.message = message
     }
-    
+
     init(fromMQTTDecoder decoder: MQTTDecoder) throws {
         var container = try decoder.unkeyedContainer()
         self.fixedHeader = try container.decode(FixedHeader.self)
@@ -403,7 +403,17 @@ struct PublishPacket: CodablePacket {
         } else {
             self.packetId = nil
         }
-        self.propertyLength = try container.decode(UInt8.self)
+        let propertyLength = try container.decode(UIntVar.self)
+        var bytesRemaining = Int(propertyLength)
+        while bytesRemaining > 0 && !container.isAtEnd {
+            let x = container.currentIndex
+            let propertyId = try container.decode(UIntVar.self)
+            bytesRemaining -= container.currentIndex - x
+            let y = container.currentIndex
+            try skipMQTTPropertyValue(id: UInt(propertyId), container: &container)
+            bytesRemaining -= container.currentIndex - y
+        }
+        self.propertyLength = propertyLength
         self.message = try? container.decode(Data.self)
     }
 }
@@ -588,8 +598,14 @@ struct SubackPacket: DecodablePacket {
         self.fixedHeader = try container.decode(FixedHeader.self)
         self.packetId = try container.decode(UInt16.self)
         let propertyLength = try container.decode(UIntVar.self)
-        if 0 < Int(propertyLength) {
-            throw Error.notImplemented
+        var bytesRemaining = Int(propertyLength)
+        while bytesRemaining > 0 && !container.isAtEnd {
+            let x = container.currentIndex
+            let propertyId = try container.decode(UIntVar.self)
+            bytesRemaining -= container.currentIndex - x
+            let y = container.currentIndex
+            try skipMQTTPropertyValue(id: UInt(propertyId), container: &container)
+            bytesRemaining -= container.currentIndex - y
         }
         self.propertyLength = propertyLength
         if let qos = try? container.decode(MQTT.QoS.self) {
@@ -659,8 +675,14 @@ struct UnsubackPacket: DecodablePacket {
         self.fixedHeader = try container.decode(FixedHeader.self)
         self.packetId = try container.decode(UInt16.self)
         let propertyLength = try container.decode(UIntVar.self)
-        if 0 < Int(propertyLength) {
-            throw Error.notImplemented
+        var bytesRemaining = Int(propertyLength)
+        while bytesRemaining > 0 && !container.isAtEnd {
+            let x = container.currentIndex
+            let propertyId = try container.decode(UIntVar.self)
+            bytesRemaining -= container.currentIndex - x
+            let y = container.currentIndex
+            try skipMQTTPropertyValue(id: UInt(propertyId), container: &container)
+            bytesRemaining -= container.currentIndex - y
         }
         self.propertyLength = propertyLength
         if let _ = try? container.decode(UnsubscribeSuccess.self) {
