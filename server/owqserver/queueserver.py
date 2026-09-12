@@ -302,19 +302,22 @@ class QueueServer:
         notices. A duplicate delivery is harmless: the client discards anything not newer
         than its current `sequence`.
 
-        A real, time-sensitive alert for every phase change now — not just the urgent
-        ones — on both kinds, phone included. `send_background`'s silent, low-priority
-        push is exactly the failure mode this replaces: Apple treats it as best-effort and
-        batches or delays it at will, which is fine for a wake-up nobody needs to see but
-        wrong for the thing telling the player their queue moved. `send_alert` is marked
-        time-sensitive and sent at the priority Apple reserves for pushes that must not
-        wait. The watch has no Live Activity of its own at all, so this alert is its only
-        independent signal once out of the phone's WatchConnectivity range."""
+        A real, time-sensitive alert for every phase change — not just the urgent ones —
+        on the watch, which has no Live Activity of its own and so needs this as its only
+        independent signal once out of the phone's WatchConnectivity range. The phone is
+        different: once its Live Activity has attached, `_push_activity` already carries
+        its own alert on every real phase change (that's the banner the player sees, tied
+        to the card they can tap into) — a second, plain alert here on top of that would
+        just double the same event up in Notification Center. Only before the activity has
+        attached (or if it never does) does the phone fall back to this alert directly."""
         if not self.apns:
             return
         session_id, sequence, kind = self.session.session_id, self.session.sequence, self.session.kind
         title, body = protocol.notification_copy(kind)
+        has_live_activity = self.activity_tokens.update_token(session_id) is not None
         for client_kind, device_token, environment in list(self.push_tokens.items()):
+            if client_kind == "phone" and has_live_activity:
+                continue
             response = self.apns.send_alert(client_kind, device_token, environment,
                                              title, body, session_id, sequence)
             if self.apns.token_is_invalid(response):

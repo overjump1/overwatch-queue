@@ -381,6 +381,25 @@ class PushDispatchTests(unittest.TestCase):
         self.assertEqual(kinds, {"phone"})
         self.assertIsNone(self.server.push_tokens.get("watch"))
 
+    def test_a_phone_with_an_attached_live_activity_gets_no_direct_alert(self):
+        # Once the activity has attached, its own push already carries the alert the
+        # player sees (see `_push_activity`) — a second, plain one here would just show up
+        # as a duplicate banner in Notification Center on top of the Live Activity update.
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.server.activity_tokens.register_update(
+            self.server.session.session_id, "activity-token", "sandbox")
+        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
+        kinds = {entry[0] for entry in self.fake.alerts if entry[3] == "Match Found"}
+        self.assertEqual(kinds, {"watch"})
+
+    def test_a_phone_falls_back_to_a_direct_alert_before_the_activity_attaches(self):
+        # No per-activity token registered yet for this session: push-to-start may not
+        # have taken, so the phone still needs its own alert rather than depending on a
+        # card that might never show up.
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        kinds = {entry[0] for entry in self.fake.alerts if entry[3] == "Queue Started"}
+        self.assertEqual(kinds, {"phone", "watch"})
+
 
 class LiveActivityPushDispatchTests(unittest.TestCase):
     """`_push_activity` in isolation: start, update, end, and the no-duplicate-start
