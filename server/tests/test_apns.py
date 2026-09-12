@@ -158,6 +158,28 @@ class LiveActivityPushTests(unittest.TestCase):
             alert={"title": "Match Found", "body": "Get back to your PC."})
         aps = self.fake.calls[0]["json"]["aps"]
         self.assertEqual(aps["alert"], {"title": "Match Found", "body": "Get back to your PC."})
+        # Without this, iOS updates the card's content silently — no sound, no haptic,
+        # no waking the screen — exactly the "alert" that never actually alerts.
+        self.assertEqual(aps["sound"], "default")
+
+    def test_update_includes_a_sound_when_given_an_alert(self):
+        self.client.send_activity_update(
+            "activity-token", "production", content_state={}, timestamp=1,
+            alert={"title": "Match Found", "body": "Get back to your PC."})
+        aps = self.fake.calls[0]["json"]["aps"]
+        self.assertEqual(aps["sound"], "default")
+
+    def test_update_has_no_sound_when_silent(self):
+        self.client.send_activity_update(
+            "activity-token", "production", content_state={}, timestamp=1)
+        self.assertNotIn("sound", self.fake.calls[0]["json"]["aps"])
+
+    def test_end_includes_a_sound_when_given_an_alert(self):
+        self.client.send_activity_end(
+            "activity-token", "production", content_state={}, timestamp=1,
+            alert={"title": "Queue cancelled", "body": "Back to the front page."})
+        aps = self.fake.calls[0]["json"]["aps"]
+        self.assertEqual(aps["sound"], "default")
 
     def test_update_uses_the_plain_topic_no_dot_start(self):
         self.client.send_activity_update(

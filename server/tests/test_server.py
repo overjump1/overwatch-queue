@@ -396,6 +396,25 @@ class PushDispatchTests(unittest.TestCase):
         time.sleep(0.05)
         self.assertEqual(len(self.fake.activity_starts), 1)
 
+    def test_a_live_connected_phone_still_gets_the_terminal_end_push(self):
+        # Unlike start/update, idle/cancelled is the one phase change nothing later ever
+        # retries — if the phone's own local `LiveActivityController.end()` doesn't land
+        # (the socket looking live a moment longer than it actually is, or the process
+        # suspended mid-await as the screen locks), skipping the push here too would
+        # leave the card frozen on its last real phase forever.
+        from owqserver.mqttclient import Client as MQTTTestClient
+        phone = MQTTTestClient("phone-client-id")
+        phone.identity = {"kind": "phone", "name": "Test iPhone"}
+        phone.authorized = True
+        self.server.mqtt._clients["phone-client-id"] = phone
+        self.server.activity_tokens.register_update(
+            self.server.session.session_id, "activity-token", "sandbox")
+
+        self.server.apply(protocol.cancelled("userLeft"))
+        time.sleep(0.05)
+
+        self.assertEqual(len(self.fake.activity_ends), 1)
+
 
 class LiveActivityPushDispatchTests(unittest.TestCase):
     """`_push_activity` in isolation: start, update, end, and the no-duplicate-start
@@ -440,6 +459,31 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.server._activity_start_last_sent_at -= self.server._activity_start_retry_seconds + 1
         self.server.apply(protocol.match_found("quickPlay", "damage", 30))
         self.assertEqual(len(self.fake.activity_starts), 2)
+
+    def test_tick_retries_a_start_with_no_further_phase_change(self):
+        # The common case push-to-start most needs retried for: a queue that just sits in
+        # `searching` with nothing else changing the phase. `_push_activity`'s own retry
+        # only fires off a phase change, so without this a session like this one would
+        # get exactly one push-to-start attempt no matter how long it waits.
+        self.server.activity_tokens.register_start("start-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.assertEqual(len(self.fake.activity_starts), 1)
+        self.server._activity_start_last_sent_at -= self.server._activity_start_retry_seconds + 1
+        self.server._retry_activity_start()
+        self.assertEqual(len(self.fake.activity_starts), 2)
+
+    def test_tick_retry_is_a_noop_once_a_card_exists(self):
+        self.server.activity_tokens.register_start("start-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.server.activity_tokens.register_update(
+            self.server.session.session_id, "activity-token", "sandbox")
+        self.server._activity_start_last_sent_at -= self.server._activity_start_retry_seconds + 1
+        self.server._retry_activity_start()
+        self.assertEqual(len(self.fake.activity_starts), 1)
+
+    def test_tick_retry_does_nothing_before_any_card_was_requested(self):
+        self.server._retry_activity_start()
+        self.assertEqual(self.fake.activity_starts, [])
 
     def test_retried_attributes_keep_the_same_startedAt(self):
         # Apple recognises a retry as the same activity by matching attributes — a

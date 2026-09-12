@@ -132,7 +132,7 @@ function payloadFor(request: PushRequest): object {
         "attributes-type": "QueueActivityAttributes", attributes: request.attributes,
       };
       const alert = optionalAlert(request);
-      if (alert) aps.alert = alert;
+      if (alert) { aps.alert = alert; aps.sound = "default"; }
       return { aps };
     }
     case "liveActivityUpdate": {
@@ -140,7 +140,7 @@ function payloadFor(request: PushRequest): object {
         timestamp: request.timestamp, event: "update", "content-state": request.contentState,
       };
       const alert = optionalAlert(request);
-      if (alert) aps.alert = alert;
+      if (alert) { aps.alert = alert; aps.sound = "default"; }
       if (request.staleDate !== undefined) aps["stale-date"] = request.staleDate;
       return { aps };
     }
@@ -149,7 +149,7 @@ function payloadFor(request: PushRequest): object {
         timestamp: request.timestamp, event: "end", "content-state": request.contentState,
       };
       const alert = optionalAlert(request);
-      if (alert) aps.alert = alert;
+      if (alert) { aps.alert = alert; aps.sound = "default"; }
       if (request.dismissalDate !== undefined) aps["dismissal-date"] = request.dismissalDate;
       return { aps };
     }

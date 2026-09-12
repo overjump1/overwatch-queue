@@ -159,6 +159,7 @@ class APNsClient:
                "attributes-type": "QueueActivityAttributes", "attributes": attributes}
         if alert:
             aps["alert"] = alert
+            aps["sound"] = "default"
         topic = self.config.bundle_id_ios + self._LIVE_ACTIVITY_TOPIC_SUFFIX
         return self._send("activity-start", topic, push_to_start_token, environment,
                           {"aps": aps}, push_type="liveactivity", priority="10")
@@ -169,6 +170,7 @@ class APNsClient:
         aps = {"timestamp": timestamp, "event": "update", "content-state": content_state}
         if alert:
             aps["alert"] = alert
+            aps["sound"] = "default"
         if stale_date is not None:
             aps["stale-date"] = stale_date
         topic = self.config.bundle_id_ios + self._LIVE_ACTIVITY_TOPIC_SUFFIX
@@ -181,6 +183,7 @@ class APNsClient:
         aps = {"timestamp": timestamp, "event": "end", "content-state": content_state}
         if alert:
             aps["alert"] = alert
+            aps["sound"] = "default"
         if dismissal_date is not None:
             aps["dismissal-date"] = dismissal_date
         topic = self.config.bundle_id_ios + self._LIVE_ACTIVITY_TOPIC_SUFFIX
