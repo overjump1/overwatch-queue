@@ -103,6 +103,13 @@ class QueueServer:
         self._activity_start_last_sent_at = 0.0
         self._activity_start_retry_seconds = 20
         self._activity_start_first_sent_at = None
+        # ...and when the retries don't take either, `_check_activity_fallback` gives up on
+        # the Live Activity and sends the phone a plain notification instead — the one
+        # thing that demonstrably arrives when push-to-start doesn't. Apple accepts a
+        # push-to-start with a 200 whether or not it ever delivers one, so the only thing
+        # this side can observe is the app never coming back with a per-activity token.
+        self._activity_fallback_sent_for = None
+        self._activity_fallback_delay_seconds = 15
         # The phase an update alert was last sent for, so a patch to the *same* phase's
         # data — the estimate ticking, a mode correction — never earns one of its own.
         # See `_push_activity` for why every real phase change now does.
@@ -302,26 +309,27 @@ class QueueServer:
         notices. A duplicate delivery is harmless: the client discards anything not newer
         than its current `sequence`.
 
-        A real, time-sensitive alert for every phase change — not just the urgent ones —
-        on the watch, which has no Live Activity of its own and so needs this as its only
-        independent signal once out of the phone's WatchConnectivity range. The phone is
-        different: once its Live Activity has attached, `_push_activity` already carries
-        its own alert on every real phase change (that's the banner the player sees, tied
-        to the card they can tap into) — a second, plain alert here on top of that would
-        just double the same event up in Notification Center. Only before the activity has
-        attached (or if it never does) does the phone fall back to this alert directly."""
+        A real, time-sensitive alert for every phase change, but only on the watch: it has
+        no Live Activity of its own, so this is its only independent signal once out of
+        the phone's WatchConnectivity range. The phone never gets one here — Apple's own
+        push-to-start and per-activity update pushes (see `_push_activity`) already carry
+        their own alert on every real phase change, tied to the Live Activity itself
+        exactly the way Apple designed them to work with the app fully closed. A second,
+        plain notification on top of that would just double the same event up in
+        Notification Center. `_check_activity_fallback` is the one place the phone still
+        gets a plain alert of its own — and only once push-to-start has had its chance
+        and clearly hasn't taken."""
         if not self.apns:
             return
         session_id, sequence, kind = self.session.session_id, self.session.sequence, self.session.kind
-        title, body = protocol.notification_copy(kind)
-        has_live_activity = self.activity_tokens.update_token(session_id) is not None
-        for client_kind, device_token, environment in list(self.push_tokens.items()):
-            if client_kind == "phone" and has_live_activity:
-                continue
-            response = self.apns.send_alert(client_kind, device_token, environment,
-                                             title, body, session_id, sequence)
+        watch = self.push_tokens.get("watch")
+        if watch:
+            device_token, environment = watch
+            title, body = protocol.notification_copy(kind)
+            response = self.apns.send_alert("watch", device_token, environment,
+                                            title, body, session_id, sequence)
             if self.apns.token_is_invalid(response):
-                self.push_tokens.forget(client_kind)
+                self.push_tokens.forget("watch")
         self._push_activity(session_id, sequence, kind)
 
     def _push_activity(self, session_id: str, sequence: int, kind: str):
@@ -335,9 +343,7 @@ class QueueServer:
           activity from nothing. Retried on every subsequent change (throttled — see
           `_activity_start_retry_seconds`) until an update token registers, since a
           background push is best-effort and the first attempt landing is never
-          guaranteed. Sent alongside — never instead of — the phone's own silent wake-up
-          above, since only that wake-up gives the app a chance to attach to the activity
-          and register a real per-activity token for every update after this one.
+          guaranteed.
 
         Every real phase change carries a real alert — sound, haptic, a brief peek — the
         way a transit app's Live Activity buzzes at each stop rather than only the ones
@@ -354,10 +360,9 @@ class QueueServer:
 
         "Sometimes" is the honest word. Push-to-start is accepted with a 200 and then, often
         enough to design around, simply never delivered — with nothing on this side to say
-        so. There used to be a fallback notification here for when the retries ran out and
-        the app still hadn't come back with a per-activity token — gone now that
-        `_push_apns` already sends a real alert for every phase, which covers the same gap
-        without waiting on a timer.
+        so. `_check_activity_fallback` is what covers that case: when the retries here have
+        had their chance and the app still hasn't come back with a per-activity token, it
+        stops trying to conjure a card and just sends a notification the player can tap.
         """
         content_state = protocol.content_state(self.session.phase, sequence)
         timestamp = int(protocol.now().timestamp())
@@ -398,6 +403,9 @@ class QueueServer:
             self._activity_started_at = protocol.reference_date_seconds(protocol.now())
             self._activity_start_last_sent_at = 0.0            # a new session always retries immediately
             self._activity_start_first_sent_at = None
+            # A fresh queue gets a fresh chance at both the card and, failing that, the
+            # one fallback notification it's allowed.
+            self._activity_fallback_sent_for = None
 
         now = time.time()
         if now - self._activity_start_last_sent_at < self._activity_start_retry_seconds:
@@ -414,6 +422,50 @@ class QueueServer:
             # a card, not when it last retried, so the retries all happen inside the wait
             # rather than pushing it further out each time.
             self._activity_start_first_sent_at = time.time()
+
+    def _check_activity_fallback(self):
+        """Once a session has asked for a Live Activity and not got one, say it plainly.
+
+        Runs on the heartbeat rather than off a state change, because the thing it's
+        waiting for is the *absence* of one: the app registering a per-activity token is
+        what proves the card exists, and that arrives (or doesn't) some seconds after the
+        push, with nothing else happening in between.
+
+        Only the phone, and only once per session. The watch already gets its own real
+        alert on every phase change in `_push_apns` — it has no Live Activity to be
+        missing in the first place."""
+        with self._lock:
+            if not self.apns:
+                return
+            session_id = self.session.session_id
+            sequence = self.session.sequence
+            kind = self.session.kind
+            if kind in ("idle", "cancelled"):
+                return
+            if self._activity_start_first_sent_at is None:
+                return                                  # never asked for a card
+            if self._activity_fallback_sent_for == session_id:
+                return                                  # one per queue, not one per tick
+            if self.activity_tokens.update_token(session_id):
+                return                                  # it arrived after all
+            if time.time() - self._activity_start_first_sent_at < self._activity_fallback_delay_seconds:
+                return                                  # still might
+            phone = self.push_tokens.get("phone")
+            if not phone:
+                # Nothing to send to. Deliberately *not* latched: the phone may register a
+                # moment from now, and this queue should still get its one notification.
+                return
+            self._activity_fallback_sent_for = session_id
+            token, environment = phone
+
+        # Outside the lock on purpose, unlike `_push_apns`. This runs once a second, and
+        # `apply()` holds the same lock across every state change — waiting on Apple in
+        # here would stall the whole server for as long as APNs felt like taking. The flag
+        # above is set inside the lock, so a second tick can't double-send while this one
+        # is still in flight.
+        title, body = protocol.activity_fallback_copy()
+        self.log("No Live Activity took for this queue — telling the phone the plain way")
+        self.apns.send_alert("phone", token, environment, title, body, session_id, sequence)
 
     def _changed(self):
         if self.on_change:
@@ -733,12 +785,14 @@ class QueueServer:
     def _tick_loop(self):
         # This used to be a "heartbeat loop" that also kept sockets alive and dropped
         # clients that never said hello — both jobs MQTT itself absorbs now (broker
-        # keepalive/LWT for liveness, the ACL for auth). What's left: a lightweight
-        # heartbeat publish — not for liveness, just so a connected client's clock stays
-        # freshly re-anchored (see `protocol.heartbeat`).
+        # keepalive/LWT for liveness, the ACL for auth). What's left: the activity
+        # fallback's own check, and a lightweight heartbeat publish — not for liveness,
+        # just so a connected client's clock stays freshly re-anchored (see
+        # `protocol.heartbeat`).
         last_heartbeat = 0.0
         while self._running:
             time.sleep(1)
+            self._check_activity_fallback()
             now = time.time()
             if now - last_heartbeat >= HEARTBEAT_SECONDS:
                 last_heartbeat = now

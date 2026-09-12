@@ -343,62 +343,35 @@ class PushDispatchTests(unittest.TestCase):
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.assertEqual(self.fake.alerts, [])
 
-    def test_an_invalid_token_is_dropped(self):
-        self.fake._invalid_kinds = {"phone"}
+    def test_an_invalid_watch_token_is_dropped(self):
+        self.fake._invalid_kinds = {"watch"}
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.assertIsNone(self.server.push_tokens.get("phone"))
-        self.assertEqual(self.server.push_tokens.get("watch"), ("watch-token", "production"))
+        self.assertIsNone(self.server.push_tokens.get("watch"))
+        self.assertEqual(self.server.push_tokens.get("phone"), ("phone-token", "sandbox"))
 
-    def test_a_routine_change_alerts_every_registered_kind(self):
-        # A background push's silent, low-priority delivery is exactly the failure mode
-        # this replaces — Apple can delay or batch it at will. Every phase change, urgent
-        # or not, now gets a real, time-sensitive alert instead.
+    def test_a_routine_change_alerts_only_the_watch(self):
+        # The watch has no Live Activity of its own, so it needs a real, time-sensitive
+        # alert directly. The phone doesn't: Apple's own push-to-start and per-activity
+        # update pushes (see `_push_activity`) already carry their own alert, tied to the
+        # Live Activity itself — a second, plain one here would just double the same event
+        # up in Notification Center.
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         kinds = {entry[0] for entry in self.fake.alerts}
-        self.assertEqual(kinds, {"phone", "watch"})
-        for kind, token, environment, title, body, session_id, sequence in self.fake.alerts:
-            self.assertEqual((title, body), protocol.notification_copy("searching"))
-            self.assertEqual(session_id, self.server.session.session_id)
+        self.assertEqual(kinds, {"watch"})
+        title, body = protocol.notification_copy("searching")
+        self.assertEqual((self.fake.alerts[0][3], self.fake.alerts[0][4]), (title, body))
+        self.assertEqual(self.fake.alerts[0][5], self.server.session.session_id)
 
-    def test_an_urgent_change_alerts_both_kinds(self):
-        # Push-to-start (the phone's other route to a visible alert with the app fully
-        # closed) is best-effort and unreliable in practice, so the phone gets this real
-        # alert too rather than depending on the Live Activity alone. The watch has no
-        # Live Activity of its own at all, so this is its only independent signal.
+    def test_an_urgent_change_still_only_alerts_the_watch_directly(self):
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
-        kinds = {entry[0] for entry in self.fake.alerts if entry[3] == "Match Found"}
-        self.assertEqual(kinds, {"phone", "watch"})
-
-    def test_an_invalid_token_skips_only_that_kind_s_alert(self):
-        self.fake._invalid_kinds = {"watch"}
-        # The watch's token is invalid from the start, so it gets forgotten off the very
-        # first alert — the one for this routine phase itself, since every phase now sends
-        # one. A second, later phase change should find nothing left to alert it with.
-        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
-        kinds = {entry[0] for entry in self.fake.alerts if entry[3] == "Match Found"}
-        self.assertEqual(kinds, {"phone"})
-        self.assertIsNone(self.server.push_tokens.get("watch"))
-
-    def test_a_phone_with_an_attached_live_activity_gets_no_direct_alert(self):
-        # Once the activity has attached, its own push already carries the alert the
-        # player sees (see `_push_activity`) — a second, plain one here would just show up
-        # as a duplicate banner in Notification Center on top of the Live Activity update.
-        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.server.activity_tokens.register_update(
-            self.server.session.session_id, "activity-token", "sandbox")
         self.server.apply(protocol.match_found("quickPlay", "damage", 30))
         kinds = {entry[0] for entry in self.fake.alerts if entry[3] == "Match Found"}
         self.assertEqual(kinds, {"watch"})
 
-    def test_a_phone_falls_back_to_a_direct_alert_before_the_activity_attaches(self):
-        # No per-activity token registered yet for this session: push-to-start may not
-        # have taken, so the phone still needs its own alert rather than depending on a
-        # card that might never show up.
+    def test_no_watch_token_sends_no_direct_alert(self):
+        self.server.push_tokens.forget("watch")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        kinds = {entry[0] for entry in self.fake.alerts if entry[3] == "Queue Started"}
-        self.assertEqual(kinds, {"phone", "watch"})
+        self.assertEqual(self.fake.alerts, [])
 
 
 class LiveActivityPushDispatchTests(unittest.TestCase):
@@ -562,6 +535,97 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.server.reset()
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.assertEqual(len(self.fake.activity_starts), 2)
+
+
+class ActivityFallbackTests(unittest.TestCase):
+    """`_check_activity_fallback`: when a push-to-start was sent and the app never came
+    back with a per-activity token, the phone gets told the plain way instead — the one
+    case where it still gets a direct notification of its own."""
+
+    def setUp(self):
+        pairing = Pairing(token=TOKEN, port=PORT + 3, path=os.devnull)
+        self.server = QueueServer(pairing, Catalog(), push_tokens=PushTokens(os.devnull),
+                                  activity_tokens=ActivityTokens(os.devnull))
+        self.fake = _FakeAPNs()
+        self.server.apns = self.fake
+        self.server.push_tokens.register("phone", "phone-token", "sandbox")
+        self.server.activity_tokens.register_start("start-token", "sandbox")
+
+    def _queue_and_wait_out_the_delay(self):
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        # `apply` only kicks off the push (including `_activity_start_first_sent_at`
+        # getting set) on a background thread, same as it always did — this just gives
+        # it a moment to actually run before rewinding the clock on it.
+        time.sleep(0.05)
+        self.server._activity_start_first_sent_at -= self.server._activity_fallback_delay_seconds + 1
+
+    def test_nothing_before_the_delay_elapses(self):
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.server._check_activity_fallback()
+        self.assertEqual(self.fake.alerts, [])
+
+    def test_the_phone_is_told_once_the_delay_elapses(self):
+        self._queue_and_wait_out_the_delay()
+        self.server._check_activity_fallback()
+        self.assertEqual(len(self.fake.alerts), 1)
+        kind, token, environment, title, body, session_id, _sequence = self.fake.alerts[0]
+        self.assertEqual((kind, token, environment), ("phone", "phone-token", "sandbox"))
+        self.assertEqual((title, body), protocol.activity_fallback_copy())
+        self.assertEqual(session_id, self.server.session.session_id)
+
+    def test_only_once_per_session(self):
+        self._queue_and_wait_out_the_delay()
+        self.server._check_activity_fallback()
+        self.server._check_activity_fallback()
+        self.assertEqual(len(self.fake.alerts), 1)
+
+    def test_nothing_when_the_activity_did_take(self):
+        self._queue_and_wait_out_the_delay()
+        self.server.activity_tokens.register_update(
+            self.server.session.session_id, "activity-token", "sandbox")
+        self.server._check_activity_fallback()
+        self.assertEqual(self.fake.alerts, [])
+
+    def test_registering_an_update_token_cancels_a_pending_fallback(self):
+        # The card arrived late, but it arrived — that's the app saying so.
+        self._queue_and_wait_out_the_delay()
+        self.server.activity_tokens.register_update(
+            self.server.session.session_id, "activity-token", "sandbox")
+        self.server._check_activity_fallback()
+        self.assertEqual(self.fake.alerts, [])
+
+    def test_nothing_when_no_start_was_ever_attempted(self):
+        self.server.activity_tokens.clear()
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.assertIsNone(self.server._activity_start_first_sent_at)
+        self.server._check_activity_fallback()
+        self.assertEqual(self.fake.alerts, [])
+
+    def test_nothing_once_the_queue_has_ended(self):
+        self._queue_and_wait_out_the_delay()
+        self.server.apply(protocol.cancelled("userLeft"))
+        self.server._check_activity_fallback()
+        self.assertEqual(self.fake.alerts, [])
+
+    def test_a_new_queue_gets_its_own_fallback(self):
+        self._queue_and_wait_out_the_delay()
+        self.server._check_activity_fallback()
+        self.server.reset()
+        self._queue_and_wait_out_the_delay()
+        self.server._check_activity_fallback()
+        self.assertEqual(len(self.fake.alerts), 2)
+        self.assertNotEqual(self.fake.alerts[0][5], self.fake.alerts[1][5])
+
+    def test_no_phone_token_yet_does_not_burn_the_one_send(self):
+        # The phone may register a moment from now; this queue should still get told.
+        self.server.push_tokens.forget("phone")
+        self._queue_and_wait_out_the_delay()
+        self.server._check_activity_fallback()
+        self.assertEqual(self.fake.alerts, [])
+
+        self.server.push_tokens.register("phone", "phone-token", "sandbox")
+        self.server._check_activity_fallback()
+        self.assertEqual(len(self.fake.alerts), 1)
 
 
 if __name__ == "__main__":
