@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @main
 struct OverwatchQueueApp: App {
@@ -45,6 +46,9 @@ struct OverwatchQueueApp: App {
             case .active: model.didBecomeActive()
             default: break
             }
+            // Only while actually on screen — held past backgrounding it'd keep the
+            // display awake for no one looking at it.
+            UIApplication.shared.isIdleTimerDisabled = phase == .active
         }
     }
 }
