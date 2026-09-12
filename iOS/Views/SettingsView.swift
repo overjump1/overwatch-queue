@@ -70,7 +70,7 @@ struct SettingsView: View {
         } footer: {
             Text(model.pairing == nil
                  ? "Scan the code in the server window on your PC."
-                 : "Connects to ws://\(model.pairing?.displayText ?? "")/queue over your "
+                 : "Connects to \(model.pairing?.displayText ?? "") over your "
                    + "local network, and reconnects on its own if the PC goes away.")
         }
     }

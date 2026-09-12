@@ -3,9 +3,10 @@ import Foundation
 /// Which PC this device is paired with, and the secret that proves it.
 ///
 /// The PC generates a token once and shows it as a QR code; scanning it is the whole of
-/// setup. The token then goes out in every `hello`, and a server that doesn't recognise
-/// it hangs up — so a flatmate on the same Wi-Fi can't drive your screen, and unpairing
-/// is a button on the PC rather than a reinstall here.
+/// setup. The token is this device's MQTT password against the PC's local broker — a
+/// connection presenting the wrong one is refused before any state reaches this device —
+/// so a flatmate on the same Wi-Fi can't drive your screen, and unpairing is a button on
+/// the PC (which rotates the token and bounces the broker) rather than a reinstall here.
 public struct Pairing: Codable, Hashable, Sendable {
     /// The custom scheme in the QR code, and the app's registered URL type — so a code
     /// scanned in the system camera offers to open the app, and the Live Activity has
@@ -42,15 +43,6 @@ public struct Pairing: Codable, Hashable, Sendable {
         self.host = host
         self.port = fields["port"].flatMap(Int.init) ?? Pairing.defaultPort
         self.token = token
-    }
-
-    public var socketURL: URL? {
-        var components = URLComponents()
-        components.scheme = "ws"
-        components.host = host
-        components.port = port
-        components.path = "/queue"
-        return components.url
     }
 
     public var displayText: String { "\(host):\(port)" }

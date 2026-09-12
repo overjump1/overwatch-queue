@@ -15,6 +15,20 @@ The queue itself is read the same way and by default: the banner at the top of t
 says whether you are searching, in which mode, and for how long, and the server moves the
 phase to match with nobody pressing anything. That half only ever looks — it never takes
 the mouse — so it is on unless `--no-queue-vision` says otherwise.
+
+Battle.net itself already knows whether you're queueing — Overwatch tells Blizzard's
+presence service, which tells Battle.net — and that keeps working while Overwatch isn't
+the foreground window, which is exactly the screen's blind spot. Once it's answered
+once, it takes over deciding whether a queue is running, what mode it's in, and whether
+it's just found a match; a role-select screen (which Battle.net also reports as "in
+queue") holds that off until vision confirms it's actually closed, or falls back to
+trusting Battle.net outright wherever vision can't see at all. The screen still keeps
+what presence can't give at all — the queue timer, map vote, hero select — and its own
+fast match-found check keeps running too, so whichever notices first wins. If Battle.net
+closes or its debug port stops answering, it's relaunched automatically and the paired
+phone/watch are told it disconnected. `--no-presence` turns all of this off; on by
+default, it only ever reads (a websocket to Battle.net's own debug port, or a plain
+read of Battle.net's own process memory — Overwatch itself is never touched).
 """
 from __future__ import annotations
 
@@ -25,7 +39,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from owqserver import qr                                          # noqa: E402
+from owqserver import bnetpresence, qr                             # noqa: E402
 from owqserver.catalog import Catalog                             # noqa: E402
 from owqserver.controls import Controls                           # noqa: E402
 from owqserver.pairing import Pairing, local_addresses            # noqa: E402
@@ -49,6 +63,16 @@ def main():
                         help="never read the game screen or move the mouse")
     parser.add_argument("--no-queue-vision", action="store_true",
                         help="don't watch the screen for a queue; drive it by hand")
+    parser.add_argument("--no-presence", action="store_true",
+                        help="don't ask Battle.net what you're doing")
+    parser.add_argument("--presence-source", choices=("auto", "cdp", "memory", "off"),
+                        default="auto",
+                        help="how to read Battle.net's presence (default: try its debug "
+                             "port, then fall back to reading its own process memory)")
+    parser.add_argument("--battlenet-port", type=int,
+                        default=bnetpresence.DEFAULT_CDP_PORT,
+                        help="Battle.net's --remote-debugging-port, if you've enabled one "
+                             "(default: %d)" % bnetpresence.DEFAULT_CDP_PORT)
     options = parser.parse_args()
 
     pairing = Pairing.load()
@@ -60,7 +84,10 @@ def main():
         print("New pairing token. Every device has to scan again.")
 
     server = QueueServer(pairing, Catalog(), vision_enabled=not options.no_vision,
-                         queue_vision_enabled=not options.no_queue_vision)
+                         queue_vision_enabled=not options.no_queue_vision,
+                         presence_enabled=not options.no_presence,
+                         presence_source=options.presence_source,
+                         presence_port=options.battlenet_port)
 
     if options.headless:
         return run_headless(server)

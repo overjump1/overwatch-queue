@@ -221,7 +221,7 @@ extension WatchLink: WCSessionDelegate {
 #endif
 
 /// The watch's `QueueTransport`: state arrives from the paired iPhone, commands go back
-/// the same way. Swapping this for `WebSocketTransport` is all it takes to make the watch
+/// the same way. Swapping this for `MQTTTransport` is all it takes to make the watch
 /// talk to the PC directly.
 @MainActor
 public final class WatchRelayTransport: QueueTransport {

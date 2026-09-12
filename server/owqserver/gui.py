@@ -11,6 +11,7 @@ way to reach a widget from another thread.
 from __future__ import annotations
 
 import threading
+import time
 
 from PyQt6.QtCore import Qt, QObject, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QImage, QPixmap
@@ -19,7 +20,7 @@ from PyQt6.QtWidgets import (QCheckBox, QComboBox, QFrame, QGridLayout, QGroupBo
                              QMessageBox, QPlainTextEdit, QPushButton, QSizePolicy,
                              QSlider, QVBoxLayout, QWidget)
 
-from . import protocol, qr, queueroles, queuevision, queuewatch, vision
+from . import bnetpresence, protocol, qr, queuepresence, queueroles, queuevision, queuewatch, vision
 from .controls import Controls
 from .pairing import local_addresses
 from .queueserver import SCENARIOS
@@ -36,6 +37,14 @@ QUEUE_STATE_NAMES = {
     queuewatch.SEARCHING_IN_GAME: "Searching, in a game",
     queuewatch.SEARCHING_HIDDEN: "Searching, banner out of sight",
     queuewatch.GAME_FOUND: "Game found",
+}
+
+PRESENCE_STATE_NAMES = {
+    queuepresence.QUEUEING: "In a queue",
+    queuepresence.IN_GAME: "In a game",
+    queuepresence.MENUS: "In the menus",
+    queuepresence.PLAYING_OTHER: "Playing something else in Overwatch",
+    queuepresence.ELSEWHERE: "Playing something other than Overwatch",
 }
 
 PHASE_NAMES = {"idle": "Idle", "searching": "Searching", "matchFound": "Match found",
@@ -150,8 +159,10 @@ class ControlPanel(QMainWindow):
         # rather than from the poll thread.
         self._queue_tick = QTimer(self)
         self._queue_tick.timeout.connect(self._refresh_queue_vision)
+        self._queue_tick.timeout.connect(self._refresh_presence)
         self._queue_tick.start(1000)
         self._refresh_queue_vision()
+        self._refresh_presence()
 
     # ------------------------------------------------------------ layout
 
@@ -174,7 +185,7 @@ class ControlPanel(QMainWindow):
         right.setSpacing(14)
         for panel in (self._queue_box(), self._jump_box(), self._scenario_box(),
                       self._options_row(), self._vision_row(),
-                      self._queue_vision_row()):
+                      self._queue_vision_row(), self._presence_row()):
             panel.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
             right.addWidget(panel)
         right.addWidget(self._log_box(), 1)      # only the log takes the slack
@@ -393,6 +404,40 @@ class ControlPanel(QMainWindow):
         layout.addWidget(self.queue_state)
         return row
 
+    def _presence_row(self) -> QWidget:
+        row = QFrame()
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(4, 0, 4, 0)
+        layout.setSpacing(4)
+
+        self.ask_battlenet = QCheckBox("Ask Battle.net what you're doing")
+        self.ask_battlenet.setChecked(self.server.presence_enabled)
+        self.ask_battlenet.setEnabled(bnetpresence.PRESENCE_AVAILABLE)
+        self.ask_battlenet.toggled.connect(self._presence_changed)
+        layout.addWidget(self.ask_battlenet)
+
+        if bnetpresence.PRESENCE_AVAILABLE:
+            note = ("Reads Battle.net's own rich presence and, once it's answered "
+                    "once, takes over deciding whether a queue is running, what mode "
+                    "it's in, and whether it's found a match — the screen keeps the "
+                    "timer, map vote and hero select, which presence can't give, and "
+                    "still runs its own fast match-found check too. A role-select "
+                    "screen (which Battle.net also reports as \"in queue\") is held "
+                    "off until vision confirms it's actually closed. Keeps working "
+                    "while Overwatch isn't the foreground window. If Battle.net closes "
+                    "or stops answering, its debug port is relaunched automatically "
+                    "and the paired phone/watch are told it disconnected. Only ever "
+                    "reads; Overwatch itself is never touched.")
+        else:
+            note = "Only available on Windows, where Battle.net itself runs."
+        layout.addWidget(_muted(note, wrap=True))
+
+        self.presence_state = QLabel("Not asking.")
+        self.presence_state.setObjectName("presence")
+        self.presence_state.setWordWrap(True)
+        layout.addWidget(self.presence_state)
+        return row
+
     def _log_box(self) -> QGroupBox:
         box = QGroupBox("Traffic")
         layout = QVBoxLayout(box)
@@ -412,9 +457,18 @@ class ControlPanel(QMainWindow):
             if watcher is not None:
                 watcher.on_role_detected = self._bridge.role_scanned.emit
         elif self.server.queue_watcher:
+            # Stops the screen thread only — the tracker itself stays alive, since
+            # presence may still be feeding it even with the screen no longer watched.
             self.server.queue_watcher.stop()
-            self.server.queue_watcher = None
         self._refresh_queue_vision()
+
+    def _presence_changed(self, on: bool):
+        self.server.presence_enabled = on and bnetpresence.PRESENCE_AVAILABLE
+        if on:
+            self.server.watch_queue(self.controls)
+        else:
+            self.server.stop_presence()
+        self._refresh_presence()
 
     def _refresh_queue_vision(self):
         watcher = self.server.queue_watcher
@@ -447,8 +501,41 @@ class ControlPanel(QMainWindow):
             ORANGE if seen.state == queuewatch.GAME_FOUND else WHITE)
 
     def _say_queue(self, text: str, colour: str):
-        self.queue_state.setText(text)
-        self.queue_state.setStyleSheet("color: %s;" % colour)
+        self._say(self.queue_state, text, colour)
+
+    def _refresh_presence(self):
+        watcher = self.server.presence_watcher
+        if not watcher or not watcher.running:
+            return self._say_presence("Not asking.", MUTED)
+
+        seen = watcher.latest
+        if seen is None:
+            return self._say_presence("Battle.net — connecting…", MUTED)
+        if watcher.dead:
+            return self._say_presence(
+                "Battle.net disconnected — reconnecting (relaunching it if it's "
+                "closed), and running on the screen alone until it answers again.",
+                ORANGE)
+        if not seen.known:
+            return self._say_presence("Battle.net isn't answering.", MUTED)
+
+        age = max(0, int(time.monotonic() - seen.at))
+        detail = "%r" % seen.text if seen.text else PRESENCE_STATE_NAMES.get(
+            seen.state, seen.state)
+        note = "%s · %s ago" % (detail, _clock(age))
+        if seen.state == queuepresence.QUEUEING and seen.mode is None:
+            # The mode word wasn't in the table — the one case worth calling out here
+            # rather than only in `presence_debug.py`, since it's the signal to add it.
+            note += " · mode not in the table"
+        self._say_presence(note, WHITE)
+
+    def _say_presence(self, text: str, colour: str):
+        self._say(self.presence_state, text, colour)
+
+    @staticmethod
+    def _say(label, text: str, colour: str):
+        label.setText(text)
+        label.setStyleSheet("color: %s;" % colour)
 
     def _sync_mode_picker(self):
         """Follows `controls.mode` when the watcher has changed it underneath the panel.
@@ -591,8 +678,7 @@ class ControlPanel(QMainWindow):
         self.pairing.regenerate()
         self.server.push_tokens.clear()
         self.server.activity_tokens.clear()
-        for client in self.server.ws.clients:
-            client.close(reason="unpaired")
+        self.server.restart_broker()
         self._refresh_qr()
         self.server.log("New pairing token — every device has to scan again")
 

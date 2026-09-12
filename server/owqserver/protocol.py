@@ -22,14 +22,6 @@ ROLE_QUEUE_MODES = {"quickPlay", "competitive", "stadium"}
 # Mystery Heroes assigns your hero, so it goes straight from matchFound to inGame.
 NO_HERO_SELECT_MODES = {"mysteryHeroes"}
 
-# Mirrors `QueuePhase.isUrgent` — the phases that get a real alert (sound, haptic, a brief
-# peek) on their Live Activity push, the way a delivery app announces a status change
-# without a separate notification alongside it. Routine changes stay silent.
-# No longer just the kinds worth interrupting the phone's own notification centre for —
-# see `QueueServer._push_activity` for the alert every one of these now also gets on the
-# Live Activity itself, `searching` and `inGame` included, the way a transit app buzzes at
-# every stop rather than only the ones it judges important.
-URGENT_KINDS = {"matchFound", "mapVote", "heroSelect"}
 
 _NOTIFICATION_TITLES = {
     "searching": "Queue Started",
@@ -61,9 +53,10 @@ def notification_copy(kind: str):
 def activity_fallback_copy():
     """`(title, body)` for the notification sent when a Live Activity never appeared.
 
-    Not `notification_copy`: that copy announces an urgent phase, and this is only ever
-    sent for a routine one (an urgent phase already got a real alert of its own). It has to
-    earn the interruption on its own terms, so it says what happened and what tapping does.
+    Not `notification_copy`: that copy announces a phase change on a card the player
+    can already see, and this is only ever sent once push-to-start has plainly failed to
+    produce one at all. It has to earn the interruption on its own terms, so it says what
+    happened and what tapping does.
 
     Unlike the copy above there's no Swift counterpart to keep in step — nothing on the
     device composes this text, it only ever arrives already written.
@@ -214,8 +207,21 @@ def envelope(body: dict) -> str:
     return json.dumps({"v": VERSION, "body": body}, separators=(",", ":"))
 
 
-def heartbeat() -> str:
-    return envelope({"type": "heartbeat", "data": {"serverTime": iso(now())}})
+def heartbeat(presence_degraded: bool = False) -> str:
+    """A fresh timestamp, published every few seconds — not for liveness any more (MQTT's
+    own keepalive/LWT covers that, see `mqttclient.py`), but because it's the sample the
+    client trusts for clock re-anchoring: fresh by construction, unlike a snapshot that
+    can sit retained/relayed for an unknown age. See `QueueStore.observeClock` (Swift).
+
+    `presenceDegraded` rides along on the same message rather than a message of its own:
+    it changes at most as often as Battle.net's own connection does, so there's nothing
+    for a dedicated topic to buy that a field on an already-periodic broadcast doesn't.
+    True means Battle.net's presence link has gone quiet — see `bnetpresence.
+    PresenceWatcher.dead` — so the app is running on the screen alone again, exactly as
+    it always did before presence was ever involved; it is not itself an error, just
+    something worth a player being able to see rather than a silent downgrade."""
+    return envelope({"type": "heartbeat",
+                     "data": {"serverTime": iso(now()), "presenceDegraded": bool(presence_degraded)}})
 
 
 def pong(client_time: float) -> str:

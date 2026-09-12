@@ -136,7 +136,7 @@ public final class AppModel {
         let identity = ClientIdentity(kind: .phone,
                                       name: UIDevice.current.name,
                                       appVersion: Bundle.main.appVersion)
-        store.use(WebSocketTransport(pairing: pairing, identity: identity))
+        store.use(MQTTTransport(pairing: pairing, identity: identity))
     }
 
     // MARK: - Push notifications
@@ -238,8 +238,8 @@ public final class AppModel {
     /// background.
     ///
     /// The assertion is the point. Without one iOS is free to suspend the process as soon
-    /// as the `transferUserInfo` delivery returns, which is long before a WebSocket has
-    /// finished opening — the reconnect would be started and then frozen mid-handshake,
+    /// as the `transferUserInfo` delivery returns, which is long before an MQTT connection
+    /// has finished opening — the reconnect would be started and then frozen mid-handshake,
     /// and the pick would sit in `pendingCommands` until the player next opened the app.
     /// It is deliberately separate from the drain assertion in `didEnterBackground`: that
     /// one is winding the socket down and would end this one out from under us.

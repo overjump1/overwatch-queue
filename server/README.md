@@ -1,7 +1,10 @@
 # Overwatch Queue Server
 
 What the phone and the watch talk to. It runs on the PC, holds the queue state, and
-pushes it to every paired device over a WebSocket.
+pushes it to every paired device over MQTT, via a local Mosquitto broker this server
+starts and manages on your behalf — no config file to write, no service to set up by
+hand, just [Mosquitto itself](https://mosquitto.org/download/) installed and on `PATH`
+(or its binaries dropped into `server/vendor/mosquitto/`).
 
 Half of it reads the game. The queue banner at the top of the screen is watched
 continuously, so *searching* and *match found* happen on their own; whichever role is
@@ -21,8 +24,9 @@ pip install -r server/requirements.txt
 python3 server/run.py
 ```
 
-PyQt6 is the only dependency, and only for the window — everything else is the standard
-library, including the QR encoder. Python 3.8 or newer.
+PyQt6 (the window) and `paho-mqtt` (talking to the local broker) are the only Python
+dependencies — everything else is the standard library, including the QR encoder. Python
+3.8 or newer. Mosquitto itself is a separate, non-Python install — see above.
 
 ## Pairing
 
@@ -34,16 +38,18 @@ Scanning is the only way in: the app has no address-and-token form, so there is 
 to mistype. Settings offers pair and unpair, and nothing else.
 
 Behind it is a random token, generated once and kept in `~/.overwatch-queue/pairing.json`.
-Every device sends it back in its first message, and a connection that doesn't present it
-is closed — a LAN is not a private place, and nobody else on your Wi-Fi should be able to
-drive the screen on your wrist. **New token** invalidates every paired device at once.
+It doubles as the password every device's MQTT connection has to present, and a
+connection with the wrong one is refused by the broker itself — a LAN is not a private
+place, and nobody else on your Wi-Fi should be able to drive the screen on your wrist.
+**New token** rewrites the broker's credentials and bounces it, invalidating every paired
+device at once.
 
 If your PC has more than one address — a VPN, Docker, a second NIC — pick the one the
 phone can reach from the dropdown; the code redraws for whichever you choose.
 
 ## Push notifications (optional)
 
-The WebSocket only reaches a device that's holding it open — the moment the phone's
+MQTT only reaches a device that's holding a connection open — the moment the phone's
 screen locks or the watch drifts out of range, that stops being true. Apple Push
 Notification service is how the PC reaches them anyway: it pushes a snapshot to Apple's
 servers, and Apple delivers it even to a fully backgrounded app. See
@@ -244,7 +250,8 @@ owqserver/
   queuedigits.py  reads the timer on it, and learns its digits from it
   queuewatch.py   turns a stream of frames into a queue, and tells the server
   vision.py       reads the hero-select screen, and clicks on it
-  wsserver.py     a small RFC 6455 WebSocket server
+  mqttbroker.py   starts, stops and configures the local Mosquitto broker
+  mqttclient.py   the server's own connection to that broker
   protocol.py     the wire format from docs/PROTOCOL.md
   pairing.py      the token, where it's stored, and the addresses to offer
   pushtokens.py   registered APNs device tokens, one per phone/watch
@@ -253,7 +260,9 @@ owqserver/
   pushrelay.py    talks to the maintainer's relay instead — see ../relay/
   qr.py           a QR encoder, so none of the above needs installing
   catalog.py      hero and map keys, read from the app's own catalog
-tests/            unittest; no dependencies, and the GUI tests run offscreen
+tests/            unittest; the GUI tests run offscreen. test_server.py is the one real
+                  dependency: it starts an actual Mosquitto broker, so it needs
+                  `mosquitto`/`mosquitto_passwd` installed and reachable to run.
 ```
 
 ```bash

@@ -6,21 +6,54 @@ other tests in that file fail if the format ever drifts from this document.
 
 ## Transport
 
-A WebSocket:
+MQTT, against a local broker the PC server itself starts and manages (Eclipse Mosquitto —
+see `server/owqserver/mqttbroker.py`). Previously a hand-rolled WebSocket server; that had
+no redelivery for a client whose write failed (a backgrounded phone, a flaky Wi-Fi), so a
+snapshot could be silently dropped with nothing to recover it short of the next unrelated
+state change. MQTT's retained messages and QoS 1 close that gap at the transport level
+instead of needing app-level acks.
 
-```
-ws://<pc-ip>:8787/queue
-```
+Plain TCP, port 8787 by default, no transport encryption — the same LAN-only stance the
+WebSocket server always had (see [Pairing](#pairing)).
 
-Text or binary frames, both accepted. The phone connects, sends `hello` **carrying its
-pairing token**, and the server replies with a `snapshot` — or refuses the connection.
-See [Pairing](#pairing) below. The client reconnects on its own with
-exponential backoff (capped at 30s) and treats 30 seconds of total silence as a dead
-connection, so **send a `heartbeat` at least every ~15 seconds** even when nothing changes.
+### Topics
+
+| Topic | Direction | QoS | Retained | Carries |
+|---|---|---|---|---|
+| `owq/snapshot` | server → all | 1 | yes | `snapshot` |
+| `owq/heartbeat` | server → all | 0 | no | `heartbeat` |
+| `owq/command/<clientID>` | client → server | 1 | no | every client→server message |
+| `owq/reply/<clientID>` | server → one client | 0 | no | `pong`, `error` |
+| `owq/presence/<clientID>` | either | 1 | yes | `{"online": bool}` |
+
+`<clientID>` is the MQTT client ID a phone or watch connects with — stable across
+relaunches (so a fresh install doesn't leave a stale `owq/presence/<old-id>` claiming a
+dead device is online), unique per install. The server has no socket to read an identity
+off any more, so it tracks each device purely by this ID; `owq/command/<clientID>` (rather
+than one shared command topic) is what tells connections apart without needing the payload
+itself to carry an ID.
+
+`owq/snapshot` being **retained** is the core reliability property: any client that
+(re)subscribes — after a dead Wi-Fi, a cold launch, the watch's direct-connect fallback
+coming up — gets the current state instantly, with no round trip and no dependency on a
+new state change happening to arrive. `owq/heartbeat` is **not** retained, deliberately: a
+client trusts its freshness for clock re-anchoring (see `ping`/`pong` below), and a stale
+retained heartbeat would defeat that.
+
+### Auth
+
+The pairing token is this connection's MQTT **password** (username `owq`) — see
+[Pairing](#pairing). A wrong or missing one is refused by the broker at `CONNECT`, before
+any application code or state is reachable; there is no more app-level accept-then-reject
+handshake. Each device also sets a **Last Will** on its own `owq/presence/<clientID>`
+(`{"online":false}`, retained) so the broker itself reports it gone the moment the
+connection actually dies — this, plus the broker's own keepalive, is what replaced the old
+socket-level heartbeat's liveness role. `owq/heartbeat` still exists, but purely for clock
+sync (see `ping`/`pong`), not liveness.
 
 The iOS client is configured for cleartext on the local network
-(`NSAllowsLocalNetworking`), so plain `ws://` to a LAN address works. The first connection
-triggers iOS's local-network permission prompt.
+(`NSAllowsLocalNetworking`), so a plain TCP connection to a LAN address works. The first
+connection triggers iOS's local-network permission prompt.
 
 ## Envelope
 
@@ -62,11 +95,28 @@ send, and the client is built to accept it at any time.
 | `serverTime` | Your clock, right now. The client measures the offset against its own and corrects every timer, so a PC clock a few seconds off doesn't skew displayed wait times. |
 | `phase` | See below. |
 
-### `heartbeat` — liveness
+### `heartbeat` — a fresh clock sample
 
 ```json
-{"v":1,"body":{"type":"heartbeat","data":{"serverTime":"2023-11-14T22:13:20Z"}}}
+{"v":1,"body":{"type":"heartbeat","data":{"serverTime":"2023-11-14T22:13:20Z","presenceDegraded":false}}}
 ```
+
+Published to `owq/heartbeat` every ~10 seconds while the server is running. No longer a
+liveness signal (MQTT's own keepalive and each client's Last Will cover that) — its only
+remaining job is giving a connected client a `serverTime` fresh enough to trust for clock
+re-anchoring; see `ping`/`pong` below for why a snapshot's `serverTime` isn't used for this.
+
+`presenceDegraded` is `true` whenever the server was asked to read Battle.net's own
+presence and that link has gone quiet — Battle.net closed, crashed, or its debug port
+stopped answering (see `owqserver.bnetpresence.PresenceWatcher.dead`). It rides along on
+the heartbeat rather than a message of its own, since it changes at most as often as
+Battle.net's connection does — there's nothing a dedicated topic buys over a field on an
+already-periodic broadcast. `false` covers both "presence is fine" and "presence was
+never asked for" — the app is simply running on the screen alone in either case, exactly
+as it always did before presence was ever involved. **Not yet decoded by the Swift
+client** — `Shared/Protocol/WireProtocol.swift`'s `.heartbeat` case and its `WireCoding`
+would need the field added to actually surface a disconnect notice on the phone/watch;
+this document and the server side are ahead of it.
 
 ### `pong` — the answer to `ping`, for verifying the clock
 
@@ -95,10 +145,12 @@ Codes the server in `server/` uses:
 
 | Code | Meaning |
 |---|---|
-| `pairing_required` | The `hello` had no token, or the wrong one. The connection is closed straight after. |
-| `unpaired` | A command arrived before any `hello`. |
 | `no_cancel` | A `cancelQueue` that couldn't be honoured. The next `snapshot` still holds the true state. |
 | `version` | The client speaks a protocol version this server doesn't. |
+
+A bad or missing pairing token is no longer an app-level error: the broker refuses the
+`CONNECT` outright (see [Transport](#transport)), so a connection that made it far enough
+to receive any reply has already proven it holds the right token.
 
 ## Pairing
 
@@ -107,30 +159,34 @@ same Wi-Fi shouldn't be able to drive the screen on your wrist. So the PC genera
 random token, shows it as a QR code, and refuses every connection that doesn't present it.
 
 1. The server generates a UUID token on first run and stores it (in
-   `~/.overwatch-queue/pairing.json`). It survives restarts, so pairing is a one-time act.
+   `~/.overwatch-queue/pairing.json`, alongside a second, never-shown password the server
+   itself uses to talk to its own broker — see `mqttbroker.py`). It survives restarts, so
+   pairing is a one-time act.
 2. It shows a QR code carrying everything the phone needs:
 
    ```
    owq://pair?host=192.168.1.14&port=8787&token=3f2504e0-4f89-41d3-9a0c-0305e82c3301
    ```
 
-   `port` may be omitted, and defaults to 8787. The iOS app registers `owq` in
-   `CFBundleURLTypes`, so the system camera can hand the code straight to it rather than
-   decoding a string with nowhere to go.
-3. The phone scans it, keeps it, and sends the token in every `hello`.
-4. A `hello` with a missing or wrong token gets an `error` with code `pairing_required`,
-   and then a close with status **1008**. No snapshots are ever sent to a connection that
-   hasn't presented the token.
-5. A connection that sends no `hello` within ten seconds is closed the same way.
+   `port` may be omitted, and defaults to 8787 — now the MQTT broker's port rather than a
+   WebSocket's. The iOS app registers `owq` in `CFBundleURLTypes`, so the system camera can
+   hand the code straight to it rather than decoding a string with nowhere to go.
+3. The phone scans it, keeps it, and connects to the broker with it as its MQTT password
+   (username `owq`).
+4. A connection presenting a missing or wrong password is refused by the broker at
+   `CONNECT` — no error message is possible at that point, since the connection never
+   completes. There's nothing to distinguish "wrong token" from "broker unreachable" on
+   this side beyond the connection simply never succeeding; a client should surface that
+   as "not paired — re-scan the code" after a few failed attempts.
 
-The phone passes the token on to its watch, so one scan configures both; expect the same
-token from more than one client, and `kind` is what tells them apart. Both may be
-connected at once, and both should get every snapshot.
+The phone passes the token on to its watch, so one scan configures both; both connect with
+the same username/password but their own `owq/command/<clientID>` topic, and both should
+get every `owq/snapshot`.
 
-Generating a new token on the PC unpairs every device at once, which is the recovery path
-if a token leaks. There is no transport encryption: this is a token on a LAN, not a
-credential worth stealing, and adding TLS would mean certificates for a machine that has
-no name.
+Generating a new token on the PC rewrites the broker's password file and bounces it,
+dropping every connected device at once — the recovery path if a token leaks. There is no
+transport encryption: this is a token on a LAN, not a credential worth stealing, and adding
+TLS would mean certificates for a machine that has no name.
 
 ## Phases
 
@@ -260,9 +316,11 @@ Sent when the player acts on the phone or the watch.
 {"v":1,"body":{"type":"diagnostic","data":{"message":"Live Activity: started 24C67173-AADE"}}}
 ```
 
-`kind` is `phone` or `watch`. `token` is the pairing token — see [Pairing](#pairing).
-It is optional in the schema so a server can choose not to require one, but the server
-in `server/` always does.
+`kind` is `phone` or `watch`. `token` in `hello` is a holdover from the WebSocket-era
+protocol and is no longer read by `server/` — the pairing token now gates the MQTT
+connection itself (see [Pairing](#pairing)), so `hello` is purely an identity
+announcement (which kind of device this is, for the device list and for filing push
+tokens). Still accepted and still optional in the schema, for a server built differently.
 
 `cancelQueue` is **best effort** — it means "leave the queue, or bail out of the match if
 you still can". Overwatch often won't let you, and the client expects that. If it doesn't
@@ -375,8 +433,8 @@ Activity push's `content-state` is decoded with a plain `JSONDecoder`, not this 
 not an ISO-8601 string and not a 1970 Unix timestamp. `server/owqserver/protocol.py`'s
 `content_state()` is the reference implementation.
 
-This is unrelated to the WebSocket above — a push is how the PC reaches a device that
-currently holds no socket open at all (screen locked, app killed, watch out of range).
+This is unrelated to the MQTT transport above — a push is how the PC reaches a device that
+currently holds no connection open at all (screen locked, app killed, watch out of range).
 The server in `server/` needs an Apple Push Notification Auth Key to send these, and by
 default reaches Apple through [`relay/`](../relay/README.md) — a small hosted service
 that holds that key so no installed copy of the server has to — rather than talking to
@@ -391,8 +449,10 @@ exactly as it does today.
 game — which is what makes every screen in the app testable before any game detection
 exists. See [server/README.md](../server/README.md).
 
-If you're writing another one, the smallest thing worth having: accept the WebSocket,
-check the token in `hello`, keep a `sequence` counter and a `sessionID`, send a `snapshot`
-on connect and on every state change, send a `heartbeat` every 10 seconds, and log the
-commands you receive. That alone drives every screen in the app. Acting on `voteMap` /
+If you're writing another one, the smallest thing worth having: run a local MQTT broker
+with the pairing token as a connecting client's password, keep a `sequence` counter and a
+`sessionID`, publish a retained `snapshot` to `owq/snapshot` on every state change (and once
+at startup, so a client connecting before anything has happened yet still gets one), publish
+a `heartbeat` to `owq/heartbeat` every 10 seconds, and log the commands you receive on
+`owq/command/+`. That alone drives every screen in the app. Acting on `voteMap` /
 `selectHero` inside the game can come later.

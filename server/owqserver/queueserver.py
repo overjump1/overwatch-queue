@@ -13,23 +13,25 @@ import random
 import threading
 import time
 
-from . import protocol, queuemapvote, queueroles, queuevision, queuewatch, vision
+from . import bnetpresence, protocol, queuemapvote, queueroles, queuevision, queuewatch, vision
 from .activitytokens import ActivityTokens
 from .apns import APNsClient, APNsConfig
 from .heroimages import TemplateStore
 from .protocol import QueueSession
 from .pushrelay import PushRelayClient, PushRelayConfig
 from .pushtokens import PushTokens
-from .wsserver import CLOSE_POLICY_VIOLATION, WebSocketServer
+from .mqttbroker import MQTTBroker, SERVER_USER
+from .mqttclient import MQTTClient
 
+# Not a liveness check any more (MQTT's own keepalive/LWT covers that) — just how often
+# a connected client gets a fresh clock sample to re-anchor against. See `_tick_loop`.
 HEARTBEAT_SECONDS = 10
-# A client that hasn't said a valid hello by then is not a phone of ours.
-HELLO_TIMEOUT_SECONDS = 10
 
 
 class QueueServer:
     def __init__(self, pairing, catalog, log=None, push_tokens=None, activity_tokens=None,
-                 vision_enabled=False, queue_vision_enabled=False):
+                 vision_enabled=False, queue_vision_enabled=False, presence_enabled=False,
+                 presence_source="auto", presence_port=bnetpresence.DEFAULT_CDP_PORT):
         self.pairing = pairing
         self.catalog = catalog
         self.session = QueueSession()
@@ -58,7 +60,18 @@ class QueueServer:
         # would find its phase moving underneath it.
         self.queue_vision_enabled = (bool(queue_vision_enabled) and
                                      queuevision.QUEUE_VISION_AVAILABLE)
+        # Asking Battle.net is opt-in for the same reason as the two above: it only ever
+        # reads (a debug-port websocket, or a plain `ReadProcessMemory` on Battle.net's
+        # own process — Overwatch itself is never touched), but it *drives the session on
+        # its own*, so a test that built a server with it on would find its phase moving
+        # underneath it, and worse, would open a process handle on whatever Battle.net
+        # happened to be running on the machine the tests execute on.
+        self.presence_enabled = (bool(presence_enabled) and
+                                 bnetpresence.PRESENCE_AVAILABLE)
+        self.presence_source = presence_source
+        self.presence_port = presence_port
         self.queue_watcher = None
+        self.presence_watcher = None
         self.templates = TemplateStore(catalog, log=lambda message: self.log(message))
         self.role_templates = queueroles.RoleIconStore(log=lambda message: self.log(message))
         # Where each hero sat the last time we looked, so picking one doesn't have to pay
@@ -89,12 +102,12 @@ class QueueServer:
         self._activity_started_at = None
         self._activity_start_last_sent_at = 0.0
         self._activity_start_retry_seconds = 20
+        self._activity_start_first_sent_at = None
         # ...and when the retries don't take either, `_check_activity_fallback` gives up on
-        # the Live Activity and sends a plain notification instead. Apple accepts a
+        # the Live Activity and sends the phone a plain notification instead — the one
+        # thing that demonstrably arrives when push-to-start doesn't. Apple accepts a
         # push-to-start with a 200 whether or not it ever delivers one, so the only thing
         # this side can observe is the app never coming back with a per-activity token.
-        # Wait that out, then say it the one way that demonstrably arrives.
-        self._activity_start_first_sent_at = None
         self._activity_fallback_sent_for = None
         self._activity_fallback_delay_seconds = 15
         # The phase an update alert was last sent for, so a patch to the *same* phase's
@@ -103,15 +116,17 @@ class QueueServer:
         self._last_activity_kind = None
         self.apns = self._make_push_client()
 
-        self.ws = WebSocketServer(port=pairing.port,
-                                  on_open=self._client_connected,
-                                  on_message=self._client_said,
-                                  on_close=self._client_gone,
-                                  # Resolved late: the GUI replaces `log` after the
-                                  # server is built, and socket-level messages should
-                                  # follow it there rather than into the original.
-                                  log=lambda message: self.log(message))
-        self._heartbeat = None
+        self.broker = MQTTBroker(port=pairing.port, log=lambda message: self.log(message))
+        self.mqtt = MQTTClient(host="127.0.0.1", port=pairing.port,
+                               username=SERVER_USER, password=pairing.server_password,
+                               on_open=self._client_connected,
+                               on_message=self._client_said,
+                               on_close=self._client_gone,
+                               # Resolved late: the GUI replaces `log` after the
+                               # server is built, and broker-level messages should
+                               # follow it there rather than into the original.
+                               log=lambda message: self.log(message))
+        self._activity_timer = None
         self._running = False
 
     def _make_push_client(self):
@@ -127,43 +142,106 @@ class QueueServer:
     # ------------------------------------------------------------ lifecycle
 
     def start(self):
-        self.ws.port = self.pairing.port
-        self.ws.start()
+        self.broker.port = self.pairing.port
+        self.broker.start(self.pairing.token, self.pairing.server_password)
+        self.mqtt.port = self.pairing.port
+        self.mqtt.password = self.pairing.server_password
+        self.mqtt.start()
+        # Seeds the retained topic with the current state immediately, so a phone that
+        # connects before anything has actually changed yet — the common case, right
+        # after pairing — still gets a snapshot the instant it subscribes, rather than
+        # waiting on the first real state change to populate `owq/snapshot` at all.
+        self.mqtt.publish_snapshot(self.session.snapshot())
         self._running = True
-        self._heartbeat = threading.Thread(target=self._heartbeat_loop, daemon=True,
-                                           name="heartbeat")
-        self._heartbeat.start()
+        self._activity_timer = threading.Thread(target=self._tick_loop,
+                                                 daemon=True, name="server-tick")
+        self._activity_timer.start()
         self.log("Listening on port %d" % self.pairing.port)
 
+    def restart_broker(self):
+        """Rotates auth and bounces the broker — used after the pairing token changes,
+        since that's the only way to force every previously-paired device off."""
+        self.broker.restart(self.pairing.token, self.pairing.server_password)
+
     def watch_queue(self, controls):
-        """Starts reading the queue off the screen, and returns the watcher or None.
+        """Starts reading the queue — off the screen, off Battle.net's own presence, or
+        both — and returns the `QueueWatcher` (which holds the shared tracker either way)
+        or `None` if neither is enabled.
 
         Takes the panel's `Controls` rather than building its own, because the mode and
         role a queue is in are only half readable — see `queuewatch.QueueWatcher`. Called
         from `run.py` and the panel; doing it here keeps the enabled-or-not decision in
         the one place that already makes it for hero select.
+
+        The two channels share one tracker on purpose: a presence-only server (no
+        `opencv`/`mss` needed at all) still gets a fully working `QueueWatcher` with its
+        screen thread simply never started, and enabling vision later just starts that
+        thread against the tracker presence has already been talking to.
         """
-        if not self.queue_vision_enabled or self.queue_watcher is not None:
+        if not self.queue_vision_enabled and not self.presence_enabled:
             return self.queue_watcher
-        self.queue_watcher = queuewatch.QueueWatcher(
-            controls, log=lambda message: self.log(message),
-            role_templates=self.role_templates,
-            hero_templates=self.templates, hero_keys=self.hero_keys)
-        self.queue_watcher.start()
+        if self.queue_watcher is None:
+            self.queue_watcher = queuewatch.QueueWatcher(
+                controls, log=lambda message: self.log(message),
+                role_templates=self.role_templates,
+                hero_templates=self.templates, hero_keys=self.hero_keys)
+        if self.queue_vision_enabled and not self.queue_watcher.running:
+            self.queue_watcher.start()
+        if self.presence_enabled and self.presence_watcher is None:
+            source = bnetpresence.open_source(prefer=self.presence_source,
+                                              port=self.presence_port,
+                                              log=lambda message: self.log(message))
+            self.presence_watcher = queuewatch.PresenceWatcher(
+                source, self.queue_watcher.fold_presence,
+                fold_lost=self.queue_watcher.fold_presence_lost,
+                reopen=self._reopen_presence,
+                log=lambda message: self.log(message))
+            self.presence_watcher.start()
         return self.queue_watcher
+
+    def _reopen_presence(self):
+        """Tried by `PresenceWatcher` on every poll while its source is declared dead.
+
+        `relaunch=True` here — and only here — is what lets Battle.net having closed
+        or crashed out from under an already-established connection recover on its
+        own: `bnetpresence.launch_battlenet` starts it back up, but only when it isn't
+        running at all, never interrupting one that's merely lost its debug port or is
+        mid-queue. A fresh `watch_queue()` call never opts into this — see
+        `bnetpresence.open_source`'s own docstring.
+        """
+        source = bnetpresence.open_source(prefer=self.presence_source,
+                                          port=self.presence_port,
+                                          log=lambda message: self.log(message),
+                                          relaunch=True)
+        return None if isinstance(source, bnetpresence.NullSource) else source
+
+    def stop_presence(self):
+        if self.presence_watcher:
+            self.presence_watcher.close()
+            self.presence_watcher = None
 
     def stop(self):
         self._running = False
         self.stop_scenario()
         if self.queue_watcher:
             self.queue_watcher.stop()
-        self.ws.stop()
+        self.stop_presence()
+        self.mqtt.stop()
+        self.broker.stop()
         if self.apns:
             self.apns.close()
 
     @property
     def clients(self) -> list:
-        return [c for c in self.ws.clients if c.authorized]
+        return [c for c in self.mqtt.clients if c.authorized]
+
+    @property
+    def presence_degraded(self) -> bool:
+        """Whether Battle.net's presence link is down — pushed to the phone/watch on
+        every heartbeat (see `protocol.heartbeat`) so a disconnect is visible rather
+        than a silent downgrade to the screen alone. `False` whenever presence was
+        never enabled in the first place, same as it always was."""
+        return bool(self.presence_watcher and self.presence_watcher.dead)
 
     # ------------------------------------------------------------ state
 
@@ -208,7 +286,11 @@ class QueueServer:
         self._changed()
 
     def _broadcast_snapshot(self):
-        self.ws.broadcast(self.session.snapshot())
+        # Retained + QoS 1: the broker itself now guarantees delivery to every connected
+        # subscriber and hands the latest snapshot straight to anyone who (re)subscribes,
+        # including a phone that just reconnected after a dead Wi-Fi — no more silent
+        # drops the way the old socket `broadcast()` had on a write failure.
+        self.mqtt.publish_snapshot(self.session.snapshot())
         # Off-thread: `_push_apns` makes blocking HTTP calls (10s timeout apiece, two in a
         # row for an urgent kind), and this runs from inside the same lock that every vote,
         # pick and phase change goes through. Left inline, a slow push relay doesn't just
@@ -222,34 +304,47 @@ class QueueServer:
     def _push_apns(self):
         """Reaches whichever paired kinds have registered a device token — regardless of
         whether they're also connected over the socket right now, since a client that's
-        about to go stale benefits from the wake-up landing just before it notices.
-        A duplicate delivery is harmless: the client discards anything not newer than its
-        current `sequence`.
+        about to go stale (or never connected this session at all — a token registered in
+        an earlier run stays on file) benefits from the wake-up landing just before it
+        notices. A duplicate delivery is harmless: the client discards anything not newer
+        than its current `sequence`.
 
-        Silent for a routine change — the Live Activity below is meant to surface those on
-        the phone without a redundant banner on top. An urgent phase is different: it gets
-        a real, time-sensitive alert on both kinds, phone included, rather than trusting
-        the Live Activity alone — push-to-start (what would otherwise be the phone's only
-        route to a visible alert with the app fully closed) is best-effort in the same way
-        the comment on `_push_activity` describes, and in practice unreliable enough that
-        the alert can't be the only thing carrying an urgent phase to a closed app. The
-        watch has no Live Activity of its own at all, so this alert is its only
-        independent signal once out of the phone's WatchConnectivity range."""
+        A real, time-sensitive alert for every phase change, but only on the watch: it has
+        no Live Activity of its own, so this is its only independent signal once out of
+        the phone's WatchConnectivity range. The phone never gets one here — Apple's own
+        push-to-start and per-activity update pushes (see `_push_activity`) already carry
+        their own alert on every real phase change, tied to the Live Activity itself
+        exactly the way Apple designed them to work with the app fully closed. A second,
+        plain notification on top of that would just double the same event up in
+        Notification Center. `_check_activity_fallback` is the one place the phone still
+        gets a plain alert of its own — and only once push-to-start has had its chance
+        and clearly hasn't taken.
+
+        `_push_activity` itself is skipped entirely while a phone is live over MQTT: that
+        phone's own `LiveActivityController` reacts to the very snapshot this broadcast
+        just published, driving the same start/update/end its APNs push would — pushing
+        here too would fire a second, independent alert for the one event this queue only
+        needs told about once. See `_phone_is_live_connected`."""
         if not self.apns:
             return
         session_id, sequence, kind = self.session.session_id, self.session.sequence, self.session.kind
-        urgent = kind in protocol.URGENT_KINDS
-        for client_kind, device_token, environment in list(self.push_tokens.items()):
-            response = self.apns.send_background(
-                client_kind, device_token, environment, session_id, sequence)
+        watch = self.push_tokens.get("watch")
+        if watch:
+            device_token, environment = watch
+            title, body = protocol.notification_copy(kind)
+            response = self.apns.send_alert("watch", device_token, environment,
+                                            title, body, session_id, sequence)
             if self.apns.token_is_invalid(response):
-                self.push_tokens.forget(client_kind)
-                continue
-            if urgent:
-                title, body = protocol.notification_copy(kind)
-                self.apns.send_alert(client_kind, device_token, environment,
-                                     title, body, session_id, sequence)
-        self._push_activity(session_id, sequence, kind)
+                self.push_tokens.forget("watch")
+        if not self._phone_is_live_connected():
+            self._push_activity(session_id, sequence, kind)
+
+    def _phone_is_live_connected(self) -> bool:
+        """Whether a phone is currently subscribed over MQTT — the one signal both sides
+        can check without coordinating a flag over the network, and the reason a phone
+        that's actually looking at the app doesn't also need an APNs-pushed alert for the
+        same phase change its own live connection just delivered."""
+        return any((client.identity or {}).get("kind") == "phone" for client in self.clients)
 
     def _push_activity(self, session_id: str, sequence: int, kind: str):
         """Keeps the Live Activity itself current, independent of whether the phone's
@@ -262,9 +357,7 @@ class QueueServer:
           activity from nothing. Retried on every subsequent change (throttled — see
           `_activity_start_retry_seconds`) until an update token registers, since a
           background push is best-effort and the first attempt landing is never
-          guaranteed. Sent alongside — never instead of — the phone's own silent wake-up
-          above, since only that wake-up gives the app a chance to attach to the activity
-          and register a real per-activity token for every update after this one.
+          guaranteed.
 
         Every real phase change carries a real alert — sound, haptic, a brief peek — the
         way a transit app's Live Activity buzzes at each stop rather than only the ones
@@ -307,26 +400,39 @@ class QueueServer:
                 self._last_activity_kind = None
             else:
                 self._last_activity_kind = kind
-                self.apns.send_activity_update(token, environment, content_state,
-                                               timestamp, alert=update_alert)
+                response = self.apns.send_activity_update(token, environment, content_state,
+                                                          timestamp, alert=update_alert)
+                if self.apns.token_is_invalid(response):
+                    # Apple will never accept this token again (reinstall, or the token
+                    # was rotated/revoked mid-session) — forgetting it now is what lets
+                    # `_check_activity_fallback` stop treating a dead card as attached
+                    # and actually send its one plain-alert fallback.
+                    self.activity_tokens.forget_update()
             return
 
         if kind in ("idle", "cancelled"):
             self._activity_session_id = None
             self._activity_start_first_sent_at = None
             return
-        start = self.activity_tokens.start_token()
-        if not start:
-            return
 
         if self._activity_session_id != session_id:
             self._activity_session_id = session_id
             self._activity_started_at = protocol.reference_date_seconds(protocol.now())
             self._activity_start_last_sent_at = 0.0            # a new session always retries immediately
+            # Arms the fallback clock the moment the queue needs a card — not only once
+            # push-to-start is actually attempted. A device with no start token on file
+            # yet (fresh install, Live Activities off, no notification permission) would
+            # otherwise never get *this* set, so `_check_activity_fallback` would wait
+            # forever on a push-to-start attempt that can never happen and the phone
+            # would go completely silent for the whole session.
+            self._activity_start_first_sent_at = time.time()
             # A fresh queue gets a fresh chance at both the card and, failing that, the
             # one fallback notification it's allowed.
-            self._activity_start_first_sent_at = None
             self._activity_fallback_sent_for = None
+
+        start = self.activity_tokens.start_token()
+        if not start:
+            return
 
         now = time.time()
         if now - self._activity_start_last_sent_at < self._activity_start_retry_seconds:
@@ -336,13 +442,12 @@ class QueueServer:
         token, environment = start
         attributes = {"sessionID": session_id, "startedAt": self._activity_started_at}
         self._last_activity_kind = kind
-        self.apns.send_activity_start(token, environment, attributes, content_state,
-                                      timestamp, alert=start_alert)
-        if self._activity_start_first_sent_at is None:
-            # The clock the fallback measures against: when this session *first* asked for
-            # a card, not when it last retried, so the retries all happen inside the wait
-            # rather than pushing it further out each time.
-            self._activity_start_first_sent_at = time.time()
+        response = self.apns.send_activity_start(token, environment, attributes, content_state,
+                                                 timestamp, alert=start_alert)
+        if self.apns.token_is_invalid(response):
+            # Same reasoning as the per-activity token above: a dead push-to-start token
+            # would otherwise keep "succeeding" into the void every retry, forever.
+            self.activity_tokens.forget_start()
 
     def _check_activity_fallback(self):
         """Once a session has asked for a Live Activity and not got one, say it plainly.
@@ -352,18 +457,16 @@ class QueueServer:
         what proves the card exists, and that arrives (or doesn't) some seconds after the
         push, with nothing else happening in between.
 
-        Only the phone, and only a non-urgent phase. An urgent one already sent a real
-        alert in `_push_apns`, and that alert is itself a way into the app — a second
-        notification fifteen seconds later would be the same event twice. The watch has no
-        Live Activity to be missing.
-        """
+        Only the phone, and only once per session. The watch already gets its own real
+        alert on every phase change in `_push_apns` — it has no Live Activity to be
+        missing in the first place."""
         with self._lock:
             if not self.apns:
                 return
             session_id = self.session.session_id
             sequence = self.session.sequence
             kind = self.session.kind
-            if kind in ("idle", "cancelled") or kind in protocol.URGENT_KINDS:
+            if kind in ("idle", "cancelled"):
                 return
             if self._activity_start_first_sent_at is None:
                 return                                  # never asked for a card
@@ -551,7 +654,6 @@ class QueueServer:
     # ------------------------------------------------------------ clients
 
     def _client_connected(self, client):
-        client.connected_at = time.time()
         self.log("%s connected" % client.host)
 
     def _client_gone(self, client):
@@ -568,7 +670,7 @@ class QueueServer:
             return
 
         if message.get("v") != protocol.VERSION:
-            client.send(protocol.error(
+            self.mqtt.reply(client.client_id, protocol.error(
                 "version", "This server speaks protocol v%d." % protocol.VERSION))
             return
 
@@ -576,14 +678,13 @@ class QueueServer:
             self._handle_hello(client, body.get("data") or {})
             return
 
-        if not client.authorized:
-            client.send(protocol.error("unpaired", "Say hello with a pairing token first."))
-            client.close(CLOSE_POLICY_VIOLATION, "unpaired")
-            return
-
+        # No token check here any more: the broker already refused the connection at
+        # CONNECT time if `owq/command/<clientID>`'s credentials didn't match the current
+        # pairing token (see `mqttbroker.py`'s ACL). Anything reaching this point already
+        # passed that gate.
         data = body.get("data") or {}
         if kind == "requestSnapshot":
-            client.send(self.session.snapshot())
+            self.mqtt.reply(client.client_id, self.session.snapshot())
         elif kind == "voteMap":
             self._vote(client, data.get("mapKey"))
         elif kind == "selectHero":
@@ -603,25 +704,20 @@ class QueueServer:
             # client can only read as distance to the server.
             client_time = data.get("clientTime")
             if isinstance(client_time, (int, float)):
-                client.send(protocol.pong(float(client_time)))
+                self.mqtt.reply(client.client_id, protocol.pong(float(client_time)))
         elif kind == "diagnostic":
             self._log_diagnostic(client, data.get("message"))
         else:
             self.log("%s sent an unknown command: %s" % (client.name, kind))
 
     def _handle_hello(self, client, data: dict):
-        identity = data.get("client") or {}
-        client.identity = identity
-        if not self.pairing.matches(data.get("token")):
-            self.log("%s tried to connect without a valid token" % client.host)
-            client.send(protocol.error(
-                "pairing_required",
-                "This phone isn't paired. Scan the QR code in the server window."))
-            client.close(CLOSE_POLICY_VIOLATION, "pairing required")
-            return
+        # An identity announcement now, not a gate — the broker already required the
+        # right pairing token as this client's MQTT password before it could publish
+        # here at all. `client.authorized` just means "has said hello", for the GUI's
+        # device list.
+        client.identity = data.get("client") or {}
         client.authorized = True
         self.log("%s paired" % client.name)
-        client.send(self.session.snapshot())
         self._changed()
 
     # -- commands from the phone --------------------------------------------
@@ -703,31 +799,31 @@ class QueueServer:
             # What the real thing does when the game won't let go: say so, and keep
             # sending the true state rather than faking a cancellation.
             self.log("%s asked to cancel — refused" % client.name)
-            client.send(protocol.error("no_cancel", "Too late to leave this one."))
-            client.send(self.session.snapshot())
+            self.mqtt.reply(client.client_id, protocol.error("no_cancel", "Too late to leave this one."))
+            self.mqtt.reply(client.client_id, self.session.snapshot())
             return
         self.log("%s cancelled the queue" % client.name)
         self.stop_scenario()
         self.apply(protocol.cancelled("userLeft"))
 
-    # ------------------------------------------------------------ heartbeat
+    # ------------------------------------------------------------ once-a-second work
 
-    def _heartbeat_loop(self):
+    def _tick_loop(self):
+        # This used to be a "heartbeat loop" that also kept sockets alive and dropped
+        # clients that never said hello — both jobs MQTT itself absorbs now (broker
+        # keepalive/LWT for liveness, the ACL for auth). What's left: the activity
+        # fallback's own check, and a lightweight heartbeat publish — not for liveness,
+        # just so a connected client's clock stays freshly re-anchored (see
+        # `protocol.heartbeat`).
+        last_heartbeat = 0.0
         while self._running:
             time.sleep(1)
             self._check_activity_fallback()
-            beat = protocol.heartbeat()
-            for client in self.ws.clients:
-                if client.authorized:
-                    if time.time() - getattr(client, "last_beat", 0) >= HEARTBEAT_SECONDS:
-                        client.last_beat = time.time()
-                        try:
-                            client.send(beat)
-                        except OSError:
-                            pass
-                elif time.time() - getattr(client, "connected_at", 0) > HELLO_TIMEOUT_SECONDS:
-                    self.log("%s never said hello — dropping" % client.host)
-                    client.close(CLOSE_POLICY_VIOLATION, "no hello")
+            now = time.time()
+            if now - last_heartbeat >= HEARTBEAT_SECONDS:
+                last_heartbeat = now
+                self.mqtt.publish_heartbeat(
+                    protocol.heartbeat(presence_degraded=self.presence_degraded))
 
     # ------------------------------------------------------------ scenarios
 

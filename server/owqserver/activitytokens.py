@@ -76,6 +76,11 @@ class ActivityTokens:
             return None
         return self._start["token"], self._start["environment"]
 
+    def forget_start(self):
+        if self._start is not None:
+            self._start = None
+            self._save()
+
     # ---------------------------------------------------------------- per-activity update
 
     def register_update(self, session_id: str, token: str, environment: str):

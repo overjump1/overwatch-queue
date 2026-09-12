@@ -15,15 +15,17 @@ from owqserver.pairing import Pairing                            # noqa: E402
 from owqserver.activitytokens import ActivityTokens              # noqa: E402
 from owqserver.pushtokens import PushTokens                      # noqa: E402
 from owqserver.queueserver import QueueServer                    # noqa: E402
-from wsclient import TestClient                                  # noqa: E402
+from mqtttestclient import TestClient                             # noqa: E402
 
 PORT = 8899
 TOKEN = "3f2504e0-4f89-41d3-9a0c-0305e82c3301"
 HELLO = {"kind": "phone", "name": "Test iPhone", "appVersion": "1.0"}
 
 
-def hello(token=TOKEN):
-    return {"v": 1, "body": {"type": "hello", "data": {"token": token, "client": HELLO}}}
+def hello():
+    # No token here any more — the broker already required it as this connection's MQTT
+    # password before a single message could be published. `hello` is now just identity.
+    return {"v": 1, "body": {"type": "hello", "data": {"client": HELLO}}}
 
 
 class ServerTests(unittest.TestCase):
@@ -40,48 +42,40 @@ class ServerTests(unittest.TestCase):
         self.server.stop()
         time.sleep(0.05)
 
-    def connect(self, path="/queue"):
-        client = TestClient(port=PORT, path=path)
+    def connect(self, token=TOKEN):
+        client = TestClient(port=PORT, token=token)
         self.clients.append(client)
         return client
-
-    # ------------------------------------------------------------ handshake
-
-    def test_upgrades_on_the_queue_path(self):
-        self.assertTrue(self.connect().upgraded)
-
-    def test_refuses_other_paths(self):
-        self.assertIn("404", self.connect(path="/nope").response.splitlines()[0])
 
     # ------------------------------------------------------------ pairing
 
     def test_a_valid_token_gets_a_snapshot(self):
+        # No `hello` needed for this any more: `owq/snapshot` is retained, so subscribing
+        # with the right credentials is what hands back the current state instantly —
+        # the same thing that makes a reconnect after a dead Wi-Fi recover with no gap.
         client = self.connect()
-        client.send(hello())
         message = client.receive()
         self.assertEqual(message["body"]["type"], "snapshot")
         self.assertEqual(message["v"], 1)
         self.assertEqual(message["body"]["data"]["phase"]["type"], "idle")
 
-    def test_a_wrong_token_is_told_why_and_hung_up_on(self):
-        client = self.connect()
-        client.send(hello(token="00000000-0000-0000-0000-000000000000"))
-        message = client.receive()
-        self.assertEqual(message["body"]["type"], "error")
-        self.assertEqual(message["body"]["data"]["code"], "pairing_required")
-        self.assertIsNone(client.receive())          # socket closed behind the error
+    def test_a_wrong_token_cannot_even_connect(self):
+        # The pairing token is the MQTT password now — a bad one is refused by the
+        # broker at CONNECT time, before any application code sees the connection.
+        client = TestClient(port=PORT, token="00000000-0000-0000-0000-000000000000")
+        try:
+            self.assertFalse(client.connected)
+        finally:
+            client.close()
 
-    def test_commands_before_hello_are_refused(self):
+    def test_commands_are_answered_without_a_hello(self):
+        # `hello` is an identity announcement now (for the device list, and for filing a
+        # push token under the right kind), not an authorization gate — the broker
+        # already gated the connection itself.
         client = self.connect()
+        client.receive()                                        # the retained snapshot
         client.send({"v": 1, "body": {"type": "requestSnapshot"}})
-        self.assertEqual(client.receive()["body"]["data"]["code"], "unpaired")
-
-    def test_an_unpaired_client_gets_no_snapshots(self):
-        listener = self.connect()
-        listener.send(hello(token="nope"))
-        listener.receive()                            # the error
-        self.server.apply(protocol.searching("competitive", "tank", protocol.now(), 240))
-        self.assertIsNone(listener.receive())
+        self.assertEqual(client.receive()["body"]["type"], "snapshot")
 
     # ------------------------------------------------------------ state
 
@@ -188,11 +182,15 @@ class ServerTests(unittest.TestCase):
         time.sleep(0.05)
         self.assertEqual(self.server.push_tokens.get("phone"), ("abc123", "sandbox"))
 
-    def test_registering_before_hello_is_ignored(self):
+    def test_registering_without_a_kind_or_hello_is_ignored(self):
+        # No `unpaired` gate any more — the broker already required the pairing token to
+        # connect at all — but a registration still needs to know which kind of device
+        # it's for, and that comes from `hello`'s identity or an explicit `kind` field.
         client = self.connect()
+        client.receive()                                        # the retained snapshot
         client.send({"v": 1, "body": {"type": "registerPushToken",
                                       "data": {"token": "abc123", "environment": "sandbox"}}})
-        self.assertEqual(client.receive()["body"]["data"]["code"], "unpaired")
+        time.sleep(0.05)
         self.assertIsNone(self.server.push_tokens.get("phone"))
 
     def test_a_relayed_watch_token_is_not_filed_under_the_phone(self):
@@ -307,7 +305,7 @@ class _FakeAPNs:
 
     def send_alert(self, kind, token, environment, title, body, session_id, sequence):
         self.alerts.append((kind, token, environment, title, body, session_id, sequence))
-        return "ok"
+        return "invalid" if kind in self._invalid_kinds else "ok"
 
     def send_activity_start(self, token, environment, attributes, content_state, timestamp, alert=None):
         self.activity_starts.append((token, environment, attributes, content_state, timestamp, alert))
@@ -343,43 +341,60 @@ class PushDispatchTests(unittest.TestCase):
     def test_no_apns_configured_sends_nothing(self):
         self.server.apns = None
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.assertEqual(self.fake.background, [])
+        self.assertEqual(self.fake.alerts, [])
 
-    def test_a_change_pushes_silently_to_every_registered_kind(self):
+    def test_an_invalid_watch_token_is_dropped(self):
+        self.fake._invalid_kinds = {"watch"}
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.assertIsNone(self.server.push_tokens.get("watch"))
+        self.assertEqual(self.server.push_tokens.get("phone"), ("phone-token", "sandbox"))
+
+    def test_a_routine_change_alerts_only_the_watch(self):
+        # The watch has no Live Activity of its own, so it needs a real, time-sensitive
+        # alert directly. The phone doesn't: Apple's own push-to-start and per-activity
+        # update pushes (see `_push_activity`) already carry their own alert, tied to the
+        # Live Activity itself — a second, plain one here would just double the same event
+        # up in Notification Center.
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        kinds = {entry[0] for entry in self.fake.alerts}
+        self.assertEqual(kinds, {"watch"})
+        title, body = protocol.notification_copy("searching")
+        self.assertEqual((self.fake.alerts[0][3], self.fake.alerts[0][4]), (title, body))
+        self.assertEqual(self.fake.alerts[0][5], self.server.session.session_id)
+
+    def test_an_urgent_change_still_only_alerts_the_watch_directly(self):
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.server.apply(protocol.match_found("quickPlay", "damage", 30))
-        kinds = {entry[0] for entry in self.fake.background}
-        self.assertEqual(kinds, {"phone", "watch"})
+        kinds = {entry[0] for entry in self.fake.alerts if entry[3] == "Match Found"}
+        self.assertEqual(kinds, {"watch"})
 
-    def test_an_invalid_token_is_dropped(self):
-        self.fake._invalid_kinds = {"phone"}
-        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.assertIsNone(self.server.push_tokens.get("phone"))
-        self.assertEqual(self.server.push_tokens.get("watch"), ("watch-token", "production"))
-
-    def test_a_routine_change_sends_no_alert(self):
+    def test_no_watch_token_sends_no_direct_alert(self):
+        self.server.push_tokens.forget("watch")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.assertEqual(self.fake.alerts, [])
 
-    def test_an_urgent_change_alerts_both_kinds(self):
-        # Push-to-start (the phone's other route to a visible alert with the app fully
-        # closed) is best-effort and unreliable in practice, so the phone gets this real
-        # alert too rather than depending on the Live Activity alone. The watch has no
-        # Live Activity of its own at all, so this is its only independent signal.
-        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
-        kinds = {entry[0] for entry in self.fake.alerts}
-        self.assertEqual(kinds, {"phone", "watch"})
-        for kind, token, environment, title, body, session_id, sequence in self.fake.alerts:
-            self.assertEqual((title, body), protocol.notification_copy("matchFound"))
-            self.assertEqual(session_id, self.server.session.session_id)
+    def test_a_live_connected_phone_gets_no_activity_push_of_its_own(self):
+        # A phone actively subscribed over MQTT sees this same broadcast directly and
+        # drives its own Live Activity locally — pushing an activity update/start too
+        # would alert the player twice for one phase change.
+        from owqserver.mqttclient import Client as MQTTTestClient
+        phone = MQTTTestClient("phone-client-id")
+        phone.identity = {"kind": "phone", "name": "Test iPhone"}
+        phone.authorized = True
+        self.server.mqtt._clients["phone-client-id"] = phone
+        self.server.activity_tokens.register_start("start-token", "sandbox")
 
-    def test_an_invalid_token_skips_only_that_kind_s_alert(self):
-        self.fake._invalid_kinds = {"watch"}
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
-        kinds = {entry[0] for entry in self.fake.alerts}
-        self.assertEqual(kinds, {"phone"})
+        time.sleep(0.05)
+
+        self.assertEqual(self.fake.activity_starts, [])
+        self.assertEqual(self.fake.activity_updates, [])
+
+    def test_a_disconnected_phone_still_gets_its_activity_push(self):
+        self.server.activity_tokens.register_start("start-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        time.sleep(0.05)
+        self.assertEqual(len(self.fake.activity_starts), 1)
 
 
 class LiveActivityPushDispatchTests(unittest.TestCase):
@@ -547,7 +562,8 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
 
 class ActivityFallbackTests(unittest.TestCase):
     """`_check_activity_fallback`: when a push-to-start was sent and the app never came
-    back with a per-activity token, the phone gets told the plain way instead."""
+    back with a per-activity token, the phone gets told the plain way instead — the one
+    case where it still gets a direct notification of its own."""
 
     def setUp(self):
         pairing = Pairing(token=TOKEN, port=PORT + 3, path=os.devnull)
@@ -560,6 +576,10 @@ class ActivityFallbackTests(unittest.TestCase):
 
     def _queue_and_wait_out_the_delay(self):
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        # `apply` only kicks off the push (including `_activity_start_first_sent_at`
+        # getting set) on a background thread, same as it always did — this just gives
+        # it a moment to actually run before rewinding the clock on it.
+        time.sleep(0.05)
         self.server._activity_start_first_sent_at -= self.server._activity_fallback_delay_seconds + 1
 
     def test_nothing_before_the_delay_elapses(self):
@@ -592,26 +612,23 @@ class ActivityFallbackTests(unittest.TestCase):
     def test_registering_an_update_token_cancels_a_pending_fallback(self):
         # The card arrived late, but it arrived — that's the app saying so.
         self._queue_and_wait_out_the_delay()
-        self.server._register_activity_push_token(
+        self.server.activity_tokens.register_update(
             self.server.session.session_id, "activity-token", "sandbox")
         self.server._check_activity_fallback()
         self.assertEqual(self.fake.alerts, [])
 
-    def test_nothing_when_no_start_was_ever_attempted(self):
+    def test_the_phone_is_still_told_when_no_start_token_was_ever_registered(self):
+        # A device with no push-to-start token on file (fresh install, Live Activities
+        # off, no notification permission) can never have push-to-start attempted at
+        # all — the fallback clock has to arm anyway, or this phone goes completely
+        # silent for the whole session.
         self.server.activity_tokens.clear()
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.assertIsNone(self.server._activity_start_first_sent_at)
+        time.sleep(0.05)
+        self.assertIsNotNone(self.server._activity_start_first_sent_at)
+        self.server._activity_start_first_sent_at -= self.server._activity_fallback_delay_seconds + 1
         self.server._check_activity_fallback()
-        self.assertEqual(self.fake.alerts, [])
-
-    def test_nothing_on_an_urgent_phase(self):
-        # `_push_apns` already sent a real alert for this one, and that alert is itself the
-        # way into the app — a second one would be the same event twice.
-        self._queue_and_wait_out_the_delay()
-        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
-        self.server._check_activity_fallback()
-        self.assertEqual([entry[0] for entry in self.fake.alerts], ["phone"])
-        self.assertEqual(self.fake.alerts[0][3], protocol.notification_copy("matchFound")[0])
+        self.assertEqual(len(self.fake.alerts), 1)
 
     def test_nothing_once_the_queue_has_ended(self):
         self._queue_and_wait_out_the_delay()
