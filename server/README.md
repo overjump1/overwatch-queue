@@ -168,9 +168,12 @@ and Battle.net presence run automatically whenever their extras are installed �
 on/off switch in the window; `--no-vision`, `--no-queue-vision` and `--no-presence` are the
 way to turn them off (see `python3 server/run.py --help`).
 
-The status page also has one **Manual override**: pick a phase and hit *Set* to hand-drive
-the queue past whatever vision/presence are seeing — useful with nothing installed, or to
-jump straight to a phase without waiting for the real thing.
+The status page also has a **Manual override** to hand-drive the queue past whatever
+vision/presence are seeing — useful with nothing installed, or for testing the Live
+Activity and its alerts without waiting for the real thing. *Start* begins a fresh
+queue, *Next* moves it one step through searching → match found → map vote → hero select →
+in game → end (its label says which), and *Cancel* cancels it. Every step is one the app
+accepts, so none is refused.
 
 Maps and heroes come from `Shared/Resources/catalog-fallback.json`, the same catalog the
 app ships, so the vote and hero-select screens get keys the app has art for.

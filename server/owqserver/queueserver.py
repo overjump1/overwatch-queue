@@ -106,6 +106,11 @@ class QueueServer:
         self._activity_started_at = None
         self._activity_start_last_sent_at = 0.0
         self._activity_start_retry_seconds = 4
+        # How long each further retry of the *same* phase waits, and so how many there
+        # are — see `_push_activity`.
+        self._activity_start_retry_delays = (4, 15, 45)
+        self._activity_start_kind = None
+        self._activity_start_attempts = 0
         # Set when a session first needs a card and cleared once the app registers a
         # per-activity token for it — while set, `_retry_activity_start` keeps trying.
         self._activity_start_first_sent_at = None
@@ -413,6 +418,7 @@ class QueueServer:
             self._activity_session_id = session_id
             self._activity_started_at = protocol.reference_date_seconds(protocol.now())
             self._activity_start_last_sent_at = 0.0            # a new session always retries immediately
+            self._activity_start_kind = None
             # Arms the retry the moment the queue needs a card, even with no start token
             # on file yet — one may register a moment from now.
             self._activity_start_first_sent_at = time.time()
@@ -421,10 +427,23 @@ class QueueServer:
         if not start:
             return
 
+        # Every start is loud (a silent one never arrives), so retrying the same phase
+        # forever buzzes the phone every few seconds and gets the app throttled by iOS.
+        # Each phase gets a first try and a few spaced-out retries; a new phase starts
+        # its budget over, since that one is news worth an alert.
+        if kind != self._activity_start_kind:
+            self._activity_start_kind = kind
+            self._activity_start_attempts = 0
+        attempts = self._activity_start_attempts
+        delays = self._activity_start_retry_delays
+        if attempts > len(delays):
+            return
+        wait = self._activity_start_retry_seconds if attempts == 0 else delays[attempts - 1]
         now = time.time()
-        if now - self._activity_start_last_sent_at < self._activity_start_retry_seconds:
+        if now - self._activity_start_last_sent_at < wait:
             return
         self._activity_start_last_sent_at = now
+        self._activity_start_attempts = attempts + 1
 
         token, _environment = start
         attributes = {"sessionID": session_id, "startedAt": self._activity_started_at}
@@ -435,6 +454,10 @@ class QueueServer:
             # A dead push-to-start token would otherwise keep "succeeding" into the void
             # every retry, forever.
             self.activity_tokens.forget_start()
+        elif self._activity_start_attempts > len(delays):
+            self.log("Stopped retrying the Live Activity start for %s after %d tries: the "
+                     "phone never sent back its card token. The next phase change tries "
+                     "again." % (kind, self._activity_start_attempts))
 
     def _retry_activity_start(self):
         """Gives push-to-start a real second (and third...) try instead of just the one.

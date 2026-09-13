@@ -125,23 +125,31 @@ class PanelTests(unittest.TestCase):
 
     # ------------------------------------------------------------ manual override
 
-    def test_setting_idle_resets_the_session(self):
-        self.server.apply(protocol.searching("competitive", "tank", protocol.now(), 240))
-        self.panel.phase_picker.setCurrentIndex(0)     # idle
-        self.panel._set_phase()
-        self.assertEqual(self.server.session.kind, "idle")
-
-    def test_setting_searching_starts_a_queue(self):
-        self.panel.phase_picker.setCurrentIndex(1)     # searching
-        self.panel._set_phase()
+    def test_start_begins_a_queue(self):
+        self.panel.start_button.click()
         self.assertEqual(self.server.session.kind, "searching")
 
-    def test_setting_a_jump_phase_applies_it(self):
-        self.server.apply(protocol.searching("competitive", "tank", protocol.now(), 240))
-        index = self.panel.phase_picker.findText("Match found")
-        self.panel.phase_picker.setCurrentIndex(index)
-        self.panel._set_phase()
-        self.assertEqual(self.server.session.kind, "matchFound")
+    def test_next_walks_the_whole_cycle_and_names_where_it_goes(self):
+        seen = []
+        for _ in range(6):
+            self.panel._refresh()
+            label = self.panel.next_button.text()
+            self.panel.next_button.click()
+            seen.append((label, self.server.session.kind))
+        self.assertEqual(seen, [("Next: Searching", "searching"),
+                                ("Next: Match found", "matchFound"),
+                                ("Next: Map vote", "mapVote"),
+                                ("Next: Hero select", "heroSelect"),
+                                ("Next: In game", "inGame"),
+                                ("End", "idle")])
+
+    def test_cancel_is_only_offered_during_a_queue(self):
+        self.panel._refresh()
+        self.assertFalse(self.panel.cancel_button.isEnabled())
+        self.panel.start_button.click()
+        self.panel._refresh()
+        self.panel.cancel_button.click()
+        self.assertEqual(self.server.session.kind, "cancelled")
 
     def test_it_renders(self):
         self.panel.show()

@@ -439,6 +439,39 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.server._retry_activity_start()
         self.assertEqual(len(self.fake.activity_starts), 2)
 
+    def _retry_after(self, seconds):
+        self.server._activity_start_last_sent_at -= seconds + 1
+        self.server._retry_activity_start()
+
+    def test_retrying_the_same_phase_stops_after_a_few_tries(self):
+        # Every start is loud; retrying one phase forever buzzed the phone every four
+        # seconds and got the app throttled.
+        self.server.activity_tokens.register_start("start-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        for delay in self.server._activity_start_retry_delays:
+            self._retry_after(delay)
+        self.assertEqual(len(self.fake.activity_starts), 4)
+        self._retry_after(3600)
+        self.assertEqual(len(self.fake.activity_starts), 4)
+
+    def test_retries_wait_longer_each_time(self):
+        self.server.activity_tokens.register_start("start-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self._retry_after(4)
+        self.assertEqual(len(self.fake.activity_starts), 2)
+        self._retry_after(4)                             # the second retry waits 15s
+        self.assertEqual(len(self.fake.activity_starts), 2)
+
+    def test_a_new_phase_gets_a_fresh_start_after_retries_ran_out(self):
+        self.server.activity_tokens.register_start("start-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        for delay in self.server._activity_start_retry_delays:
+            self._retry_after(delay)
+        self.server._activity_start_last_sent_at -= 5
+        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
+        self.assertEqual(len(self.fake.activity_starts), 5)
+        self.assertEqual(self.fake.activity_starts[-1][2]["phase"]["type"], "matchFound")
+
     def test_tick_retry_is_a_noop_once_a_card_exists(self):
         self.server.activity_tokens.register_start("start-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))

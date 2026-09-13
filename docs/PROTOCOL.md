@@ -408,9 +408,11 @@ on the plain one, unchanged otherwise.
 
 - **start** — creates the activity from nothing, using the push-to-start token. Sent the
   first time a phase actually starts and no per-activity token exists yet, and *retried*
-  on every subsequent change (throttled to once per `_activity_start_retry_seconds`) until
-  one registers — a background push is best-effort, so the first attempt landing is never
-  guaranteed. Carries `attributes` (`sessionID`, a `startedAt` fixed once per session and
+  until one registers — a background push is best-effort, so the first attempt landing is
+  never guaranteed. Each phase gets its first try plus three retries, 4 s, 15 s and 45 s
+  apart; then the server stops and logs that the phone never sent its card token. A new
+  phase starts the count over. Unbounded, a loud start every few seconds buzzed the phone
+  constantly and got the app throttled. Carries `attributes` (`sessionID`, a `startedAt` fixed once per session and
   reused on every retry, so Apple recognises a retry as the same activity rather than a
   new one), `content-state`, and **always an `alert`** — verified directly, back to back,
   against a real push-to-start token: an otherwise-identical silent one reliably never
@@ -434,7 +436,7 @@ carries neither and only redraws the card. The server logs every push as one or 
 
 | Push | When | Loud? |
 |---|---|---|
-| start | A phase starts and there's no card yet, **every retry included** | loud |
+| start | A phase starts and there's no card yet, and each of its up to 3 retries | loud |
 | update | The phase changed since the last push (`searching` → `matchFound`, …) | loud |
 | update | Same phase, new data: the estimate, map vote tallies, a mode correction | silent |
 | end | The queue was cancelled (first push for `cancelled`) | loud |
