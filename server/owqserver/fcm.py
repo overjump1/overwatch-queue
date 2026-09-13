@@ -1,8 +1,8 @@
 """Sends Live Activity pushes through Firebase Cloud Messaging instead of straight at
 Apple.
 
-Why the extra hop, when `apns.py` already talks to APNs directly and this ends up at the
-same place? Because measured against a real device, the two do not behave the same:
+Why the extra hop, when a push could go straight to APNs and this ends up at the same
+place? Because measured against a real device, the two do not behave the same:
 
 - A **push-to-start** posted straight to APNs is accepted with a 200 and an `apns-id`,
   and then, over dozens of attempts across both sandbox and production, a fresh token,
@@ -39,8 +39,7 @@ _LIVE_ACTIVITY_HEADERS = {"apns-priority": "10", "apns-push-type": "liveactivity
 
 class FCMConfig:
     """The service-account JSON downloaded from the Firebase console, plus the project it
-    belongs to. Dropped in by hand next to `pairing.json`, exactly the way `apns.json` and
-    the `.p8` are — and just as deliberately never committed."""
+    belongs to. Dropped in by hand next to `pairing.json` — and deliberately never committed."""
 
     def __init__(self, project_id: str, service_account_path: str):
         self.project_id = project_id
@@ -125,8 +124,8 @@ class FCMClient:
         return response
 
     # The device's FCM registration token, set by `queueserver` as it registers. Kept as a
-    # plain attribute rather than passed per call so this stays interface-compatible with
-    # `apns.py`, whose activity methods take only ActivityKit tokens.
+    # plain attribute rather than passed per call, so the activity methods take only the
+    # ActivityKit token they're addressing.
     device_token = None
 
     @staticmethod

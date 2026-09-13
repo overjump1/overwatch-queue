@@ -221,8 +221,6 @@ owqserver/
   activitytokens.py  the Live Activity's own push tokens — push-to-start and per-activity
   fcmtokens.py    the phone's Firebase registration token
   fcm.py          sends Live Activity pushes through Firebase
-  apns.py         direct APNs client — no longer used by the server
-  pushrelay.py    relay client — no longer used by the server; see ../relay/
   qr.py           a QR encoder, so none of the above needs installing
   catalog.py      hero and map keys, read from the app's own catalog
 tests/            unittest; the GUI tests run offscreen. test_server.py is the one real
