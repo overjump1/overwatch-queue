@@ -47,7 +47,7 @@ device at once.
 If your PC has more than one address — a VPN, Docker, a second NIC — pick the one the
 phone can reach from the dropdown; the code redraws for whichever you choose.
 
-## Push notifications (optional)
+## Push notifications
 
 MQTT only reaches a device that's holding a connection open — the moment the phone's
 screen locks, that stops being true. The Live Activity is how the queue stays on the Lock
@@ -58,12 +58,13 @@ Activity's own alert is the one interruption. See [docs/PROTOCOL.md](../docs/PRO
 for what actually gets sent, and `owqserver/fcm.py` for why Firebase rather than a direct
 APNs push.
 
-To turn it on, download a service account key for the Firebase project from the Firebase
-console (Project settings → Service accounts → Generate new private key) and save it as
-`~/.overwatch-queue/fcm-service-account.json`, then install the Firebase extras listed in
-`server/requirements.txt` and restart the server. The app registers its own Firebase and
-Live Activity tokens the moment it connects. Without the file the server just never pushes,
-and the panel says so.
+There is nothing to set up. The server never talks to Firebase itself: it posts each push
+to the hosted relay in [`../relay/`](../relay/), which holds the one Firebase credential.
+A service account can push to every user of the app, so it never belongs on anyone's PC.
+The app registers its own Firebase and Live Activity tokens the moment it connects.
+
+`OWQ_PUSH_RELAY_URL` points the server at a different relay (a local `wrangler dev`, say);
+set but empty, it turns pushing off, and the panel says so.
 
 ## Watching for a queue
 
@@ -220,17 +221,22 @@ owqserver/
   pushtokens.py   registered device tokens — only used to tell a device has paired
   activitytokens.py  the Live Activity's own push tokens — push-to-start and per-activity
   fcmtokens.py    the phone's Firebase registration token
-  fcm.py          sends Live Activity pushes through Firebase
+  fcm.py          sends Live Activity pushes through Firebase, via ../relay/
   qr.py           a QR encoder, so none of the above needs installing
   catalog.py      hero and map keys, read from the app's own catalog
-tests/            unittest; the GUI tests run offscreen. test_server.py is the one real
+tests/            unittest, run under pytest; the GUI tests run offscreen. test_server.py is the one real
                   dependency: it starts an actual Mosquitto broker, so it needs
                   `mosquitto`/`mosquitto_passwd` installed and reachable to run.
 ```
 
 ```bash
-python3 -m unittest discover -s server/tests -t server/tests
+python3 -m pytest server/tests
 ```
+
+Under pytest, not plain `unittest discover`: `tests/conftest.py` is what moves the home
+directory somewhere temporary and turns pushing off before anything imports `owqserver`,
+and only pytest loads it. Without it, a test that drives a bare `QueueServer` reads your
+real device tokens and pushes to your real phone.
 
 The QR tests check every block's Reed-Solomon syndromes against an independent field
 implementation, and compare module-for-module against `segno` when that happens to be

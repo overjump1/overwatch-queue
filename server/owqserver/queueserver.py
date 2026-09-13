@@ -15,7 +15,8 @@ import time
 
 from . import bnetpresence, protocol, queuemapvote, queueroles, queuevision, queuewatch, vision
 from .activitytokens import ActivityTokens
-from .fcm import FCMClient, FCMConfig
+from . import fcm
+from .fcm import FCMClient
 from .fcmtokens import FCMTokens
 from .heroimages import TemplateStore
 from .protocol import QueueSession
@@ -80,10 +81,9 @@ class QueueServer:
         # screen during hero select and stale coordinates would click on nothing.
         self._roster = {}
 
-        # Pushing is optional, and it is Live Activity pushes only, all over Firebase —
-        # see `fcm.py` for what Firebase delivers that a direct APNs push measurably
-        # doesn't. With no service account configured, a backgrounded phone just won't see
-        # its card move until the app reconnects on its own.
+        # Pushing is Live Activity pushes only, all over Firebase by way of the push relay
+        # — see `fcm.py` for what Firebase delivers that a direct APNs push measurably
+        # doesn't, and why this server never holds the Firebase credential itself.
         #
         # The phone/watch device tokens are still recorded as they register (the panel
         # uses them to tell whether a device has ever been paired), but nothing sends a
@@ -130,12 +130,13 @@ class QueueServer:
         self._running = False
 
     def _make_fcm_client(self):
-        """The one push transport, when a service account is configured — see `fcm.py`
-        for why Live Activity pushes go through Firebase rather than straight at Apple."""
-        config = FCMConfig.load()
-        if not config:
+        """The one push transport — see `fcm.py` for why Live Activity pushes go through
+        Firebase rather than straight at Apple. `None` only when pushing has been turned
+        off, which is what the test suite does."""
+        url = fcm.relay_url()
+        if not url:
             return None
-        client = FCMClient(config, log=lambda message: self.log(message))
+        client = FCMClient(url, log=lambda message: self.log(message))
         client.device_token = self.fcm_tokens.get()
         return client
 
@@ -332,7 +333,7 @@ class QueueServer:
         if not self.fcm:
             if not self._warned_no_fcm:
                 self._warned_no_fcm = True
-                self.log("Firebase isn't configured — the Live Activity won't be pushed")
+                self.log("Pushing is turned off — the Live Activity won't be pushed")
             return
         session_id, sequence, kind = self.session.session_id, self.session.sequence, self.session.kind
         if not self._phone_is_live_connected() or kind in ("idle", "cancelled"):

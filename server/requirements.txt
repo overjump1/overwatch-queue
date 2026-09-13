@@ -2,11 +2,6 @@ PyQt6>=6.4
 # The live transport to the phone/watch: connects to a local Mosquitto broker (started
 # and managed by owqserver.mqttbroker) rather than talking raw sockets itself.
 paho-mqtt>=2.0
-# Optional: only needed to push Live Activities, which go through Firebase Cloud
-# Messaging rather than straight at Apple — see owqserver/fcm.py for why. Without a
-# service account configured the server simply sends no pushes.
-google-auth>=2.28
-requests>=2.31
 
 # Optional: only needed to read the hero-select screen and click heroes in-game. Without
 # them hero select is driven by hand from the panel, exactly as it always was — which is

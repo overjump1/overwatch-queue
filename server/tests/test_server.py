@@ -347,7 +347,7 @@ class PushDispatchTests(unittest.TestCase):
         self.server.push_tokens.register("phone", "phone-token", "sandbox")
         self.server.push_tokens.register("watch", "watch-token", "production")
 
-    def test_without_firebase_nothing_is_sent(self):
+    def test_with_pushing_turned_off_nothing_is_sent(self):
         self.server.fcm = None
         self.server.activity_tokens.register_start("start-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))

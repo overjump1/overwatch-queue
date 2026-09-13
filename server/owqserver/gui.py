@@ -502,8 +502,8 @@ class ControlPanel(QMainWindow):
     def _refresh_delivery(self, clients):
         """What is — or isn't — reaching the phone while it's away.
 
-        Pushing is optional and silently absent when it isn't configured, and the shape of
-        that is confusing from the phone end: everything works while the app is open, and
+        Pushing can be turned off (`fcm.RELAY_URL_ENV`), and the shape of that is
+        confusing from the phone end: everything works while the app is open, and
         the Live Activity simply stops the moment the screen locks. Saying so here is the
         only place that's visible from.
         """
@@ -512,9 +512,8 @@ class ControlPanel(QMainWindow):
         phone_here = any((client.identity or {}).get("kind") == "phone" for client in clients)
         if self.server.fcm is None:
             return self._say(self.delivery,
-                             "Firebase isn't set up, so the Live Activity goes quiet the "
-                             "moment the phone locks. See server/README.md — "
-                             "fcm-service-account.json.", ORANGE)
+                             "Pushing is turned off, so the Live Activity goes quiet the "
+                             "moment the phone locks.", ORANGE)
         if phone_here:
             return self._say(self.delivery,
                              "Phone connected — it's driving its own Live Activity.", MUTED)
