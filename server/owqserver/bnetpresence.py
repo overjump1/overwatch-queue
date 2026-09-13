@@ -485,6 +485,48 @@ def force_relaunch_battlenet(port=DEFAULT_CDP_PORT, log=None) -> bool:
         return False
 
 
+# How long a running Battle.net gets for its debug port to start answering before it's
+# judged to have been started without one. The port opens a few seconds into startup —
+# measured live at well under this — so a panel opened right after Battle.net itself
+# must not mistake "still starting" for "started wrong" and close it.
+DEBUG_PORT_GRACE_SECONDS = 15.0
+
+
+def debug_port_open(port=DEFAULT_CDP_PORT) -> bool:
+    try:
+        _list_targets(port)
+        return True
+    except Exception:                                  # noqa: BLE001 - closed is the answer
+        return False
+
+
+def relaunch_if_missing_debug_port(port=DEFAULT_CDP_PORT, log=None,
+                                   grace_seconds=DEBUG_PORT_GRACE_SECONDS) -> bool:
+    """Relaunches a Battle.net that's running without its debug port. Returns whether
+    it did.
+
+    Nothing persistent can arrange for the port instead. Both ways Battle.net normally
+    starts were tried live and both get undone by Battle.net itself: it rewrites its own
+    `HKCU\\...\\Run` auto-start entry on every start (a flag added there was gone within
+    seconds), and its Start Menu shortcut was put back too. A flagged launch while an
+    unflagged copy is already running doesn't help either — it hands off to that copy
+    and exits. A flagged launch from a clean start is the one thing measured to work, so
+    this checks for the symptom and does exactly that.
+    """
+    log = log or (lambda message: None)
+    if not PRESENCE_AVAILABLE or not battlenet_running():
+        return False
+    deadline = time.monotonic() + grace_seconds
+    while not debug_port_open(port):
+        if time.monotonic() >= deadline:
+            if not battlenet_running():
+                return False                          # closed while we waited
+            log("Battle.net is running without its debug port — relaunching it with it on")
+            return force_relaunch_battlenet(port=port, log=log)
+        time.sleep(1.0)
+    return False
+
+
 def open_source(prefer="auto", port=DEFAULT_CDP_PORT, identity=None, log=None,
                 relaunch=False):
     """Tries CDP, falls back to memory, never fails outright - a `NullSource` is always

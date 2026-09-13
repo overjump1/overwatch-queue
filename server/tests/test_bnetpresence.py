@@ -164,6 +164,81 @@ class ForceRelaunchBattlenetTests(unittest.TestCase):
 
 
 @unittest.skipUnless(bnetpresence.PRESENCE_AVAILABLE, WINDOWS_ONLY)
+class RelaunchIfMissingDebugPortTests(unittest.TestCase):
+    """`relaunch_if_missing_debug_port` — only a Battle.net that's running *and* still has
+    no debug port after the grace period gets relaunched. Time, the port, the process
+    check and the relaunch itself are all fakes."""
+
+    def setUp(self):
+        self._running = bnetpresence.battlenet_running
+        self._port_open = bnetpresence.debug_port_open
+        self._force = bnetpresence.force_relaunch_battlenet
+        self._sleep = __import__("time").sleep
+        self._monotonic = __import__("time").monotonic
+        self.relaunched = []
+        bnetpresence.force_relaunch_battlenet = (
+            lambda port=None, log=None: self.relaunched.append(port) or True)
+        clock = [0.0]
+
+        def sleep(seconds):
+            clock[0] += seconds
+
+        __import__("time").sleep = sleep
+        __import__("time").monotonic = lambda: clock[0]
+
+    def tearDown(self):
+        bnetpresence.battlenet_running = self._running
+        bnetpresence.debug_port_open = self._port_open
+        bnetpresence.force_relaunch_battlenet = self._force
+        __import__("time").sleep = self._sleep
+        __import__("time").monotonic = self._monotonic
+
+    def test_nothing_running_is_left_alone(self):
+        bnetpresence.battlenet_running = lambda: False
+        bnetpresence.debug_port_open = lambda port=None: False
+        self.assertFalse(bnetpresence.relaunch_if_missing_debug_port())
+        self.assertEqual(self.relaunched, [])
+
+    def test_a_battlenet_with_its_port_open_is_left_alone(self):
+        bnetpresence.battlenet_running = lambda: True
+        bnetpresence.debug_port_open = lambda port=None: True
+        self.assertFalse(bnetpresence.relaunch_if_missing_debug_port())
+        self.assertEqual(self.relaunched, [])
+
+    def test_a_battlenet_still_starting_up_is_given_its_grace_period(self):
+        """The port opens a few seconds into startup. A panel opened right after
+        Battle.net must not close it for being slow."""
+        bnetpresence.battlenet_running = lambda: True
+        checks = {"n": 0}
+
+        def opens_on_the_fourth_look(port=None):
+            checks["n"] += 1
+            return checks["n"] >= 4
+
+        bnetpresence.debug_port_open = opens_on_the_fourth_look
+        self.assertFalse(bnetpresence.relaunch_if_missing_debug_port(grace_seconds=15))
+        self.assertEqual(self.relaunched, [])
+
+    def test_no_port_after_the_grace_period_relaunches_with_the_right_port(self):
+        bnetpresence.battlenet_running = lambda: True
+        bnetpresence.debug_port_open = lambda port=None: False
+        self.assertTrue(bnetpresence.relaunch_if_missing_debug_port(port=4321))
+        self.assertEqual(self.relaunched, [4321])
+
+    def test_one_closed_during_the_grace_period_is_left_alone(self):
+        looks = {"n": 0}
+
+        def running():
+            looks["n"] += 1
+            return looks["n"] == 1               # running at the start, gone by the end
+
+        bnetpresence.battlenet_running = running
+        bnetpresence.debug_port_open = lambda port=None: False
+        self.assertFalse(bnetpresence.relaunch_if_missing_debug_port())
+        self.assertEqual(self.relaunched, [])
+
+
+@unittest.skipUnless(bnetpresence.PRESENCE_AVAILABLE, WINDOWS_ONLY)
 class OpenSourceTests(unittest.TestCase):
 
     def setUp(self):

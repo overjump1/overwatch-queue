@@ -28,7 +28,11 @@ fast match-found check keeps running too, so whichever notices first wins. What 
 owns it keeps: if it goes quiet, the queue waits for it to answer again rather than
 guessing from the screen. If Battle.net
 closes or its debug port stops answering, it's relaunched automatically and the paired
-phone/watch are told it disconnected. `--no-presence` turns all of this off; on by
+phone/watch are told it disconnected. A Battle.net started the ordinary way has no debug
+port at all, so when the panel opens and finds one running without it (after giving it a
+few seconds to finish starting), it relaunches Battle.net with the port on — Battle.net
+rewrites its own auto-start entry and shortcut, so nothing persistent can do this
+instead. `--presence-source memory` avoids that. `--no-presence` turns all of this off; on by
 default, it only ever reads (a websocket to Battle.net's own debug port, or a plain
 read of Battle.net's own process memory — Overwatch itself is never touched).
 """

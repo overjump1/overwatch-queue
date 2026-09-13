@@ -154,20 +154,47 @@ class PanelTests(unittest.TestCase):
 
 @unittest.skipIf(APP is None, "PyQt6 isn't installed")
 class BattlenetRelaunchPanelTests(unittest.TestCase):
-    """The manual "it's open but not working" button — it just hands off to the server,
-    faked out here so nothing ever touches a real Battle.net."""
+    """The manual "it's open but not working" button, and the debug-port check the panel
+    runs when it opens — both faked out here so nothing ever touches a real Battle.net."""
 
     def setUp(self):
         from PyQt6.QtWidgets import QMessageBox
+        from owqserver import bnetpresence
         self._question = QMessageBox.question
+        self._relaunch_if_missing = bnetpresence.relaunch_if_missing_debug_port
+        # Stubbed before the panel exists: building it with presence on starts the
+        # check on its own thread, and the real one would close a real Battle.net.
+        self.port_checks = []
+        bnetpresence.relaunch_if_missing_debug_port = (
+            lambda port=None, log=None: self.port_checks.append(port) or False)
         self.server = _server(8905)
         self.server.presence_enabled = True     # as if presence were actually on
         self.panel = ControlPanel(self.server)
 
     def tearDown(self):
         from PyQt6.QtWidgets import QMessageBox
+        from owqserver import bnetpresence
         QMessageBox.question = self._question
         self.panel.close()
+        bnetpresence.relaunch_if_missing_debug_port = self._relaunch_if_missing
+
+    def test_opening_the_panel_checks_battlenet_for_its_debug_port(self):
+        from owqserver import bnetpresence
+        if not bnetpresence.CDP_AVAILABLE:
+            self.skipTest("websocket-client isn't installed, so the check never runs")
+        self.assertTrue(self._wait_for(lambda: self.port_checks == [self.server.presence_port]))
+
+    def test_a_memory_only_presence_source_never_checks(self):
+        self._wait_for(lambda: bool(self.port_checks))     # setUp's own panel's check
+        self.port_checks.clear()
+        server = _server(8907)
+        server.presence_enabled = True
+        server.presence_source = "memory"
+        panel = ControlPanel(server)
+        try:
+            self.assertFalse(self._wait_for(lambda: bool(self.port_checks), timeout=0.5))
+        finally:
+            panel.close()
 
     def test_the_button_is_hidden_when_presence_is_off(self):
         # `isHidden()`, not `isVisible()`: the panel is never `.show()`n in these tests,

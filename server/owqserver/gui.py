@@ -163,6 +163,13 @@ class ControlPanel(QMainWindow):
         self._refresh_queue_vision()
         self._refresh_presence()
 
+        # Only when the debug port is what presence would actually use — a server reading
+        # Battle.net's memory instead has no reason to close anyone's Battle.net.
+        if (self.server.presence_enabled and bnetpresence.CDP_AVAILABLE
+                and self.server.presence_source in ("auto", "cdp")):
+            threading.Thread(target=self._ensure_battlenet_debug_port, daemon=True,
+                             name="battlenet-debug-port-check").start()
+
     # ------------------------------------------------------------ layout
 
     def _build(self):
@@ -323,6 +330,16 @@ class ControlPanel(QMainWindow):
         self.stack.setCurrentIndex(1)
 
     # ------------------------------------------------------------ widget events
+
+    def _ensure_battlenet_debug_port(self):
+        """Checked once, off the GUI thread, each time the panel opens: a Battle.net
+        started the ordinary way has no debug port, and nothing persistent can give it
+        one (see `bnetpresence.relaunch_if_missing_debug_port`), so this is where it
+        gets one. Off the GUI thread because it can wait out a grace period and then a
+        relaunch."""
+        bnetpresence.relaunch_if_missing_debug_port(
+            port=self.server.presence_port, log=lambda message: self.server.log(message))
+        self._bridge.changed.emit()
 
     def _relaunch_battlenet(self):
         """Closing and reopening Battle.net can end an active game, so this asks first —
