@@ -88,7 +88,8 @@ def main():
         pairing.regenerate()
         print("New pairing token. Every device has to scan again.")
 
-    server = QueueServer(pairing, Catalog(), vision_enabled=not options.no_vision,
+    server = QueueServer(pairing, Catalog(), log=_log,
+                         vision_enabled=not options.no_vision,
                          queue_vision_enabled=not options.no_queue_vision,
                          presence_enabled=not options.no_presence,
                          presence_source=options.presence_source,
@@ -105,9 +106,15 @@ def main():
     return run(server)
 
 
+def _log(message):
+    """Every server message, timestamped, to the terminal — with or without the window.
+    The window has no log view of its own, so this is the only place to see what was
+    pushed, refused or dropped."""
+    print("%s %s" % (time.strftime("%H:%M:%S"), message), flush=True)
+
+
 def run_headless(server) -> int:
     """The server with no window: still pairs, still drives every screen in the app."""
-    server.log = print
     server.start()
     # No panel to take the mode and role from, so the watcher gets a `Controls` of its
     # own with the defaults. The banner's colour still supplies the mode; only the role
