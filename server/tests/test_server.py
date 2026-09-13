@@ -288,50 +288,10 @@ class _FakeClient:
     name = "iPhone"
 
 
-class _FakeAPNs:
-    """Records what would have gone to Apple, without a network in sight."""
-
-    def __init__(self, invalid_kinds=()):
-        self.background = []
-        self.alerts = []
-        self.activity_starts = []
-        self.activity_updates = []
-        self.activity_ends = []
-        self._invalid_kinds = set(invalid_kinds)
-
-    def send_background(self, kind, token, environment, session_id, sequence):
-        self.background.append((kind, token, environment, session_id, sequence))
-        return "invalid" if kind in self._invalid_kinds else "ok"
-
-    def send_alert(self, kind, token, environment, title, body, session_id, sequence):
-        self.alerts.append((kind, token, environment, title, body, session_id, sequence))
-        return "invalid" if kind in self._invalid_kinds else "ok"
-
-    def send_activity_start(self, token, environment, attributes, content_state, timestamp, alert=None):
-        self.activity_starts.append((token, environment, attributes, content_state, timestamp, alert))
-        return "ok"
-
-    def send_activity_update(self, token, environment, content_state, timestamp, alert=None, stale_date=None):
-        self.activity_updates.append((token, environment, content_state, timestamp, alert, stale_date))
-        return "ok"
-
-    def send_activity_end(self, token, environment, content_state, timestamp, alert=None,
-                          dismissal_date=None):
-        self.activity_ends.append((token, environment, content_state, timestamp, alert,
-                                   dismissal_date))
-        return "ok"
-
-    @staticmethod
-    def token_is_invalid(response):
-        return response == "invalid"
-
-
 class _FakeFCM:
-    """Records what would have gone to Firebase, without a network in sight. Distinct
-    call shape from `_FakeAPNs` on purpose — FCM addresses a device by its own
-    registration token, not an (device_token, environment) pair — so a test that
-    accidentally exercises the wrong transport fails loudly instead of quietly
-    matching the other fake's signature."""
+    """Records what would have gone to Firebase, without a network in sight. Deliberately
+    has no `send_alert` or `send_background`: nothing but Live Activity pushes is ever
+    meant to leave this server, so a stray plain notification fails loudly here."""
 
     def __init__(self, invalid_kinds=()):
         self.activity_starts = []
@@ -356,170 +316,89 @@ class _FakeFCM:
         return response == "invalid"
 
 
-class FCMDispatchTests(unittest.TestCase):
-    """The Firebase-only path: no `apns.json`/`push_relay.json` configured at all, just
-    a Firebase service account — the setup `fcm.py`'s own docstring recommends now that
-    direct-APNs push-to-start is known to be unreliable. Regression coverage for the bug
-    where `_retry_activity_start` and the once-a-second tick loop silently did nothing
-    on a server shaped exactly like this, because the retry was gated on `self.apns`
-    alone instead of on either transport."""
+def _push_synchronously(server):
+    """`apply()` pushes on a background thread (see `_broadcast_snapshot`); these tests
+    care about what gets pushed and in what order, not the threading, so they run the push
+    inline instead of racing a sleep."""
+    def broadcast():
+        server.mqtt.publish_snapshot(server.session.snapshot())
+        server._push_live_activity()
+    server._broadcast_snapshot = broadcast
 
-    def setUp(self):
-        pairing = Pairing(token=TOKEN, port=PORT + 5, path=os.devnull)
-        self.server = QueueServer(pairing, Catalog(), push_tokens=PushTokens(os.devnull),
-                                  activity_tokens=ActivityTokens(os.devnull))
-        self.fake = _FakeFCM()
-        self.server.fcm = self.fake
-        self.server.apns = None
 
-    def test_a_fresh_session_with_only_a_start_token_gets_a_start_push_over_fcm(self):
-        self.server.activity_tokens.register_start("start-token", "sandbox")
-        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        time.sleep(0.05)                      # `apply()` pushes off-thread; see `_broadcast_snapshot`
-        self.assertEqual(len(self.fake.activity_starts), 1)
-        token, attributes, content_state, _timestamp, alert = self.fake.activity_starts[0]
-        self.assertEqual(token, "start-token")
-        self.assertEqual(attributes["sessionID"], self.server.session.session_id)
-        self.assertEqual(content_state["phase"]["type"], "searching")
-
-    def test_tick_retries_a_start_over_fcm_with_no_further_phase_change(self):
-        # The exact regression: with only `self.fcm` configured (no `self.apns`),
-        # `_retry_activity_start` used to bail out on its very first line and this
-        # queue would never get a second push-to-start attempt no matter how long it
-        # sat in `searching`.
-        self.server.activity_tokens.register_start("start-token", "sandbox")
-        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        time.sleep(0.05)
-        self.assertEqual(len(self.fake.activity_starts), 1)
-        self.server._activity_start_last_sent_at -= self.server._activity_start_retry_seconds + 1
-        self.server._retry_activity_start()
-        self.assertEqual(len(self.fake.activity_starts), 2)
-
-    def test_tick_retry_is_a_noop_once_a_card_exists_over_fcm(self):
-        self.server.activity_tokens.register_start("start-token", "sandbox")
-        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        time.sleep(0.05)
-        self.server.activity_tokens.register_update(
-            self.server.session.session_id, "activity-token", "sandbox")
-        self.server._activity_start_last_sent_at -= self.server._activity_start_retry_seconds + 1
-        self.server._retry_activity_start()
-        self.assertEqual(len(self.fake.activity_starts), 1)
-
-    def test_an_existing_activity_token_gets_updates_over_fcm(self):
-        self.server.activity_tokens.register_update(
-            self.server.session.session_id, "activity-token", "sandbox")
-        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        time.sleep(0.05)
-        self.assertEqual(len(self.fake.activity_updates), 1)
-        self.assertEqual(len(self.fake.activity_starts), 0)
+def _connect_a_phone(server):
+    from owqserver.mqttclient import Client as MQTTTestClient
+    phone = MQTTTestClient("phone-client-id")
+    phone.identity = {"kind": "phone", "name": "Test iPhone"}
+    phone.authorized = True
+    server.mqtt._clients["phone-client-id"] = phone
 
 
 class PushDispatchTests(unittest.TestCase):
-    """`_push_apns` in isolation: given some registered tokens, what does it send?"""
+    """`_push_live_activity`: Firebase Live Activity pushes are the only thing sent."""
 
     def setUp(self):
         pairing = Pairing(token=TOKEN, port=PORT + 1, path=os.devnull)
         self.server = QueueServer(pairing, Catalog(), push_tokens=PushTokens(os.devnull),
-                        activity_tokens=ActivityTokens(os.devnull))
-        self.fake = _FakeAPNs()
-        self.server.apns = self.fake
-        # These cover the dispatch logic itself, so they pin the transport to APNs.
-        # `FCMDispatchTests` is where the Firebase path is exercised.
-        self.server.fcm = None
+                                  activity_tokens=ActivityTokens(os.devnull))
+        self.fake = _FakeFCM()
+        self.server.fcm = self.fake
+        _push_synchronously(self.server)
         self.server.push_tokens.register("phone", "phone-token", "sandbox")
         self.server.push_tokens.register("watch", "watch-token", "production")
 
-    def test_no_apns_configured_sends_nothing(self):
-        self.server.apns = None
+    def test_without_firebase_nothing_is_sent(self):
+        self.server.fcm = None
+        self.server.activity_tokens.register_start("start-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.assertEqual(self.fake.alerts, [])
+        self.server._retry_activity_start()
+        self.assertEqual(self.fake.activity_starts, [])
 
-    def test_an_invalid_watch_token_is_dropped(self):
-        self.fake._invalid_kinds = {"watch"}
-        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.assertIsNone(self.server.push_tokens.get("watch"))
-        self.assertEqual(self.server.push_tokens.get("phone"), ("phone-token", "sandbox"))
-
-    def test_a_routine_change_alerts_only_the_watch(self):
-        # The watch has no Live Activity of its own, so it needs a real, time-sensitive
-        # alert directly. The phone doesn't: Apple's own push-to-start and per-activity
-        # update pushes (see `_push_activity`) already carry their own alert, tied to the
-        # Live Activity itself — a second, plain one here would just double the same event
-        # up in Notification Center.
-        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        kinds = {entry[0] for entry in self.fake.alerts}
-        self.assertEqual(kinds, {"watch"})
-        title, body = protocol.notification_copy("searching")
-        self.assertEqual((self.fake.alerts[0][3], self.fake.alerts[0][4]), (title, body))
-        self.assertEqual(self.fake.alerts[0][5], self.server.session.session_id)
-
-    def test_an_urgent_change_still_only_alerts_the_watch_directly(self):
+    def test_device_tokens_alone_never_produce_a_push(self):
+        # A registered phone and watch, but no Live Activity token: the old server sent
+        # both of them plain notifications here. Nothing at all goes out now — `_FakeFCM`
+        # has no plain-alert method to call, so any attempt would raise.
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.server.apply(protocol.match_found("quickPlay", "damage", 30))
-        kinds = {entry[0] for entry in self.fake.alerts if entry[3] == "Match Found"}
-        self.assertEqual(kinds, {"watch"})
-
-    def test_no_watch_token_sends_no_direct_alert(self):
-        self.server.push_tokens.forget("watch")
-        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.assertEqual(self.fake.alerts, [])
+        self.server._retry_activity_start()
+        self.assertEqual((self.fake.activity_starts, self.fake.activity_updates,
+                          self.fake.activity_ends), ([], [], []))
 
     def test_a_live_connected_phone_gets_no_activity_push_of_its_own(self):
         # A phone actively subscribed over MQTT sees this same broadcast directly and
-        # drives its own Live Activity locally — pushing an activity update/start too
-        # would alert the player twice for one phase change.
-        from owqserver.mqttclient import Client as MQTTTestClient
-        phone = MQTTTestClient("phone-client-id")
-        phone.identity = {"kind": "phone", "name": "Test iPhone"}
-        phone.authorized = True
-        self.server.mqtt._clients["phone-client-id"] = phone
+        # drives its own Live Activity locally — pushing too would alert twice.
+        _connect_a_phone(self.server)
         self.server.activity_tokens.register_start("start-token", "sandbox")
-
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        time.sleep(0.05)
-
         self.assertEqual(self.fake.activity_starts, [])
         self.assertEqual(self.fake.activity_updates, [])
 
     def test_a_disconnected_phone_still_gets_its_activity_push(self):
         self.server.activity_tokens.register_start("start-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        time.sleep(0.05)
         self.assertEqual(len(self.fake.activity_starts), 1)
 
     def test_a_live_connected_phone_still_gets_the_terminal_end_push(self):
-        # Unlike start/update, idle/cancelled is the one phase change nothing later ever
-        # retries — if the phone's own local `LiveActivityController.end()` doesn't land
-        # (the socket looking live a moment longer than it actually is, or the process
-        # suspended mid-await as the screen locks), skipping the push here too would
-        # leave the card frozen on its last real phase forever.
-        from owqserver.mqttclient import Client as MQTTTestClient
-        phone = MQTTTestClient("phone-client-id")
-        phone.identity = {"kind": "phone", "name": "Test iPhone"}
-        phone.authorized = True
-        self.server.mqtt._clients["phone-client-id"] = phone
+        # idle/cancelled is the one phase change nothing later ever retries — if the
+        # phone's own local `end()` doesn't land, skipping the push would leave the card
+        # frozen on its last phase forever.
+        _connect_a_phone(self.server)
         self.server.activity_tokens.register_update(
             self.server.session.session_id, "activity-token", "sandbox")
-
         self.server.apply(protocol.cancelled("userLeft"))
-        time.sleep(0.05)
-
         self.assertEqual(len(self.fake.activity_ends), 1)
 
 
 class LiveActivityPushDispatchTests(unittest.TestCase):
-    """`_push_activity` in isolation: start, update, end, and the no-duplicate-start
-    guard — none of this touches the phone/watch device-token push above."""
+    """`_push_activity` in isolation: start, update, end, and the no-duplicate guards."""
 
     def setUp(self):
         pairing = Pairing(token=TOKEN, port=PORT + 2, path=os.devnull)
         self.server = QueueServer(pairing, Catalog(), push_tokens=PushTokens(os.devnull),
                                   activity_tokens=ActivityTokens(os.devnull))
-        self.fake = _FakeAPNs()
-        self.server.apns = self.fake
-        # These cover the dispatch logic itself, so they pin the transport to APNs.
-        # `FCMDispatchTests` is where the Firebase path is exercised.
-        self.server.fcm = None
+        self.fake = _FakeFCM()
+        self.server.fcm = self.fake
+        _push_synchronously(self.server)
 
     def test_no_start_token_means_nothing_is_sent(self):
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
@@ -529,9 +408,8 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.server.activity_tokens.register_start("start-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.assertEqual(len(self.fake.activity_starts), 1)
-        token, environment, attributes, content_state, _timestamp, alert = self.fake.activity_starts[0]
+        token, attributes, content_state, _timestamp, alert = self.fake.activity_starts[0]
         self.assertEqual(token, "start-token")
-        self.assertEqual(environment, "sandbox")
         self.assertEqual(attributes["sessionID"], self.server.session.session_id)
         self.assertEqual(content_state["phase"]["type"], "searching")
         # Every start carries an alert, even a routine phase — verified directly
@@ -545,9 +423,6 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.assertEqual(len(self.fake.activity_starts), 1)
 
     def test_start_is_retried_once_the_cooldown_elapses(self):
-        # A background push-to-start is best-effort — the first one landing is never
-        # guaranteed, so a session with no update token yet keeps retrying rather than
-        # giving up after one attempt.
         self.server.activity_tokens.register_start("start-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.server._activity_start_last_sent_at -= self.server._activity_start_retry_seconds + 1
@@ -556,9 +431,7 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
 
     def test_tick_retries_a_start_with_no_further_phase_change(self):
         # The common case push-to-start most needs retried for: a queue that just sits in
-        # `searching` with nothing else changing the phase. `_push_activity`'s own retry
-        # only fires off a phase change, so without this a session like this one would
-        # get exactly one push-to-start attempt no matter how long it waits.
+        # `searching` with nothing else changing the phase.
         self.server.activity_tokens.register_start("start-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.assertEqual(len(self.fake.activity_starts), 1)
@@ -580,44 +453,33 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.assertEqual(self.fake.activity_starts, [])
 
     def test_retried_attributes_keep_the_same_startedAt(self):
-        # Apple recognises a retry as the same activity by matching attributes — a
-        # `startedAt` that drifted between attempts would make each retry look like a
-        # brand new activity instead.
+        # Apple recognises a retry as the same activity by matching attributes.
         self.server.activity_tokens.register_start("start-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        first_started_at = self.fake.activity_starts[0][2]["startedAt"]
+        first_started_at = self.fake.activity_starts[0][1]["startedAt"]
         self.server._activity_start_last_sent_at -= self.server._activity_start_retry_seconds + 1
         self.server.apply(protocol.match_found("quickPlay", "damage", 30))
-        second_started_at = self.fake.activity_starts[1][2]["startedAt"]
+        second_started_at = self.fake.activity_starts[1][1]["startedAt"]
         self.assertEqual(first_started_at, second_started_at)
 
     def test_a_start_token_registered_mid_session_still_gets_the_current_phase(self):
-        # The start token can arrive late (the app only just got its first chance to run
-        # since installing) — the very first push-to-start should carry whatever phase
-        # is current by then, not the one from when the session began.
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.server.activity_tokens.register_start("start-token", "sandbox")
         self.server.apply(protocol.match_found("quickPlay", "damage", 30))
         self.assertEqual(len(self.fake.activity_starts), 1)
-        content_state, alert = self.fake.activity_starts[0][3], self.fake.activity_starts[0][5]
+        content_state, alert = self.fake.activity_starts[0][2], self.fake.activity_starts[0][4]
         self.assertEqual(content_state["phase"]["type"], "matchFound")
         self.assertEqual(alert, {"title": "Match Found",
                                  "body": "You're being pulled into the game — get back to your PC."})
 
     def test_a_patch_to_the_same_phase_carries_no_alert(self):
-        # The estimate ticking down, a mode correction — nothing about the queue itself
-        # moved, so this is the one case that stays silent even though the phase kind it
-        # patches (`searching`, just below) got a real alert of its own a moment earlier.
         self.server.activity_tokens.register_update(
             self.server.session.session_id, "activity-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.server.patch(estimatedWait=99)
-        alert = self.fake.activity_updates[-1][4]
-        self.assertIsNone(alert)
+        self.assertIsNone(self.fake.activity_updates[-1][3])
 
-    def test_every_real_phase_change_carries_an_alert_now(self):
-        # Not just the three that used to be `URGENT_KINDS` — a transit app buzzes at
-        # every stop, not only the ones it judges important, and this is now the same.
+    def test_every_real_phase_change_carries_an_alert(self):
         self.server.activity_tokens.register_update(
             self.server.session.session_id, "activity-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
@@ -625,7 +487,7 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.server.apply(protocol.map_vote(["kings-row"]))
         self.server.apply(protocol.hero_select("quickPlay", "damage"))
         self.server.apply(protocol.in_game("quickPlay"))
-        alerts = [update[4] for update in self.fake.activity_updates]
+        alerts = [update[3] for update in self.fake.activity_updates]
         self.assertEqual(alerts, [
             {"title": "Queue Started", "body": "Watching your queue."},
             {"title": "Match Found",
@@ -640,21 +502,19 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
             self.server.session.session_id, "activity-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.server.apply(protocol.cancelled("userLeft"))
-        alert = self.fake.activity_ends[-1][4]
-        self.assertEqual(alert, {"title": "Queue Cancelled",
-                                 "body": "The queue ended without a match."})
+        self.assertEqual(self.fake.activity_ends[-1][3],
+                         {"title": "Queue Cancelled", "body": "The queue ended without a match."})
 
-    def test_idle_reached_directly_stays_silent(self):
-        # `idle` is bookkeeping, not a real trip ending — `cancelled` is the event
-        # actually worth an alert for. (`reset()` always mints a fresh session id, which
-        # would never match a token registered under the old one; `apply(idle())`
-        # directly is what lets this compare against the same registered token above.)
+    def test_a_match_ending_takes_the_card_down_silently(self):
+        # What `QueueWatcher._check_match_over` does once the player is back in the menus.
         self.server.activity_tokens.register_update(
             self.server.session.session_id, "activity-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.server.apply(protocol.match_found("quickPlay", "damage", 30))
+        self.server.apply(protocol.in_game("quickPlay"))
         self.server.apply(protocol.idle())
-        alert = self.fake.activity_ends[-1][4]
-        self.assertIsNone(alert)
+        self.assertEqual(len(self.fake.activity_ends), 1)
+        self.assertIsNone(self.fake.activity_ends[-1][3])
 
     def test_a_registered_update_token_is_used_instead_of_starting_again(self):
         self.server.activity_tokens.register_start("start-token", "sandbox")
@@ -664,14 +524,22 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.server.apply(protocol.match_found("quickPlay", "damage", 30))
         self.assertEqual(len(self.fake.activity_starts), 1)     # the earlier one only
         self.assertEqual(len(self.fake.activity_updates), 1)
-        token, environment, content_state, _timestamp, alert, _stale = self.fake.activity_updates[0]
+        token, content_state, _timestamp, _alert, _stale = self.fake.activity_updates[0]
         self.assertEqual(token, "activity-token")
         self.assertEqual(content_state["phase"]["type"], "matchFound")
 
-    def test_an_update_token_from_a_previous_session_is_not_reused(self):
+    def test_a_card_left_from_a_previous_session_is_ended_before_a_new_one_starts(self):
+        # A requeue straight after a match: the old card must not sit beside the new one
+        # still saying "In game".
         self.server.activity_tokens.register_update("some-other-session", "stale-token", "sandbox")
+        self.server.activity_tokens.register_start("start-token", "sandbox")
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        self.assertEqual([end[0] for end in self.fake.activity_ends], ["stale-token"])
+        self.assertIsNone(self.fake.activity_ends[0][3])
         self.assertEqual(self.fake.activity_updates, [])
+        self.assertEqual(len(self.fake.activity_starts), 1)
+        self.assertIsNone(self.server.activity_tokens.stale_update_token(
+            self.server.session.session_id))
 
     def test_idle_with_a_registered_update_token_sends_end_and_forgets_it(self):
         self.server.activity_tokens.register_update(
@@ -683,8 +551,6 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
 
     def test_idle_with_no_update_token_sends_nothing_and_does_not_start(self):
         self.server.activity_tokens.register_start("start-token", "sandbox")
-        # `apply(idle())` isn't a real transition anywhere in play, but `reset()` is the
-        # equivalent path back to idle and should behave the same way: no start, no end.
         self.server.reset()
         self.assertEqual(self.fake.activity_starts, [])
         self.assertEqual(self.fake.activity_ends, [])
@@ -697,105 +563,12 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
         self.assertEqual(len(self.fake.activity_starts), 2)
 
-
-class ActivityFallbackTests(unittest.TestCase):
-    """`_check_activity_fallback`: when a push-to-start was sent and the app never came
-    back with a per-activity token, the phone gets told the plain way instead — the one
-    case where it still gets a direct notification of its own."""
-
-    def setUp(self):
-        pairing = Pairing(token=TOKEN, port=PORT + 3, path=os.devnull)
-        self.server = QueueServer(pairing, Catalog(), push_tokens=PushTokens(os.devnull),
-                                  activity_tokens=ActivityTokens(os.devnull))
-        self.fake = _FakeAPNs()
-        self.server.apns = self.fake
-        # These cover the dispatch logic itself, so they pin the transport to APNs.
-        # `FCMDispatchTests` is where the Firebase path is exercised.
-        self.server.fcm = None
-        self.server.push_tokens.register("phone", "phone-token", "sandbox")
-        self.server.activity_tokens.register_start("start-token", "sandbox")
-
-    def _queue_and_wait_out_the_delay(self):
-        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        # `apply` only kicks off the push (including `_activity_start_first_sent_at`
-        # getting set) on a background thread, same as it always did — this just gives
-        # it a moment to actually run before rewinding the clock on it.
-        time.sleep(0.05)
-        self.server._activity_start_first_sent_at -= self.server._activity_fallback_delay_seconds + 1
-
-    def test_nothing_before_the_delay_elapses(self):
-        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        self.server._check_activity_fallback()
-        self.assertEqual(self.fake.alerts, [])
-
-    def test_the_phone_is_told_once_the_delay_elapses(self):
-        self._queue_and_wait_out_the_delay()
-        self.server._check_activity_fallback()
-        self.assertEqual(len(self.fake.alerts), 1)
-        kind, token, environment, title, body, session_id, _sequence = self.fake.alerts[0]
-        self.assertEqual((kind, token, environment), ("phone", "phone-token", "sandbox"))
-        self.assertEqual((title, body), protocol.activity_fallback_copy())
-        self.assertEqual(session_id, self.server.session.session_id)
-
-    def test_only_once_per_session(self):
-        self._queue_and_wait_out_the_delay()
-        self.server._check_activity_fallback()
-        self.server._check_activity_fallback()
-        self.assertEqual(len(self.fake.alerts), 1)
-
-    def test_nothing_when_the_activity_did_take(self):
-        self._queue_and_wait_out_the_delay()
+    def test_an_invalid_update_token_is_forgotten(self):
+        self.fake._invalid_kinds = {"update"}
         self.server.activity_tokens.register_update(
             self.server.session.session_id, "activity-token", "sandbox")
-        self.server._check_activity_fallback()
-        self.assertEqual(self.fake.alerts, [])
-
-    def test_registering_an_update_token_cancels_a_pending_fallback(self):
-        # The card arrived late, but it arrived — that's the app saying so.
-        self._queue_and_wait_out_the_delay()
-        self.server.activity_tokens.register_update(
-            self.server.session.session_id, "activity-token", "sandbox")
-        self.server._check_activity_fallback()
-        self.assertEqual(self.fake.alerts, [])
-
-    def test_the_phone_is_still_told_when_no_start_token_was_ever_registered(self):
-        # A device with no push-to-start token on file (fresh install, Live Activities
-        # off, no notification permission) can never have push-to-start attempted at
-        # all — the fallback clock has to arm anyway, or this phone goes completely
-        # silent for the whole session.
-        self.server.activity_tokens.clear()
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
-        time.sleep(0.05)
-        self.assertIsNotNone(self.server._activity_start_first_sent_at)
-        self.server._activity_start_first_sent_at -= self.server._activity_fallback_delay_seconds + 1
-        self.server._check_activity_fallback()
-        self.assertEqual(len(self.fake.alerts), 1)
-
-    def test_nothing_once_the_queue_has_ended(self):
-        self._queue_and_wait_out_the_delay()
-        self.server.apply(protocol.cancelled("userLeft"))
-        self.server._check_activity_fallback()
-        self.assertEqual(self.fake.alerts, [])
-
-    def test_a_new_queue_gets_its_own_fallback(self):
-        self._queue_and_wait_out_the_delay()
-        self.server._check_activity_fallback()
-        self.server.reset()
-        self._queue_and_wait_out_the_delay()
-        self.server._check_activity_fallback()
-        self.assertEqual(len(self.fake.alerts), 2)
-        self.assertNotEqual(self.fake.alerts[0][5], self.fake.alerts[1][5])
-
-    def test_no_phone_token_yet_does_not_burn_the_one_send(self):
-        # The phone may register a moment from now; this queue should still get told.
-        self.server.push_tokens.forget("phone")
-        self._queue_and_wait_out_the_delay()
-        self.server._check_activity_fallback()
-        self.assertEqual(self.fake.alerts, [])
-
-        self.server.push_tokens.register("phone", "phone-token", "sandbox")
-        self.server._check_activity_fallback()
-        self.assertEqual(len(self.fake.alerts), 1)
+        self.assertIsNone(self.server.activity_tokens.update_token(self.server.session.session_id))
 
 
 class RelaunchBattlenetTests(unittest.TestCase):

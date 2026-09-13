@@ -151,6 +151,11 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self._sel(["tank", "damage", "support", "flex"]).effective_role,
                          "flex")
 
+    def test_every_checked_role_is_kept_in_screen_order(self):
+        self.assertEqual(self._sel(["support", "tank"]).effective_roles, ["tank", "support"])
+        self.assertEqual(self._sel(["damage"]).effective_roles, ["damage"])
+        self.assertIsNone(self._sel([]).effective_roles)
+
 
 class RowGeometryTests(unittest.TestCase):
     """The row's own shared top and spacing, recovered from the hits alone.

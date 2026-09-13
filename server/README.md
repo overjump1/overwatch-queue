@@ -50,59 +50,20 @@ phone can reach from the dropdown; the code redraws for whichever you choose.
 ## Push notifications (optional)
 
 MQTT only reaches a device that's holding a connection open — the moment the phone's
-screen locks or the watch drifts out of range, that stops being true. Apple Push
-Notification service is how the PC reaches them anyway: it pushes a snapshot to Apple's
-servers, and Apple delivers it even to a fully backgrounded app. See
-[docs/PROTOCOL.md](../docs/PROTOCOL.md#push) for what actually gets sent.
+screen locks, that stops being true. The Live Activity is how the queue stays on the Lock
+Screen, Dynamic Island and (mirrored by the watch itself) the Apple Watch anyway, and this
+server keeps it current by pushing to it through **Firebase Cloud Messaging**. That's the
+only push it sends: no plain notification ever goes to the phone or the watch — the Live
+Activity's own alert is the one interruption. See [docs/PROTOCOL.md](../docs/PROTOCOL.md#push)
+for what actually gets sent, and `owqserver/fcm.py` for why Firebase rather than a direct
+APNs push.
 
-The phone and watch each register their own device token the moment they connect and
-have push permission — nothing to do on that side beyond installing a build with the
-Push Notifications capability. Nothing below is required either: a server with neither
-of these configured just never pushes, and everything else works exactly as it does today.
-
-### The easy way: the maintainer's relay
-
-APNs authorizes at the Apple Developer Team level, not per device — the credential that
-lets you push at all would let you push to *every* installed copy of this app, not just
-your own, so it can't simply ship inside the open-source server. Instead, `relay/` is a
-small Cloudflare Worker that holds that one credential; every PC talks to it over HTTPS
-instead of to Apple directly. See [relay/README.md](../relay/README.md) for why that's
-the shape of it and exactly what it does and doesn't protect against.
-
-Point your server at a deployed relay with `~/.overwatch-queue/push_relay.json`:
-
-```json
-{
-  "url": "https://overwatch-queue-push-relay.<your-subdomain>.workers.dev",
-  "api_key": "<the RELAY_API_KEY the relay was deployed with>"
-}
-```
-
-### The advanced way: your own Apple Auth Key
-
-If you'd rather not depend on anyone's relay — including the maintainer's — the server
-will use a real Apple Auth Key directly if it finds one, before ever looking for
-`push_relay.json`. This only makes sense for a server you and nobody else installs: the
-same key that lets you push to your own phone lets you push to *any* device registered
-for this app, so it should never leave a machine you personally control.
-
-1. In the [Apple Developer portal](https://developer.apple.com/account/resources/authkeys/list),
-   create an APNs Auth Key and download the `.p8` it gives you (only once — Apple won't
-   let you download it again). Note its **Key ID** and your account's **Team ID**.
-2. Drop the file in as `~/.overwatch-queue/AuthKey_<KeyID>.p8`.
-3. Create `~/.overwatch-queue/apns.json` next to it:
-
-   ```json
-   {
-     "team_id": "ABCDE12345",
-     "key_id": "F6G7H8J9K0",
-     "bundle_id_ios": "com.tomerady.OverwatchQueue",
-     "bundle_id_watch": "com.tomerady.OverwatchQueue.watchkitapp"
-   }
-   ```
-
-4. Install the extra dependencies this path needs (already listed, commented, in
-   `server/requirements.txt`) and restart the server.
+To turn it on, download a service account key for the Firebase project from the Firebase
+console (Project settings → Service accounts → Generate new private key) and save it as
+`~/.overwatch-queue/fcm-service-account.json`, then install the Firebase extras listed in
+`server/requirements.txt` and restart the server. The app registers its own Firebase and
+Live Activity tokens the moment it connects. Without the file the server just never pushes,
+and the panel says so.
 
 ## Watching for a queue
 
@@ -256,10 +217,12 @@ owqserver/
   mqttclient.py   the server's own connection to that broker
   protocol.py     the wire format from docs/PROTOCOL.md
   pairing.py      the token, where it's stored, and the addresses to offer
-  pushtokens.py   registered APNs device tokens, one per phone/watch
+  pushtokens.py   registered device tokens — only used to tell a device has paired
   activitytokens.py  the Live Activity's own push tokens — push-to-start and per-activity
-  apns.py         talks to Apple directly — the advanced, bring-your-own-key path
-  pushrelay.py    talks to the maintainer's relay instead — see ../relay/
+  fcmtokens.py    the phone's Firebase registration token
+  fcm.py          sends Live Activity pushes through Firebase
+  apns.py         direct APNs client — no longer used by the server
+  pushrelay.py    relay client — no longer used by the server; see ../relay/
   qr.py           a QR encoder, so none of the above needs installing
   catalog.py      hero and map keys, read from the app's own catalog
 tests/            unittest; the GUI tests run offscreen. test_server.py is the one real

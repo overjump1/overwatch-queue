@@ -37,6 +37,13 @@ class ActivityTokensTests(unittest.TestCase):
         self.assertEqual(tokens.update_token("session-1"), ("activity-token", "sandbox"))
         self.assertIsNone(tokens.update_token("session-2"))
 
+    def test_a_card_from_another_session_is_reported_as_stale(self):
+        tokens = ActivityTokens(self.path)
+        self.assertIsNone(tokens.stale_update_token("session-2"))
+        tokens.register_update("session-1", "activity-token", "sandbox")
+        self.assertIsNone(tokens.stale_update_token("session-1"))
+        self.assertEqual(tokens.stale_update_token("session-2"), ("activity-token", "sandbox"))
+
     def test_registering_a_new_session_replaces_the_old_update_token(self):
         tokens = ActivityTokens(self.path)
         tokens.register_update("session-1", "old-token", "sandbox")

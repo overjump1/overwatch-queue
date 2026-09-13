@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 #if canImport(ActivityKit)
 import ActivityKit
 #endif
@@ -48,29 +49,20 @@ public extension QueueActivityAttributes.ContentState {
         }
     }
 
-    var headline: String {
-        switch phase {
-        case .idle: return "Not queued"
-        case .searching(let i): return "\(i.mode.displayName) · \(i.role.displayName)"
-        case .matchFound: return "Match Found"
-        case .mapVote: return "Vote for a map"
-        case .heroSelect: return "Choose your hero"
-        case .inGame: return "In game"
-        case .cancelled(let i): return i.displayText
-        }
-    }
+    /// What's happening. The mode is the icon and the colour, so this doesn't repeat it.
+    var headline: String { phase.statusHeadline }
 
-    var symbolName: String {
-        switch phase {
-        case .idle: return "moon.zzz.fill"
-        case .searching(let i): return i.role.symbolName
-        case .matchFound: return "bolt.fill"
-        case .mapVote: return "map.fill"
-        case .heroSelect: return "person.crop.square.fill"
-        case .inGame: return "gamecontroller.fill"
-        case .cancelled: return "xmark.circle.fill"
-        }
-    }
+    /// The queue this card is about — "Competitive" — or nil where the phase doesn't say.
+    var detail: String? { phase.mode?.displayName }
+
+    /// The big icon: the queue's mode.
+    var symbolName: String { phase.modeSymbolName }
+
+    /// The card's colour: the queue's mode.
+    var accent: Color { phase.modeTint }
+
+    /// The small icons: every role queued for.
+    var roles: [Role] { phase.roles.filter { $0 != .open } }
 }
 
 #endif

@@ -14,8 +14,8 @@ same place? Because measured against a real device, the two do not behave the sa
   Routed through Firebase, the same alert sounds and buzzes.
 
 Neither difference is documented anywhere; both are reproducible. So Firebase is the
-transport for anything Live-Activity-shaped, and `pushrelay.py` stays the transport for
-plain notifications, which it has always delivered reliably.
+server's only push transport, and Live Activity pushes are the only thing it sends — no
+plain notification goes to the phone or the watch at all.
 
 Addressing takes two tokens at once, which is easy to trip over: `message.token` is the
 *device's* FCM registration token (see `fcmtokens.py`), while `apns.live_activity_token`

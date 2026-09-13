@@ -16,6 +16,25 @@ public enum Palette {
     public static let support = Color(red: 0.443, green: 0.780, blue: 0.494)
     public static let neutral = Color(red: 0.612, green: 0.647, blue: 0.729)
 
+    // One colour per queue. Quick Play and Competitive follow the game's own queue banners
+    // — the same hues `queuemodes.json` measures them by, blue and pink.
+    public static let quickPlay = Color(red: 0.231, green: 0.580, blue: 0.965)     // #3B94F6
+    public static let competitive = Color(red: 0.925, green: 0.278, blue: 0.494)   // #EC477E
+    public static let arcade = Color(red: 0.302, green: 0.800, blue: 0.518)        // #4DCC84
+    public static let stadium = amber
+    public static let mysteryHeroes = Color(red: 0.639, green: 0.463, blue: 0.957) // #A376F4
+
+    public static func tint(for mode: QueueMode) -> Color {
+        switch mode {
+        case .quickPlay: return quickPlay
+        case .competitive: return competitive
+        case .arcade: return arcade
+        case .stadium: return stadium
+        case .mysteryHeroes: return mysteryHeroes
+        case .custom: return neutral
+        }
+    }
+
     public static func tint(for role: Role) -> Color {
         switch role {
         case .tank: return tank
@@ -69,4 +88,18 @@ public enum Palette {
 
 public extension Role {
     var tint: Color { Palette.tint(for: self) }
+}
+
+public extension QueueMode {
+    var tint: Color { Palette.tint(for: self) }
+}
+
+public extension QueuePhase {
+    /// The big colour on a glanceable surface: the queue's own mode where the phase knows
+    /// it, so a Competitive queue stays pink from search to match. The phase's accent only
+    /// for the phases that carry no mode at all.
+    var modeTint: Color { mode?.tint ?? Palette.accent(for: self) }
+
+    /// The big icon to go with `modeTint`.
+    var modeSymbolName: String { mode?.symbolName ?? statusSymbolName }
 }

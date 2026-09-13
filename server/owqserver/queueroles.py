@@ -216,6 +216,15 @@ class RoleSelection:
             return next(iter(self.roles))
         return "flex"
 
+    @property
+    def effective_roles(self):
+        """Every checked role, in the order the cards sit on screen — what a queue for
+        more than one role actually is. None for a screen caught with nothing checked,
+        the same as `effective_role`."""
+        if not self.roles:
+            return None
+        return [role for role in ROLE_ORDER if role in self.roles]
+
     def __repr__(self):
         return "<RoleSelection %s mode=%s%s>" % (
             sorted(self.roles), self.mode or "?", "" if self.on_screen else " NOT ON SCREEN")

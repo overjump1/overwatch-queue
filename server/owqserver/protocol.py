@@ -50,20 +50,6 @@ def notification_copy(kind: str):
         _NOTIFICATION_BODIES.get(kind, "Status changed.")
 
 
-def activity_fallback_copy():
-    """`(title, body)` for the notification sent when a Live Activity never appeared.
-
-    Not `notification_copy`: that copy announces a phase change on a card the player
-    can already see, and this is only ever sent once push-to-start has plainly failed to
-    produce one at all. It has to earn the interruption on its own terms, so it says what
-    happened and what tapping does.
-
-    Unlike the copy above there's no Swift counterpart to keep in step — nothing on the
-    device composes this text, it only ever arrives already written.
-    """
-    return "Queue started", "Tap to put it on your Lock Screen."
-
-
 # ---------------------------------------------------------------- Live Activity pushes
 #
 # A Live Activity push's `content-state` is decoded on-device with a plain `JSONDecoder`
@@ -137,31 +123,58 @@ def idle() -> dict:
     return {"type": "idle"}
 
 
+def role_for(roles) -> str:
+    """The single `role` value every payload still carries alongside `roles`, for a
+    client that predates multi-role queueing: the one role when there's exactly one,
+    otherwise `flex` — what Overwatch itself calls queueing across several."""
+    roles = list(roles or [])
+    if len(roles) == 1:
+        return roles[0]
+    return "flex"
+
+
+def _roles_list(role: str, roles) -> list:
+    return list(roles) if roles else [role]
+
+
 def searching(mode: str, role: str, started_at: datetime.datetime,
-              estimated_wait=None, group_size: int = 1) -> dict:
-    data = {"mode": mode, "role": role, "startedAt": iso(started_at), "groupSize": group_size}
+              estimated_wait=None, group_size: int = 1, roles=None) -> dict:
+    """`roles` is every role the player queued for; `role` stays for older clients (see
+    `role_for`). Leaving `roles` out means just `[role]`."""
+    data = {"mode": mode, "role": role, "roles": _roles_list(role, roles),
+            "startedAt": iso(started_at), "groupSize": group_size}
     if estimated_wait is not None:
         data["estimatedWait"] = round(float(estimated_wait), 3)
     return {"type": "searching", "data": data}
 
 
-def match_found(mode: str, role: str, waited: float, lock_in_seconds: float = 15) -> dict:
+def match_found(mode: str, role: str, waited: float, lock_in_seconds: float = 15,
+                roles=None) -> dict:
     return {"type": "matchFound",
-            "data": {"mode": mode, "role": role, "waited": round(float(waited), 3),
+            "data": {"mode": mode, "role": role, "roles": _roles_list(role, roles),
+                     "waited": round(float(waited), 3),
                      "lockInAt": in_seconds(lock_in_seconds)}}
 
 
-def map_vote(map_keys, deadline_seconds: float = 25, votes=None, my_vote=None) -> dict:
+def map_vote(map_keys, deadline_seconds: float = 25, votes=None, my_vote=None,
+             mode=None, roles=None) -> dict:
+    """`mode` and `roles` are optional context carried through from the queue, so the
+    Live Activity can keep showing what was queued for while the vote is up."""
     votes = votes or {}
     data = {"deadline": in_seconds(deadline_seconds),
             "options": [{"mapKey": key, "votes": int(votes.get(key, 0))} for key in map_keys]}
     if my_vote:
         data["myVote"] = my_vote
+    if mode:
+        data["mode"] = mode
+    if roles:
+        data["roles"] = list(roles)
     return {"type": "mapVote", "data": data}
 
 
 def hero_select(mode: str, role: str, map_key=None, deadline_seconds: float = 40,
-                taken=None, my_hero=None, available=None, team_picks=None) -> dict:
+                taken=None, my_hero=None, available=None, team_picks=None,
+                roles=None) -> dict:
     """`available` and `team_picks` are what the screen scan saw, and are left out
     entirely when there was no scan — on a Mac, or with the game closed. Their absence is
     meaningful to the app: it's the difference between "nobody has picked" and "nobody
@@ -172,7 +185,8 @@ def hero_select(mode: str, role: str, map_key=None, deadline_seconds: float = 40
     that says which pick is ours, and it's absent from every pick when the scan couldn't
     tell.
     """
-    data = {"mode": mode, "role": role, "deadline": in_seconds(deadline_seconds),
+    data = {"mode": mode, "role": role, "roles": _roles_list(role, roles),
+            "deadline": in_seconds(deadline_seconds),
             "takenHeroKeys": list(taken or [])}
     if map_key:
         data["mapKey"] = map_key
@@ -185,12 +199,14 @@ def hero_select(mode: str, role: str, map_key=None, deadline_seconds: float = 40
     return {"type": "heroSelect", "data": data}
 
 
-def in_game(mode: str, map_key=None, hero_key=None, started_at=None) -> dict:
+def in_game(mode: str, map_key=None, hero_key=None, started_at=None, roles=None) -> dict:
     data = {"mode": mode, "startedAt": iso(started_at or now())}
     if map_key:
         data["mapKey"] = map_key
     if hero_key:
         data["heroKey"] = hero_key
+    if roles:
+        data["roles"] = list(roles)
     return {"type": "inGame", "data": data}
 
 

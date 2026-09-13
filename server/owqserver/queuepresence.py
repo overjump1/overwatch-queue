@@ -10,8 +10,8 @@ Battle.net's rich presence for Overwatch is a short line built from two parts:
 
     [<Mode>: ]<Activity>
 
-`In Menus` on its own, `Quick Play: In Queue`, `Competitive: In Game`, `Custom Game:
-In Game`, and standalone words like `Practice Range` and `Tutorial` have all been seen
+`In Menus` on its own, `Quick Play: In Queue`, `Competitive: In Game`, `Quick Play: Game
+Ending`, `Custom Game: In Game`, and standalone words like `Practice Range` and `Tutorial` have all been seen
 verbatim on a real account. The two are pulled apart by finding the longest *trailing*
 activity the text ends with, not by splitting on the colon — a mode is free to contain
 one of its own (a group marker, a map name) and the activity never has trailing text of
@@ -34,6 +34,10 @@ from __future__ import annotations
 # A real, positively-read queue or match.
 QUEUEING = "queueing"
 IN_GAME = "inGame"
+# The match is over — Battle.net's own `<Mode>: Game Ending`, read verbatim out of its
+# memory after a real Quick Play and a real Competitive match. Shown on the end-of-match
+# screens, before the player lands back in the menus.
+GAME_ENDING = "gameEnding"
 # Battle.net says the player is somewhere in Overwatch's menus - not queueing, not in a
 # match. Ends a queue the same way `MENUS` below does.
 MENUS = "menus"
@@ -49,12 +53,14 @@ ELSEWHERE = "elsewhere"
 # or no record found. Carries no authority in either direction.
 UNKNOWN = "unknown"
 
-_KNOWN_STATES = frozenset({QUEUEING, IN_GAME, MENUS, PLAYING_OTHER, ELSEWHERE, UNKNOWN})
+_KNOWN_STATES = frozenset({QUEUEING, IN_GAME, GAME_ENDING, MENUS, PLAYING_OTHER, ELSEWHERE,
+                           UNKNOWN})
 
 # Longest-first so a shorter activity that happens to be a suffix of a longer one (none
 # currently are) could never shadow it.
 ACTIVITY_SUFFIXES = (
     ("In Queue", QUEUEING),
+    ("Game Ending", GAME_ENDING),
     ("In Game", IN_GAME),
 )
 

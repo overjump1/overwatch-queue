@@ -1158,6 +1158,13 @@ class WatcherRoleDetectionTests(unittest.TestCase):
         self.assertEqual(self.controls.role, "tank")
         self.assertEqual(self.detected, [])
 
+    def test_several_checked_roles_are_all_adopted(self):
+        self._stub_scan(queueroles.RoleSelection(frozenset({"support", "tank"}), None, {}, True))
+        self.watcher._check_role_select()
+        self.assertEqual(self.controls.roles, ["tank", "support"])
+        self.assertEqual(self.controls.role, "flex")
+        self.assertEqual(len(self.detected), 1)
+
     def test_nothing_checked_yet_changes_nothing(self):
         """A screen caught mid-change is not a decision — see `RoleSelection.
         effective_role`."""
@@ -1444,6 +1451,63 @@ class WatcherFoldPresenceTests(unittest.TestCase):
         self.watcher.fold_presence(presence(queuepresence.QUEUEING), 0.0)
         self.watcher.fold_presence_lost(1.0)
         self.assertEqual(self.server.session.kind, "cancelled")
+
+    def test_a_multi_role_queue_carries_every_role(self):
+        self.controls.roles = ["tank", "support"]
+        self.watcher.fold_presence(presence(queuepresence.QUEUEING, "competitive"), 0.0)
+        data = self.server.session.phase["data"]
+        self.assertEqual((data["role"], data["roles"]), ("flex", ["tank", "support"]))
+
+
+class WatcherMatchOverTests(unittest.TestCase):
+    """Nothing but these ever takes a session out of `inGame` — without them the Live
+    Activity kept saying "In game" long after the match was over."""
+
+    def setUp(self):
+        self.server = QueueServer(Pairing(token="t" * 32, port=0), Catalog())
+        self.controls = Controls(self.server)
+        self.watcher = queuewatch.QueueWatcher(self.controls, reader=_StubReader())
+        self.watcher.fold_presence(presence(queuepresence.QUEUEING, "quickPlay"), 0.0)
+        self.watcher.fold_presence(presence(queuepresence.IN_GAME, "quickPlay"), 1.0)
+        self.server.apply(protocol.in_game("quickPlay"))
+
+    def test_game_ending_ends_the_match_at_once(self):
+        self.watcher.fold_presence(presence(queuepresence.GAME_ENDING, "quickPlay"), 2.0)
+        self.assertEqual(self.server.session.kind, "idle")
+
+    def test_game_ending_during_hero_select_ends_it_too(self):
+        self.server.session.phase = {"type": "heroSelect", "data": {}}
+        self.watcher.fold_presence(presence(queuepresence.GAME_ENDING, "quickPlay"), 2.0)
+        self.assertEqual(self.server.session.kind, "idle")
+
+    def test_game_ending_leaves_a_fresh_queue_alone(self):
+        self.controls.start_queue()
+        self.watcher.fold_presence(presence(queuepresence.GAME_ENDING, "quickPlay"), 2.0)
+        self.assertEqual(self.server.session.kind, "searching")
+
+    def test_the_menus_end_the_match_only_once_they_have_held(self):
+        self.watcher.fold_presence(presence(queuepresence.MENUS), 2.0)
+        self.watcher.fold_presence(presence(queuepresence.MENUS), 2.0 + queuewatch.MATCH_OVER_SECONDS / 2)
+        self.assertEqual(self.server.session.kind, "inGame")
+        self.watcher.fold_presence(presence(queuepresence.MENUS), 2.0 + queuewatch.MATCH_OVER_SECONDS)
+        self.assertEqual(self.server.session.kind, "idle")
+
+    def test_being_back_in_game_resets_the_wait(self):
+        self.watcher.fold_presence(presence(queuepresence.MENUS), 2.0)
+        self.watcher.fold_presence(presence(queuepresence.IN_GAME), 5.0)
+        self.watcher.fold_presence(presence(queuepresence.MENUS), 6.0)
+        self.watcher.fold_presence(presence(queuepresence.MENUS), 2.0 + queuewatch.MATCH_OVER_SECONDS)
+        self.assertEqual(self.server.session.kind, "inGame")
+
+    def test_the_practice_range_counts_as_over(self):
+        self.watcher.fold_presence(presence(queuepresence.PLAYING_OTHER), 2.0)
+        self.watcher.fold_presence(presence(queuepresence.PLAYING_OTHER), 2.0 + queuewatch.MATCH_OVER_SECONDS)
+        self.assertEqual(self.server.session.kind, "idle")
+
+    def test_a_running_scenario_is_left_alone(self):
+        self.server._scenario = type("Alive", (), {"is_alive": lambda self: True})()
+        self.watcher.fold_presence(presence(queuepresence.GAME_ENDING, "quickPlay"), 2.0)
+        self.assertEqual(self.server.session.kind, "inGame")
 
 
 class WatcherFoldPresenceRoleSelectTests(unittest.TestCase):

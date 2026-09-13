@@ -177,6 +177,14 @@ public final class LiveActivityController {
         default:
             let state = QueueActivityAttributes.ContentState(phase: phase,
                                                              sequence: snapshot.sequence)
+            if let activity, activity.attributes.sessionID != snapshot.sessionID {
+                // A new queue — typically a requeue straight after a match. The old card
+                // belongs to the old session: its push token is filed under that session
+                // on the PC, so updating it in place would leave the PC unable to reach
+                // it, and push-to-start would put a second card beside it.
+                Self.log("new session, replacing \(activity.id)")
+                end()
+            }
             if activity == nil {
                 start(with: state, sessionID: snapshot.sessionID)
             } else {

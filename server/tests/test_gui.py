@@ -93,21 +93,20 @@ class PanelTests(unittest.TestCase):
     # ------------------------------------------------------------ delivery
 
     def test_it_says_when_pushing_is_not_set_up(self):
-        # Forced rather than assumed: `QueueServer._make_push_client` reads real config
-        # out of `~/.overwatch-queue/`, so this would otherwise pass or fail depending
-        # on whether the machine running the test happens to have push set up at all.
-        self.server.apns = None
+        # Forced rather than assumed: `QueueServer._make_fcm_client` reads config out of
+        # the home directory, so this would otherwise depend on the machine.
+        self.server.fcm = None
         self.panel._refresh()
-        self.assertIn("Pushing isn't set up", self.panel.delivery.text())
+        self.assertIn("Firebase isn't set up", self.panel.delivery.text())
 
     def test_a_connected_phone_is_named_as_driving_its_own_activity(self):
-        self.server.apns = _PushConfigured()
+        self.server.fcm = _PushConfigured()
         _pair_a_device(self.server, "Tomer's iPhone")
         self.panel._refresh()
         self.assertIn("driving its own", self.panel.delivery.text())
 
     def test_an_absent_phone_is_named_as_being_pushed_to(self):
-        self.server.apns = _PushConfigured()
+        self.server.fcm = _PushConfigured()
         self.panel._refresh()
         self.assertIn("pushing to its Live Activity", self.panel.delivery.text())
 

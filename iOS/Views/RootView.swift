@@ -160,8 +160,8 @@ struct SearchingView: View {
                         .foregroundStyle(Palette.white.opacity(0.55))
 
                     HStack(spacing: 8) {
-                        Image(systemName: info.role.symbolName)
-                        Text(info.role.displayName)
+                        RoleIcons(info.roles, spacing: 6)
+                        Text(info.roles.map(\.displayName).joined(separator: " / "))
                         if info.groupSize > 1 {
                             Text("· \(info.groupSize)-stack")
                                 .foregroundStyle(Palette.white.opacity(0.5))

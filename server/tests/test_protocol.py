@@ -90,7 +90,30 @@ class PhaseTests(unittest.TestCase):
     def test_searching_matches_the_documented_keys(self):
         phase = protocol.searching("competitive", "tank", protocol.now(), 240)
         self.assertEqual(set(phase["data"]),
-                         {"mode", "role", "startedAt", "estimatedWait", "groupSize"})
+                         {"mode", "role", "roles", "startedAt", "estimatedWait", "groupSize"})
+
+    def test_roles_default_to_the_one_role(self):
+        phase = protocol.searching("competitive", "tank", protocol.now())
+        self.assertEqual(phase["data"]["roles"], ["tank"])
+
+    def test_several_roles_ride_alongside_a_flex_role(self):
+        roles = ["tank", "support"]
+        role = protocol.role_for(roles)
+        self.assertEqual(role, "flex")
+        for phase in (protocol.searching("quickPlay", role, protocol.now(), roles=roles),
+                      protocol.match_found("quickPlay", role, 10, roles=roles),
+                      protocol.hero_select("quickPlay", role, roles=roles)):
+            self.assertEqual((phase["data"]["role"], phase["data"]["roles"]), ("flex", roles))
+
+    def test_map_vote_and_the_match_carry_the_queue_they_came_from(self):
+        vote = protocol.map_vote(["kings-row"], mode="competitive", roles=["damage"])
+        self.assertEqual((vote["data"]["mode"], vote["data"]["roles"]), ("competitive", ["damage"]))
+        game = protocol.in_game("competitive", roles=["damage"])
+        self.assertEqual(game["data"]["roles"], ["damage"])
+
+    def test_map_vote_without_context_leaves_it_out(self):
+        self.assertNotIn("mode", protocol.map_vote(["kings-row"])["data"])
+        self.assertNotIn("roles", protocol.in_game("quickPlay")["data"])
 
     def test_an_unknown_estimate_is_left_out_rather_than_guessed(self):
         # The app shows an indeterminate shimmer for a missing estimate, and a fake
