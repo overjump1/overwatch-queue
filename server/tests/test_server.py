@@ -710,5 +710,35 @@ class ActivityFallbackTests(unittest.TestCase):
         self.assertEqual(len(self.fake.alerts), 1)
 
 
+class RelaunchBattlenetTests(unittest.TestCase):
+    """`QueueServer.relaunch_battlenet` — a one-line handoff to `bnetpresence`'s own
+    function, which has its own tests for the actual process edges. Only
+    what's specific to the server is worth checking here: which port it asks for, and
+    that its own `log` is the one that ends up hearing about it."""
+
+    def setUp(self):
+        pairing = Pairing(token=TOKEN, port=8898, path=os.devnull)
+        self.server = QueueServer(pairing, Catalog(), push_tokens=PushTokens(os.devnull),
+                        activity_tokens=ActivityTokens(os.devnull),
+                        presence_port=4321)
+        self.messages = []
+        self.server.log = self.messages.append
+
+    def test_asks_bnetpresence_for_its_own_configured_port(self):
+        from owqserver import bnetpresence
+        original = bnetpresence.force_relaunch_battlenet
+        calls = []
+        bnetpresence.force_relaunch_battlenet = (
+            lambda port=None, log=None: calls.append((port, log)) or True)
+        try:
+            self.assertTrue(self.server.relaunch_battlenet())
+        finally:
+            bnetpresence.force_relaunch_battlenet = original
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], 4321)
+        calls[0][1]("a message from bnetpresence")
+        self.assertIn("a message from bnetpresence", self.messages)
+
+
 if __name__ == "__main__":
     unittest.main()
