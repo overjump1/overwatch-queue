@@ -73,6 +73,15 @@ describe("validatePushRequest", () => {
       .not.toBeTypeOf("string");
   });
 
+  it("lets an alert be time-sensitive, but nothing louder", () => {
+    const loud = update({ alert: { title: "Match found", body: "Tank" }, "interruption-level": "time-sensitive" });
+    expect(validatePushRequest(loud)).toEqual(loud);
+    expect(validatePushRequest(start({ "interruption-level": "time-sensitive" }))).not.toBeTypeOf("string");
+    expect(validatePushRequest(update({ alert: { title: "x" }, "interruption-level": "critical" })))
+      .toMatch(/interruption-level must be/);
+    expect(validatePushRequest(update({ "interruption-level": "time-sensitive" }))).toMatch(/needs an aps.alert/);
+  });
+
   it("refuses a payload bigger than Apple would deliver", () => {
     expect(validatePushRequest(update({ "content-state": { blob: "x".repeat(5000) } }))).toMatch(/bytes/);
   });

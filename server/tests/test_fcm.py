@@ -149,6 +149,25 @@ class FCMSendTests(unittest.TestCase):
     def test_no_alert_means_a_silent_update(self):
         self.client.send_activity_update(UPDATE, STATE, 1700)
         self.assertNotIn("alert", self.only_aps())
+        self.assertNotIn("interruption-level", self.only_aps())
+
+    def test_every_alert_is_time_sensitive(self):
+        # So a Focus doesn't hold back "Match found". Start, update and end alike.
+        alert = {"title": "Match found", "body": "Tank"}
+        self.client.send_activity_start(START, ATTRIBUTES, STATE, 1700, alert=dict(alert))
+        self.client.send_activity_update(UPDATE, STATE, 1700, alert=dict(alert))
+        self.client.send_activity_end(UPDATE, STATE, 1700, alert=dict(alert))
+        for call in self.client.calls:
+            self.assertEqual(call["body"]["aps"]["interruption-level"], "time-sensitive")
+
+    # ------------------------------------------------------------ the log
+
+    def test_every_push_is_logged_as_loud_or_silent(self):
+        state = {"phase": {"type": "matchFound"}, "sequence": 2}
+        self.client.send_activity_update(UPDATE, state, 1700, alert={"title": "t", "body": "b"})
+        self.client.send_activity_end(UPDATE, state, 1700)
+        self.assertEqual(self.logged, ["Pushed activity-update matchFound (loud)",
+                                       "Pushed activity-end matchFound (silent)"])
 
     # ------------------------------------------------------------ failures
 

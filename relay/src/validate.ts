@@ -25,10 +25,13 @@ const MAX_APS_BYTES = 4096;
 
 const EVENTS: readonly LiveActivityEvent[] = ["start", "update", "end"];
 const ALLOWED_APS_KEYS: Record<LiveActivityEvent, readonly string[]> = {
-  start: ["event", "timestamp", "content-state", "attributes-type", "attributes", "alert"],
-  update: ["event", "timestamp", "content-state", "stale-date", "alert"],
-  end: ["event", "timestamp", "content-state", "dismissal-date", "alert"],
+  start: ["event", "timestamp", "content-state", "attributes-type", "attributes", "alert", "interruption-level"],
+  update: ["event", "timestamp", "content-state", "stale-date", "alert", "interruption-level"],
+  end: ["event", "timestamp", "content-state", "dismissal-date", "alert", "interruption-level"],
 };
+// Not `critical`: that needs an entitlement this app doesn't have, and would bypass the
+// ringer switch. Not `passive` either — there'd be no reason to send an alert at all.
+const INTERRUPTION_LEVELS = ["active", "time-sensitive"];
 
 function isNonNegativeInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
@@ -98,6 +101,12 @@ export function validatePushRequest(body: unknown): PushRequest | string {
   if (aps.alert !== undefined) {
     const error = alertError(aps.alert);
     if (error) return error;
+  }
+  if (aps["interruption-level"] !== undefined) {
+    if (aps.alert === undefined) return "aps.interruption-level needs an aps.alert";
+    if (!INTERRUPTION_LEVELS.includes(aps["interruption-level"] as string)) {
+      return `aps.interruption-level must be one of ${INTERRUPTION_LEVELS.join(", ")}`;
+    }
   }
 
   if (new TextEncoder().encode(JSON.stringify(aps)).length > MAX_APS_BYTES) {
