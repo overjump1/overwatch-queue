@@ -163,10 +163,6 @@ class ControlPanel(QMainWindow):
         self._refresh_queue_vision()
         self._refresh_presence()
 
-        if self.server.presence_enabled:
-            threading.Thread(target=self._ensure_battlenet_shortcut, daemon=True,
-                             name="battlenet-shortcut-check").start()
-
     # ------------------------------------------------------------ layout
 
     def _build(self):
@@ -327,30 +323,6 @@ class ControlPanel(QMainWindow):
         self.stack.setCurrentIndex(1)
 
     # ------------------------------------------------------------ widget events
-
-    def _ensure_battlenet_shortcut(self):
-        """Checked once, off the GUI thread, every time this panel opens — not only
-        after presence has already failed to connect. A person launching Battle.net the
-        ordinary way should never have to know this server exists or that it wants a
-        flag on it; this is what makes that true, for both ways Battle.net actually
-        starts: a Start Menu double-click, and its own auto-start at login (which a
-        shortcut fix alone does nothing about — Battle.net enforces one running copy,
-        so a later, better-armed launch just wakes the already-running unflagged one).
-
-        Only relaunches Battle.net if one of the two actually needed changing *and*
-        Battle.net was already running under the old one — fixed while Battle.net isn't
-        open needs nothing further, since the next ordinary launch already picks it up."""
-        was_running = bnetpresence.battlenet_running()
-        log = lambda message: self.server.log(message)                   # noqa: E731
-        changed_shortcut = bnetpresence.ensure_shortcut_targets_debug_port(
-            port=self.server.presence_port, log=log)
-        changed_autostart = bnetpresence.ensure_autostart_has_debug_port(
-            port=self.server.presence_port, log=log)
-        if (changed_shortcut or changed_autostart) and was_running:
-            self.server.log("Battle.net was running without the debug flag — "
-                            "relaunching it with the fix applied")
-            self.server.relaunch_battlenet()
-        self._bridge.changed.emit()
 
     def _relaunch_battlenet(self):
         """Closing and reopening Battle.net can end an active game, so this asks first —

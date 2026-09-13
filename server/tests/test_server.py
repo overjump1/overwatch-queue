@@ -659,7 +659,7 @@ class ActivityFallbackTests(unittest.TestCase):
 
 class RelaunchBattlenetTests(unittest.TestCase):
     """`QueueServer.relaunch_battlenet` — a one-line handoff to `bnetpresence`'s own
-    function, which has its own tests for the actual process/shortcut edges. Only
+    function, which has its own tests for the actual process edges. Only
     what's specific to the server is worth checking here: which port it asks for, and
     that its own `log` is the one that ends up hearing about it."""
 

@@ -154,33 +154,19 @@ class PanelTests(unittest.TestCase):
 
 @unittest.skipIf(APP is None, "PyQt6 isn't installed")
 class BattlenetRelaunchPanelTests(unittest.TestCase):
-    """The manual "it's open but not working" button, and the once-per-launch shortcut
-    check — both just hand off to `bnetpresence`, faked out here the same way
-    `tests/test_bnetpresence.py` fakes its own edges."""
+    """The manual "it's open but not working" button — it just hands off to the server,
+    faked out here so nothing ever touches a real Battle.net."""
 
     def setUp(self):
         from PyQt6.QtWidgets import QMessageBox
-        from owqserver import bnetpresence
         self._question = QMessageBox.question
-        self._ensure_shortcut = bnetpresence.ensure_shortcut_targets_debug_port
-        self._battlenet_running = bnetpresence.battlenet_running
-        # The panel fires its own startup shortcut-check thread the moment presence is
-        # on (see `_ensure_battlenet_shortcut`) — stubbed to safe no-ops before that
-        # thread can exist, so building the panel below never touches the real Windows
-        # shortcut or a real Battle.net, no matter how the thread's timing lands.
-        bnetpresence.ensure_shortcut_targets_debug_port = lambda port=None, log=None: False
-        bnetpresence.battlenet_running = lambda: False
-
         self.server = _server(8905)
         self.server.presence_enabled = True     # as if presence were actually on
         self.panel = ControlPanel(self.server)
 
     def tearDown(self):
         from PyQt6.QtWidgets import QMessageBox
-        from owqserver import bnetpresence
         QMessageBox.question = self._question
-        bnetpresence.ensure_shortcut_targets_debug_port = self._ensure_shortcut
-        bnetpresence.battlenet_running = self._battlenet_running
         self.panel.close()
 
     def test_the_button_is_hidden_when_presence_is_off(self):
@@ -231,33 +217,6 @@ class BattlenetRelaunchPanelTests(unittest.TestCase):
             APP.processEvents()
             time.sleep(0.01)
         return condition()
-
-    def test_startup_check_relaunches_only_if_the_shortcut_changed_and_it_was_running(self):
-        self._run_startup_check(shortcut_changed=True, was_running=True)
-        self.assertEqual(self.relaunch_calls, [1])
-
-    def test_startup_check_does_not_relaunch_if_nothing_was_running(self):
-        self._run_startup_check(shortcut_changed=True, was_running=False)
-        self.assertEqual(self.relaunch_calls, [])
-
-    def test_startup_check_does_not_relaunch_if_the_shortcut_was_already_right(self):
-        self._run_startup_check(shortcut_changed=False, was_running=True)
-        self.assertEqual(self.relaunch_calls, [])
-
-    def _run_startup_check(self, shortcut_changed: bool, was_running: bool):
-        from owqserver import bnetpresence
-        original_ensure = bnetpresence.ensure_shortcut_targets_debug_port
-        original_running = bnetpresence.battlenet_running
-        bnetpresence.ensure_shortcut_targets_debug_port = (
-            lambda port=None, log=None: shortcut_changed)
-        bnetpresence.battlenet_running = lambda: was_running
-        self.relaunch_calls = []
-        self.server.relaunch_battlenet = lambda: self.relaunch_calls.append(1)
-        try:
-            self.panel._ensure_battlenet_shortcut()
-        finally:
-            bnetpresence.ensure_shortcut_targets_debug_port = original_ensure
-            bnetpresence.battlenet_running = original_running
 
 
 class _PushConfigured:
