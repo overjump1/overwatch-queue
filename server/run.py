@@ -26,15 +26,12 @@ trusting Battle.net outright wherever vision can't see at all. The screen still 
 what presence can't give at all — the queue timer, map vote, hero select — and its own
 fast match-found check keeps running too, so whichever notices first wins. What presence
 owns it keeps: if it goes quiet, the queue waits for it to answer again rather than
-guessing from the screen. If Battle.net
-closes or its debug port stops answering, it's relaunched automatically and the paired
-phone/watch are told it disconnected. A Battle.net started the ordinary way has no debug
-port at all, so when the panel opens and finds one running without it (after giving it a
-few seconds to finish starting), it relaunches Battle.net with the port on — Battle.net
-rewrites its own auto-start entry and shortcut, so nothing persistent can do this
-instead. `--presence-source memory` avoids that. `--no-presence` turns all of this off; on by
-default, it only ever reads (a websocket to Battle.net's own debug port, or a plain
-read of Battle.net's own process memory — Overwatch itself is never touched).
+guessing from the screen; the paired phone/watch are told it disconnected. It's read
+straight out of Battle.net's own process memory by default, which needs nothing from
+Battle.net at all — however it was started. `--presence-source cdp` reads over its debug
+port instead, which only exists if Battle.net was launched with `--remote-debugging-port`.
+`--no-presence` turns all of this off; either way it only ever reads — Overwatch itself
+is never touched.
 """
 from __future__ import annotations
 
@@ -72,9 +69,11 @@ def main():
     parser.add_argument("--no-presence", action="store_true",
                         help="don't ask Battle.net what you're doing")
     parser.add_argument("--presence-source", choices=("auto", "cdp", "memory", "off"),
-                        default="auto",
-                        help="how to read Battle.net's presence (default: try its debug "
-                             "port, then fall back to reading its own process memory)")
+                        default="memory",
+                        help="how to read Battle.net's presence (default: its own process "
+                             "memory, which works however Battle.net was started; 'cdp' "
+                             "needs it launched with --remote-debugging-port; 'auto' tries "
+                             "the debug port first)")
     parser.add_argument("--battlenet-port", type=int,
                         default=bnetpresence.DEFAULT_CDP_PORT,
                         help="Battle.net's --remote-debugging-port, if you've enabled one "

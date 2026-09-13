@@ -1,6 +1,16 @@
 """Asking Battle.net itself what the player is doing, instead of the screen.
 
-Two ways in, tried in this order:
+Two ways in:
+
+`MemorySource`, the default, reads the presence record straight out of Battle.net's own
+process memory with a plain `ReadProcessMemory`, the way `queuedigits` reads pixels
+rather than calling an OCR engine - no injection, and Overwatch itself is never touched.
+It needs nothing from Battle.net at all, however Battle.net was started, which is why it
+is the default: the debug port below only exists if Battle.net was launched with a flag,
+and Battle.net rewrites its own auto-start entry and shortcut, so there is no dependable
+way to make sure it was. It decodes the record's protobuf fields and hands them to the
+same `queuepresence.parse_record` as `CDPSource` - confirmed live to read identically,
+through Battle.net's own "In App" and Overwatch's "In Menus".
 
 `CDPSource` talks to Battle.net's own embedded Chromium (CEF) over the Chrome DevTools
 Protocol, if Battle.net was started with `--remote-debugging-port`. Once connected it
@@ -9,14 +19,6 @@ friend - `phoenix.socialService.subscribeSelfPresence` - which hands back a clea
 structured record (battletag, program, the rich-presence string) with nothing to scrape
 and nothing that a re-skin of the app could quietly break. Confirmed live against a real
 account: a queue starting and ending was seen through this path in real time.
-
-`MemorySource` is the fallback for a Battle.net that wasn't launched with the debug
-flag: reading the same presence record straight out of the memory of Battle.net's own
-CEF renderer process with a plain `ReadProcessMemory`, the way `queuedigits` reads pixels
-rather than calling an OCR engine - no injection, and Overwatch itself is never touched.
-It is heuristic where `CDPSource` is exact (there is no schema to ask for; it is pattern-
-matching a byte layout that could shift on a Battle.net update), which is why it is the
-fallback and not the default whenever the debug port is available.
 
 Every source's `read` **never raises**. A source that cannot see is, to everything
 downstream, indistinguishable from a source with no opinion - `queuepresence.UNKNOWN`,
@@ -184,13 +186,22 @@ def _pick_app_shell(targets):
 
 
 class MemorySource:
-    """Reads the same presence record out of Battle.net's own renderer process memory.
+    """Reads the same presence record out of Battle.net's own process memory.
 
-    Heuristic by nature: there is no schema here, only a byte pattern - our own account
-    id, immediately followed by our own battletag, immediately followed (a short, mostly
-    stable gap later) by the rich-presence text - observed on a real account and not
-    guaranteed to survive a Battle.net update. It is the documented fallback for exactly
-    that reason: whenever the debug port is reachable, `open_source` prefers it.
+    Battle.net keeps each presence record as the protobuf message it arrived in, so this
+    decodes it rather than pattern-matching bytes: field 1 is the account id, 2 the
+    battletag, 6 `program_id`, 7 `program_name` and 13 `rich_presence` — mapped field by
+    field against the very record `CDPSource` reads for the same account, and handed to
+    the same `queuepresence.parse_record`, so both sources mean exactly the same thing.
+    Field numbers are a protobuf schema, which Battle.net can't renumber without breaking
+    its own clients, so this survives far more than a byte-offset match would; if they
+    ever do change, a record just stops decoding and reads as `UNKNOWN`, never a guess.
+
+    Memory also holds stale copies of earlier records — freed, not zeroed — so every
+    copy found is decoded and the newest by its own millisecond timestamps wins, rather
+    than whichever happened to sit at the lowest address. And every Battle.net process
+    is considered, not just the first renderer: the record lives in the main process and
+    in only some of the renderers.
     """
 
     poll_seconds = MEMORY_POLL_SECONDS
@@ -209,76 +220,140 @@ class MemorySource:
         self._failures = 0
 
     def read(self, when):
+        unknown = queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, when)
         try:
-            if self._pid is None or self._failures >= self._RESCAN_AFTER_FAILURES:
-                self._pid = _find_renderer_pid()
-                self._failures = 0
-            if self._pid is None:
-                return queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "",
-                                                     None, when)
-            text = self._scan(self._pid)
+            record = None
+            if self._pid is not None and self._failures < self._RESCAN_AFTER_FAILURES:
+                record = self._newest_record(self._pid)
+            else:
+                self._pid, self._failures = None, 0
+                for pid in _battlenet_pids():
+                    record = self._newest_record(pid)
+                    if record is not None:
+                        self._pid = pid
+                        break
         except Exception as problem:                  # noqa: BLE001 - never raise
             self.log("Reading Battle.net's memory failed: %s" % problem)
             self._failures += 1
-            return queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, when)
+            return unknown
 
-        if text is None:
+        if record is None:
             self._failures += 1
-            return queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, when)
+            return unknown
         self._failures = 0
-        state, mode = queuepresence.parse(text)
-        return queuepresence.PresenceReading(state, mode, text, self.identity.battletag, when)
+        return queuepresence.parse_record(record, when, identity=self.identity) or unknown
 
     def close(self):
         self._pid = None
 
-    def _scan(self, pid):
-        """Finds our own account id + battletag, then the first recognisable presence
-        activity within a short distance after it. Returns the raw text, or `None`."""
-        needle = None
-        if self.identity.account_id:
-            needle = (self.identity.account_id.encode("ascii") + b".{0,24}" +
-                     self.identity.battletag.encode("utf-8", "ignore"))
-        elif self.identity.battletag:
-            needle = self.identity.battletag.encode("utf-8", "ignore")
-        if needle is None:
-            return None
-
-        import re
-        pattern = re.compile(needle + rb".{0,120}", re.DOTALL)
-
+    def _newest_record(self, pid):
         k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.OpenProcess.restype = ctypes.c_void_p
         handle = k32.OpenProcess(self._PROCESS_QUERY_INFORMATION | self._PROCESS_VM_READ,
                                  False, pid)
         if not handle:
             return None
         try:
-            for chunk in _readable_regions(k32, handle, self._MAX_REGION_BYTES):
-                match = pattern.search(chunk)
-                if not match:
-                    continue
-                candidate = _first_known_activity(match.group())
-                if candidate is not None:
-                    return candidate
+            return newest_presence_record(
+                _readable_regions(k32, handle, self._MAX_REGION_BYTES), self.identity)
         finally:
             k32.CloseHandle(handle)
-        return None
 
 
-def _first_known_activity(blob):
-    """The first printable run in `blob` that `queuepresence.parse` actually recognises.
+# Presence-record protobuf fields, by number, to the names `parse_record` reads — mapped
+# against a live `subscribeSelfPresence` record for the same account (see `MemorySource`).
+_PRESENCE_FIELDS = {1: "id", 2: "battle_tag", 6: "program_id", 7: "program_name",
+                    13: "rich_presence"}
+_RECORD_MAX_BYTES = 512
+_EPOCH_MS_FLOOR = 10 ** 12            # a varint this big is a millisecond timestamp
 
-    Scans every printable-ASCII run rather than trusting a fixed offset, because the
-    exact byte distance from the battletag to the presence text isn't a stable contract
-    - only the text itself, and only once `parse` has approved it, is trusted.
-    """
+
+def newest_presence_record(chunks, identity):
+    """The newest presence record for `identity` across `chunks` of raw memory, as a
+    `parse_record`-shaped dict, or `None` if no copy decodes. Pure — no process access —
+    so the decoding itself is testable against plain bytes."""
     import re
-    for run in re.finditer(rb"[ -~]{4,80}", blob):
-        text = run.group().decode("ascii", "replace")
-        state, _mode = queuepresence.parse(text)
-        if state != queuepresence.UNKNOWN:
-            return text
-    return None
+    anchor = _record_anchor(identity)
+    if anchor is None:
+        return None
+    pattern = re.compile(re.escape(anchor))
+    best, best_time = None, -1
+    for chunk in chunks:
+        for match in pattern.finditer(chunk):
+            fields = _decode_fields(chunk, match.start())
+            record = {name: fields[number].decode("utf-8", "replace")
+                      for number, name in _PRESENCE_FIELDS.items()
+                      if isinstance(fields.get(number), bytes)}
+            if "battle_tag" not in record:
+                continue
+            stamp = max((value for value in fields.values()
+                         if isinstance(value, int) and value >= _EPOCH_MS_FLOOR), default=0)
+            if stamp >= best_time:
+                best, best_time = record, stamp
+    return best
+
+
+def _record_anchor(identity):
+    """The bytes a record for this account starts with: field 1 (the account id) then
+    field 2 (the battletag), each length-prefixed — or just field 2 without an id."""
+    if identity is None or not identity.battletag:
+        return None
+    tag = identity.battletag.encode("utf-8", "ignore")
+    tag_field = b"\x12" + _varint_bytes(len(tag)) + tag
+    if not identity.account_id:
+        return tag_field
+    account = str(identity.account_id).encode("ascii")
+    return b"\x0a" + _varint_bytes(len(account)) + account + tag_field
+
+
+def _varint_bytes(value):
+    out = bytearray()
+    while True:
+        byte, value = value & 0x7F, value >> 7
+        out.append(byte | (0x80 if value else 0))
+        if not value:
+            return bytes(out)
+
+
+def _read_varint(buf, pos, end):
+    value = shift = 0
+    while pos < end and shift < 64:
+        byte = buf[pos]
+        pos += 1
+        value |= (byte & 0x7F) << shift
+        if not byte & 0x80:
+            return value, pos
+        shift += 7
+    return None, pos
+
+
+def _decode_fields(buf, pos, limit=_RECORD_MAX_BYTES):
+    """Top-level protobuf fields from `pos`, stopping at the first thing that can't be
+    one of this record's: a wire type it doesn't use, a length running off the end, or a
+    field number that doesn't climb — which is where the next record begins."""
+    end = min(len(buf), pos + limit)
+    fields, last = {}, 0
+    while pos < end:
+        key, pos = _read_varint(buf, pos, end)
+        if key is None:
+            break
+        number, wire = key >> 3, key & 7
+        if number <= last:
+            break
+        last = number
+        if wire == 0:
+            value, pos = _read_varint(buf, pos, end)
+            if value is None:
+                break
+        elif wire == 2:
+            length, pos = _read_varint(buf, pos, end)
+            if length is None or pos + length > end:
+                break
+            value, pos = bytes(buf[pos:pos + length]), pos + length
+        else:
+            break
+        fields[number] = value
+    return fields
 
 
 class _MEMORY_BASIC_INFORMATION(ctypes.Structure):
@@ -312,24 +387,28 @@ def _readable_regions(k32, handle, max_region_bytes):
         address += size if size else 0x1000
 
 
-def _find_renderer_pid():
-    """The PID of a Battle.net CEF renderer process - where the presence cache lives.
+def _battlenet_pids():
+    """Every Battle.net process, renderers first — the presence record has been found in
+    the main process and in only some renderers, never all of them.
 
-    Shells out to PowerShell rather than walking every process by hand: this runs at
-    most once every few failed reads (`_RESCAN_AFTER_FAILURES`), not every poll, so the
-    cost of one process spawn is traded for not hand-rolling a WMI/toolhelp walk.
+    Shells out to PowerShell rather than walking every process by hand: this runs only
+    when there's no known-good process to read, not every poll.
     """
     try:
         completed = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
-            "(Get-CimInstance Win32_Process -Filter \"Name='Battle.net.exe'\" | "
-            "Where-Object { $_.CommandLine -match '--type=renderer' } | "
-            "Select-Object -First 1 -ExpandProperty ProcessId)"],
+            "Get-CimInstance Win32_Process -Filter \"Name='Battle.net.exe'\" | "
+            "ForEach-Object { '{0} {1}' -f $_.ProcessId, "
+            "[int]($_.CommandLine -match '--type=renderer') }"],
             capture_output=True, text=True, timeout=10)
     except Exception:                                 # noqa: BLE001 - best effort
-        return None
-    out = completed.stdout.strip()
-    return int(out) if out.isdigit() else None
+        return []
+    renderers, others = [], []
+    for line in completed.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0].isdigit():
+            (renderers if parts[1] == "1" else others).append(int(parts[0]))
+    return renderers + others
 
 
 def find_identity(log=None):
@@ -483,48 +562,6 @@ def force_relaunch_battlenet(port=DEFAULT_CDP_PORT, log=None) -> bool:
     except Exception as problem:                        # noqa: BLE001 - best effort
         log("Couldn't launch Battle.net: %s" % problem)
         return False
-
-
-# How long a running Battle.net gets for its debug port to start answering before it's
-# judged to have been started without one. The port opens a few seconds into startup —
-# measured live at well under this — so a panel opened right after Battle.net itself
-# must not mistake "still starting" for "started wrong" and close it.
-DEBUG_PORT_GRACE_SECONDS = 15.0
-
-
-def debug_port_open(port=DEFAULT_CDP_PORT) -> bool:
-    try:
-        _list_targets(port)
-        return True
-    except Exception:                                  # noqa: BLE001 - closed is the answer
-        return False
-
-
-def relaunch_if_missing_debug_port(port=DEFAULT_CDP_PORT, log=None,
-                                   grace_seconds=DEBUG_PORT_GRACE_SECONDS) -> bool:
-    """Relaunches a Battle.net that's running without its debug port. Returns whether
-    it did.
-
-    Nothing persistent can arrange for the port instead. Both ways Battle.net normally
-    starts were tried live and both get undone by Battle.net itself: it rewrites its own
-    `HKCU\\...\\Run` auto-start entry on every start (a flag added there was gone within
-    seconds), and its Start Menu shortcut was put back too. A flagged launch while an
-    unflagged copy is already running doesn't help either — it hands off to that copy
-    and exits. A flagged launch from a clean start is the one thing measured to work, so
-    this checks for the symptom and does exactly that.
-    """
-    log = log or (lambda message: None)
-    if not PRESENCE_AVAILABLE or not battlenet_running():
-        return False
-    deadline = time.monotonic() + grace_seconds
-    while not debug_port_open(port):
-        if time.monotonic() >= deadline:
-            if not battlenet_running():
-                return False                          # closed while we waited
-            log("Battle.net is running without its debug port — relaunching it with it on")
-            return force_relaunch_battlenet(port=port, log=log)
-        time.sleep(1.0)
-    return False
 
 
 def open_source(prefer="auto", port=DEFAULT_CDP_PORT, identity=None, log=None,

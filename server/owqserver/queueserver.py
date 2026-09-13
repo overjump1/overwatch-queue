@@ -31,7 +31,7 @@ HEARTBEAT_SECONDS = 10
 class QueueServer:
     def __init__(self, pairing, catalog, log=None, push_tokens=None, activity_tokens=None,
                  vision_enabled=False, queue_vision_enabled=False, presence_enabled=False,
-                 presence_source="auto", presence_port=bnetpresence.DEFAULT_CDP_PORT):
+                 presence_source="memory", presence_port=bnetpresence.DEFAULT_CDP_PORT):
         self.pairing = pairing
         self.catalog = catalog
         self.session = QueueSession()

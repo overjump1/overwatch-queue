@@ -163,79 +163,92 @@ class ForceRelaunchBattlenetTests(unittest.TestCase):
         self.assertEqual(self.popened, [])
 
 
-@unittest.skipUnless(bnetpresence.PRESENCE_AVAILABLE, WINDOWS_ONLY)
-class RelaunchIfMissingDebugPortTests(unittest.TestCase):
-    """`relaunch_if_missing_debug_port` — only a Battle.net that's running *and* still has
-    no debug port after the grace period gets relaunched. Time, the port, the process
-    check and the relaunch itself are all fakes."""
+def _pb_varint(value):
+    out = bytearray()
+    while True:
+        byte, value = value & 0x7F, value >> 7
+        out.append(byte | (0x80 if value else 0))
+        if not value:
+            return bytes(out)
 
-    def setUp(self):
-        self._running = bnetpresence.battlenet_running
-        self._port_open = bnetpresence.debug_port_open
-        self._force = bnetpresence.force_relaunch_battlenet
-        self._sleep = __import__("time").sleep
-        self._monotonic = __import__("time").monotonic
-        self.relaunched = []
-        bnetpresence.force_relaunch_battlenet = (
-            lambda port=None, log=None: self.relaunched.append(port) or True)
-        clock = [0.0]
 
-        def sleep(seconds):
-            clock[0] += seconds
+def _pb_string(number, text):
+    data = text.encode("utf-8")
+    return _pb_varint((number << 3) | 2) + _pb_varint(len(data)) + data
 
-        __import__("time").sleep = sleep
-        __import__("time").monotonic = lambda: clock[0]
 
-    def tearDown(self):
-        bnetpresence.battlenet_running = self._running
-        bnetpresence.debug_port_open = self._port_open
-        bnetpresence.force_relaunch_battlenet = self._force
-        __import__("time").sleep = self._sleep
-        __import__("time").monotonic = self._monotonic
+def _pb_int(number, value):
+    return _pb_varint(number << 3) + _pb_varint(value)
 
-    def test_nothing_running_is_left_alone(self):
-        bnetpresence.battlenet_running = lambda: False
-        bnetpresence.debug_port_open = lambda port=None: False
-        self.assertFalse(bnetpresence.relaunch_if_missing_debug_port())
-        self.assertEqual(self.relaunched, [])
 
-    def test_a_battlenet_with_its_port_open_is_left_alone(self):
-        bnetpresence.battlenet_running = lambda: True
-        bnetpresence.debug_port_open = lambda port=None: True
-        self.assertFalse(bnetpresence.relaunch_if_missing_debug_port())
-        self.assertEqual(self.relaunched, [])
+def _presence_record(rich_presence, stamp_ms, program_id="Pro", program_name="Overwatch",
+                     account_id="482667935", battletag="overjump#2179"):
+    """A record laid out the way it was found in a live Battle.net's memory: id, tag, a
+    status varint, a timestamp, program id and name, real name, rich presence, then a
+    second timestamp — whose tag byte (`x`) sits directly after the rich-presence text,
+    which is what used to glue itself onto it."""
+    return (_pb_string(1, account_id) + _pb_string(2, battletag) + _pb_int(3, 2) +
+            _pb_int(4, stamp_ms) + _pb_int(5, 368) + _pb_string(6, program_id) +
+            _pb_string(7, program_name) + _pb_int(10, 0) + _pb_string(11, "Tomer ady") +
+            _pb_string(13, rich_presence) + _pb_int(14, stamp_ms + 410) +
+            _pb_string(20, "US"))
 
-    def test_a_battlenet_still_starting_up_is_given_its_grace_period(self):
-        """The port opens a few seconds into startup. A panel opened right after
-        Battle.net must not close it for being slow."""
-        bnetpresence.battlenet_running = lambda: True
-        checks = {"n": 0}
 
-        def opens_on_the_fourth_look(port=None):
-            checks["n"] += 1
-            return checks["n"] >= 4
+class NewestPresenceRecordTests(unittest.TestCase):
+    """`newest_presence_record` — decoding presence records out of raw memory bytes.
+    Pure, so no process and no platform needed."""
 
-        bnetpresence.debug_port_open = opens_on_the_fourth_look
-        self.assertFalse(bnetpresence.relaunch_if_missing_debug_port(grace_seconds=15))
-        self.assertEqual(self.relaunched, [])
+    IDENTITY = queuepresence.Identity("overjump#2179", "482667935")
 
-    def test_no_port_after_the_grace_period_relaunches_with_the_right_port(self):
-        bnetpresence.battlenet_running = lambda: True
-        bnetpresence.debug_port_open = lambda port=None: False
-        self.assertTrue(bnetpresence.relaunch_if_missing_debug_port(port=4321))
-        self.assertEqual(self.relaunched, [4321])
+    def test_decodes_the_fields_parse_record_reads(self):
+        chunk = b"\x00noise\x00" + _presence_record("Quick Play: In Queue", 1789302245274)
+        record = bnetpresence.newest_presence_record([chunk], self.IDENTITY)
+        self.assertEqual(record, {"id": "482667935", "battle_tag": "overjump#2179",
+                                  "program_id": "Pro", "program_name": "Overwatch",
+                                  "rich_presence": "Quick Play: In Queue"})
 
-    def test_one_closed_during_the_grace_period_is_left_alone(self):
-        looks = {"n": 0}
+    def test_reads_the_same_as_the_debug_port_through_parse_record(self):
+        chunk = _presence_record("Competitive: In Queue", 1789302245274)
+        record = bnetpresence.newest_presence_record([chunk], self.IDENTITY)
+        reading = queuepresence.parse_record(record, 0.0, identity=self.IDENTITY)
+        self.assertEqual((reading.state, reading.mode), (queuepresence.QUEUEING, "competitive"))
 
-        def running():
-            looks["n"] += 1
-            return looks["n"] == 1               # running at the start, gone by the end
+    def test_the_newest_copy_wins_wherever_it_sits(self):
+        """Memory keeps stale copies of old records; address order means nothing."""
+        newer = _presence_record("Quick Play: In Game", 1789302300000)
+        older = _presence_record("Quick Play: In Queue", 1789302200000)
+        record = bnetpresence.newest_presence_record([newer + b"\x00" * 8, older],
+                                                     self.IDENTITY)
+        self.assertEqual(record["rich_presence"], "Quick Play: In Game")
 
-        bnetpresence.battlenet_running = running
-        bnetpresence.debug_port_open = lambda port=None: False
-        self.assertFalse(bnetpresence.relaunch_if_missing_debug_port())
-        self.assertEqual(self.relaunched, [])
+    def test_a_friends_record_is_never_ours(self):
+        friend = _presence_record("Quick Play: In Queue", 1789302245274,
+                                  account_id="111", battletag="friend#1234")
+        self.assertIsNone(bnetpresence.newest_presence_record([friend], self.IDENTITY))
+
+    def test_decoding_stops_where_the_next_record_starts(self):
+        first = _presence_record("In App", 1789302245274, program_id="App",
+                                 program_name="In Battle.net")
+        second = _presence_record("Quick Play: In Queue", 1789302245274)
+        record = bnetpresence.newest_presence_record([first + second], self.IDENTITY)
+        # Equal timestamps: whichever decodes, it must be one whole record, never a mix.
+        self.assertIn((record["program_id"], record["rich_presence"]),
+                      [("App", "In App"), ("Pro", "Quick Play: In Queue")])
+
+    def test_a_battletag_only_identity_still_finds_the_record(self):
+        chunk = _presence_record("Quick Play: In Queue", 1789302245274)
+        identity = queuepresence.Identity("overjump#2179")
+        record = bnetpresence.newest_presence_record([chunk], identity)
+        self.assertEqual(record["rich_presence"], "Quick Play: In Queue")
+
+    def test_nothing_to_anchor_on_is_none(self):
+        chunk = _presence_record("Quick Play: In Queue", 1789302245274)
+        self.assertIsNone(bnetpresence.newest_presence_record([chunk], None))
+
+    def test_a_truncated_record_does_not_raise(self):
+        chunk = _presence_record("Quick Play: In Queue", 1789302245274)[:30]
+        record = bnetpresence.newest_presence_record([chunk], self.IDENTITY)
+        self.assertNotIn("rich_presence", record or {})
 
 
 @unittest.skipUnless(bnetpresence.PRESENCE_AVAILABLE, WINDOWS_ONLY)
