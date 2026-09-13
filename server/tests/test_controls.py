@@ -109,6 +109,19 @@ class PhaseTests(unittest.TestCase):
         self.assertNotEqual(self.server.session.session_id, first)
         self.assertEqual(self.server.session.kind, "searching")
 
+    def test_stepping_walks_one_queue_and_back_to_idle_without_a_refusal(self):
+        kinds = []
+        for _ in range(7):
+            self.assertTrue(self.controls.step())
+            kinds.append(self.server.session.kind)
+        self.assertEqual(kinds, ["searching", "matchFound", "mapVote", "heroSelect",
+                                 "inGame", "idle", "searching"])
+
+    def test_a_cancelled_queue_steps_into_a_new_one(self):
+        self.controls.start_queue()
+        self.assertTrue(self.controls.cancel())
+        self.assertEqual(self.controls.next_kind(), "searching")
+
     def test_every_jump_builds_a_phase_the_server_accepts(self):
         self.controls.start_queue()
         for kind in ("matchFound", "mapVote", "heroSelect", "inGame"):

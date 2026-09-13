@@ -11,6 +11,8 @@ import random
 
 from . import protocol
 
+_CYCLE = ["searching", "matchFound", "mapVote", "heroSelect", "inGame"]
+
 
 class Controls:
     def __init__(self, server):
@@ -68,6 +70,29 @@ class Controls:
     def reset(self):
         self.server.stop_scenario()
         self.server.reset()
+
+    def cancel(self) -> bool:
+        return self.jump("cancelled")
+
+    def next_kind(self) -> str:
+        """The phase `step` moves to: one queue's whole life, in the order the game plays
+        it, then back to idle. Every move is one the transition table allows, so a step is
+        never refused the way an arbitrary jump could be."""
+        kind = self.server.session.kind
+        if kind in ("idle", "cancelled"):
+            return "searching"
+        if kind == "inGame":
+            return "idle"
+        return _CYCLE[_CYCLE.index(kind) + 1]
+
+    def step(self) -> bool:
+        kind = self.next_kind()
+        if kind == "searching":
+            return self.start_queue()
+        if kind == "idle":
+            self.reset()
+            return True
+        return self.jump(kind)
 
     def phase_for(self, kind: str) -> dict:
         """The phase a jump button sends. Payloads are filled from the real catalog, so

@@ -17,7 +17,7 @@ import time
 
 from PyQt6.QtCore import Qt, QObject, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont, QImage, QPixmap
-from PyQt6.QtWidgets import (QComboBox, QFrame, QHBoxLayout, QLabel, QListWidget,
+from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget,
                              QMainWindow, QMessageBox, QPushButton, QSizePolicy,
                              QStackedWidget, QVBoxLayout, QWidget)
 
@@ -43,7 +43,6 @@ PRESENCE_STATE_NAMES = {
     queuepresence.ELSEWHERE: "Playing something other than Overwatch",
 }
 
-PHASES = ["idle", "searching", "matchFound", "mapVote", "heroSelect", "inGame", "cancelled"]
 PHASE_NAMES = {"idle": "Idle", "searching": "Searching", "matchFound": "Match found",
                "mapVote": "Map vote", "heroSelect": "Hero select", "inGame": "In game",
                "cancelled": "Cancelled"}
@@ -296,15 +295,22 @@ class ControlPanel(QMainWindow):
         override_label = QLabel("Manual override")
         override_label.setObjectName("eyebrow")
         layout.addWidget(override_label)
+        # Buttons that walk one queue through its life, rather than a picker that could
+        # ask for a jump the transition table refuses (idle straight to hero select, say)
+        # and then appear to do nothing.
         row = QHBoxLayout()
         row.setSpacing(10)
-        self.phase_picker = QComboBox()
-        self.phase_picker.addItems([PHASE_NAMES[phase] for phase in PHASES])
-        row.addWidget(self.phase_picker, 1)
-        set_phase = QPushButton("Set")
-        set_phase.setObjectName("primary")
-        set_phase.clicked.connect(self._set_phase)
-        row.addWidget(set_phase)
+        self.start_button = QPushButton("Start")
+        self.start_button.clicked.connect(self.controls.start_queue)
+        row.addWidget(self.start_button)
+        self.next_button = QPushButton()
+        self.next_button.setObjectName("primary")
+        self.next_button.clicked.connect(self.controls.step)
+        row.addWidget(self.next_button, 1)
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setObjectName("danger")
+        self.cancel_button.clicked.connect(self.controls.cancel)
+        row.addWidget(self.cancel_button)
         layout.addLayout(row)
 
         pair_another = QPushButton("Pair another device")
@@ -345,15 +351,6 @@ class ControlPanel(QMainWindow):
             self._bridge.changed.emit()
 
         threading.Thread(target=work, daemon=True, name="battlenet-relaunch").start()
-
-    def _set_phase(self):
-        kind = PHASES[self.phase_picker.currentIndex()]
-        if kind == "idle":
-            self.controls.reset()
-        elif kind == "searching":
-            self.controls.start_queue()
-        else:
-            self.controls.jump(kind)
 
     def _refresh_queue_vision(self):
         watcher = self.server.queue_watcher
@@ -467,6 +464,10 @@ class ControlPanel(QMainWindow):
         self.phase_label.setText(PHASE_NAMES.get(session.kind, session.kind))
         self.phase_label.setStyleSheet(
             "color: %s;" % (ORANGE if session.kind == "matchFound" else WHITE))
+        next_kind = self.controls.next_kind()
+        self.next_button.setText(
+            "End" if next_kind == "idle" else "Next: %s" % PHASE_NAMES[next_kind])
+        self.cancel_button.setEnabled(session.kind not in ("idle", "cancelled"))
 
         clients = self.server.clients
         if clients:
