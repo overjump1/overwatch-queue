@@ -1538,6 +1538,20 @@ class PresenceWatcherTests(unittest.TestCase):
         watcher.poll(1.0)
         self.assertEqual(lost, [])
 
+    def test_a_source_that_is_alive_but_not_yet_sure_is_never_declared_dead(self):
+        """`bnetpresence.MemorySource` reaching Battle.net fine but waiting for a status
+        change: replacing it would throw away the history it's waiting on."""
+        unknown = queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, 0.0)
+        source = _ScriptedSource([unknown] * 5)
+        source.alive = True
+        lost, reopened = [], []
+        watcher = queuewatch.PresenceWatcher(source, lambda r, w: None, fold_lost=lost.append,
+                                             reopen=lambda: reopened.append(1))
+        for when in range(5):
+            watcher.poll(float(when))
+        self.assertEqual((lost, reopened), ([], []))
+        self.assertFalse(watcher.dead)
+
     def test_recovering_after_being_declared_dead_clears_it(self):
         readings = [queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, 0.0)] * 3
         readings.append(presence(queuepresence.QUEUEING))

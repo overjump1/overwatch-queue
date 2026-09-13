@@ -963,7 +963,11 @@ class PresenceWatcher:
         when = self.clock() if when is None else when
         reading = self.source.read(when)
         self.latest = reading
-        if reading.known:
+        # A source can be reaching Battle.net fine and still have no known answer yet —
+        # `bnetpresence.MemorySource` waits for a status change before trusting memory it
+        # can't tell apart. That's not Battle.net going quiet, and treating it so would
+        # replace the source on every poll and throw away the history it's waiting on.
+        if reading.known or getattr(self.source, "alive", False):
             self._failures = 0
             self._dead = False
         else:

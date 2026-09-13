@@ -59,7 +59,9 @@ CDP_AVAILABLE = PRESENCE_AVAILABLE and _CDP_AVAILABLE
 DEFAULT_CDP_PORT = 9222
 CDP_TIMEOUT_SECONDS = 2.0
 CDP_POLL_SECONDS = 1.0
-MEMORY_POLL_SECONDS = 3.0
+# A read is a tenth of a second (heap only, one process), so polling this often is cheap
+# — and the faster it polls, the less often two status changes land in the same read.
+MEMORY_POLL_SECONDS = 1.0
 
 # The one call this project needs from Battle.net's own frontend to read. Wrapped in a
 # Promise so a single `Runtime.evaluate` with `awaitPromise` gets exactly one settled
@@ -188,24 +190,26 @@ def _pick_app_shell(targets):
 
 
 class MemorySource:
-    """Reads your own presence out of Battle.net's own process memory.
+    """Reads your own presence out of Battle.net's process memory.
 
-    Two forms of it live there, both mapped field by field against the very record
-    `CDPSource` reads for the same account and handed to the same
-    `queuepresence.parse_record`, so both sources mean exactly the same thing:
+    Where it lands depends on whether the Battle.net window is open, measured both ways:
+    closed to the tray, each change arrives in the main process as protocol messages —
+    field operations keyed by your account id; open, it arrives in a renderer instead, as
+    records naming your account id and battletag, with nothing in the main process at all.
+    `collect_presence` counts both, so which one is in play doesn't matter.
 
-    - The presence *object* the Battle.net window is built from — the same merged record
-      the debug port returns. It's there from ~15 seconds after launch, and it's the one
-      that's right: see `find_presence_record` for the case where update messages alone
-      were measured to be wrong.
-    - Presence *update* messages, protobuf, carrying millisecond timestamps. Used to rule
-      out an object left over from a previous program, and on their own once the object
-      can't be decoded any more (garbage collection moves its strings apart in a long
-      session).
+    Nothing inside either says which copy is current. Freed copies aren't erased, so
+    leftovers of earlier values sit alongside the live one, and the one timestamp-shaped
+    field was measured to be shared across different values. What does say so is arrival:
+    each change shows up as new copies within a poll — and they're recycled fast, every
+    copy gone within ~15 seconds of quitting Overwatch — so `PresenceTracker` takes whatever
+    just arrived as current, polling once a second. Measured against a real sequence — leave
+    queue, Practice Range, leave it, queue, quit Overwatch — every step arrived in order.
 
-    Only Battle.net's renderers are read by default — both forms were found there, and
-    the main process (which also holds updates) costs more to scan than all the renderers
-    together. It's a fallback for when no renderer has anything.
+    Only private (heap) memory is read: every copy was found there, and it's a fraction of
+    each process — DLL images and mapped files make up the rest and held none. Battle.net's
+    GPU and utility processes are skipped, and the process list is re-checked every
+    `_RESOLVE_EVERY_READS` since renderers come and go with the window.
     """
 
     poll_seconds = MEMORY_POLL_SECONDS
@@ -213,38 +217,43 @@ class MemorySource:
     _PROCESS_QUERY_INFORMATION = 0x0400
     _PROCESS_VM_READ = 0x0010
     _MEM_COMMIT = 0x1000
+    _MEM_PRIVATE = 0x20000
     _READABLE_PROTECT = frozenset({0x02, 0x04, 0x08, 0x20, 0x40, 0x80})
     _MAX_REGION_BYTES = 200 * 1024 * 1024
     _RESCAN_AFTER_FAILURES = 3
-    # Every other read scans only the processes the record was last found in — Battle.net
-    # keeps several renderers and most hold nothing — so a full rescan now and then is
-    # what notices a newer copy turning up somewhere else.
-    _RESCAN_EVERY_READS = 20
+    # The process list is a PowerShell call (~0.5s), so it isn't looked up every read —
+    # just often enough to catch renderers appearing when the window opens.
+    _RESOLVE_EVERY_READS = 10
 
     def __init__(self, identity, log=None):
         self.identity = identity
         self.log = log or (lambda message: None)
+        self._main = None
         self._pids = []
         self._failures = 0
-        self._reads_since_scan = 0
+        self._reads = 0
+        self._tracker = PresenceTracker(identity)
+        # Whether the last read reached Battle.net at all, known status or not — see
+        # `queuewatch.PresenceWatcher.poll` for why that's asked.
+        self.alive = False
 
     def read(self, when):
         unknown = queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, when)
+        self.alive = False
+        if self.identity is None or not self.identity.account_id:
+            return unknown
         try:
-            record = None
-            self._reads_since_scan += 1
-            if (self._pids and self._failures < self._RESCAN_AFTER_FAILURES
-                    and self._reads_since_scan < self._RESCAN_EVERY_READS):
-                record, _ = self._find_record(self._pids)
-            else:
-                self._pids, self._failures, self._reads_since_scan = [], 0, 0
+            self._reads += 1
+            if (not self._pids or self._failures >= self._RESCAN_AFTER_FAILURES
+                    or self._reads % self._RESOLVE_EVERY_READS == 0):
+                self._failures = 0
                 renderers, main = _battlenet_pids()
-                for group in (renderers, main):
-                    holding = [pid for pid in group if self._find_record([pid])[0] is not None]
-                    if holding:
-                        self._pids = holding
-                        record, _ = self._find_record(holding)
-                        break
+                if (main[0] if main else None) != self._main:
+                    # A new Battle.net process is fresh memory: nothing carries over.
+                    self._main = main[0] if main else None
+                    self._tracker = PresenceTracker(self.identity)
+                self._pids = main + renderers
+            record = self._tracker.observe(self._observe(self._pids))
         except Exception as problem:                  # noqa: BLE001 - never raise
             self.log("Reading Battle.net's memory failed: %s" % problem)
             self._failures += 1
@@ -259,7 +268,7 @@ class MemorySource:
     def close(self):
         self._pids = []
 
-    def _find_record(self, pids):
+    def _observe(self, pids):
         k32 = ctypes.WinDLL("kernel32", use_last_error=True)
         k32.OpenProcess.restype = ctypes.c_void_p
 
@@ -269,157 +278,235 @@ class MemorySource:
                     self._PROCESS_QUERY_INFORMATION | self._PROCESS_VM_READ, False, pid)
                 if not handle:
                     continue
+                # Reachable is what alive means, not "found copies": with nothing
+                # changing, every copy was measured to be recycled within seconds while
+                # Battle.net sat there fine — and the status last arrived still stands.
+                self.alive = True
                 try:
-                    yield from _readable_regions(k32, handle, self._MAX_REGION_BYTES)
+                    yield from _readable_regions(k32, handle, self._MAX_REGION_BYTES,
+                                                 private_only=True)
                 finally:
                     k32.CloseHandle(handle)
 
-        return find_presence_record(chunks(), self.identity)
+        return collect_presence(chunks(), self.identity)
 
 
-# Presence-record protobuf fields, by number, to the names `parse_record` reads — mapped
-# against a live `subscribeSelfPresence` record for the same account (see `MemorySource`).
-_PRESENCE_FIELDS = {1: "id", 2: "battle_tag", 6: "program_id", 7: "program_name",
-                    13: "rich_presence"}
-_RECORD_MAX_BYTES = 512
-_EPOCH_MS_FLOOR = 10 ** 12            # a varint this big is a millisecond timestamp
+# The program Battle.net files its own presence fields under — the fourcc "BN".
+_PRESENCE_PROGRAM = 0x424E
+# Which (group, field) carries what, measured live against a known sequence of changes.
+_PROGRAM_FIELDS = {(2, 21)}               # "Pro" for Overwatch, "App"/"BSAp" for Battle.net
+_STATUS_FIELDS = {(2, 22), (1, 25)}       # the rich-presence text; (1, 25) alone carried
+#                                           "In App" when Overwatch was quit
+_BATTLENET_STATUS = "In App"              # Battle.net's own, not a game's
 
 
-UPDATE_RECORD = "update"
-OBJECT_RECORD = "object"
+def collect_presence(chunks, identity):
+    """A `Counter` of `("program", text)` and `("status", text)` — every copy found for
+    `identity` across `chunks` of raw memory, in either form it arrives in. Pure, no process
+    access, so the decoding is testable against plain bytes.
 
+    Field operations (window closed): the account id (field 1), then blocks (field 2) that
+    each start with the account id again and carry one operation (field 3) — a key (program,
+    group, field, index) and a value whose field 4 is the text.
 
-def find_presence_record(chunks, identity):
-    """`(record, kind)` for `identity` across `chunks` of raw memory — a `parse_record`-
-    shaped dict and which form it came from — or `(None, None)`. Pure, no process access,
-    so the decoding is testable against plain bytes.
+    Records (window open): field 1 the account id and field 2 the battletag, both as text,
+    then field 6 the program and field 13 the status — mapped against the debug port's own
+    record for the same account. A record without field 13 carried only a program change and
+    says nothing about the status.
 
-    The object wins whenever one decodes. Update messages were measured live to carry
-    only what changed: launching Overwatch produced updates naming the program with no
-    status text at all, while the object — like the Battle.net window — said "In Menus".
-    Taking the update there reads `UNKNOWN` for as long as nothing else changes.
-
-    What updates are good for is the program. Their timestamps move when it changes, so
-    the newest one says which program is current, and an object left over from an earlier
-    one (Battle.net's own "App", say, not yet collected) is set aside for one that matches
-    it. Among objects for the same program the most common decoding wins, preferring one
-    that agrees with the update's own status text when it has any.
-
-    An update record stands on its own only when no object decodes at all.
+    Anything keyed to another account — a friend, whose presence sits in the same memory in
+    the same shapes — is skipped.
     """
     import re
     from collections import Counter
 
-    anchor = _record_anchor(identity)
-    if anchor is None:
-        return None, None
-    update_pattern = re.compile(re.escape(anchor))
-    object_pattern = _object_anchor(identity)
-    newest, newest_time = None, -1
-    objects = Counter()
+    observed = Counter()
+    if identity is None or not identity.account_id:
+        return observed
+    account = int(identity.account_id)
+    operation_start = re.compile(re.escape(b"\x08" + _varint_bytes(account) + b"\x12"))
+    record_start = None
+    if identity.battletag:
+        account_text = str(identity.account_id).encode("ascii")
+        tag = identity.battletag.encode("utf-8", "ignore")
+        record_start = re.compile(re.escape(
+            b"\x0a" + _varint_bytes(len(account_text)) + account_text +
+            b"\x12" + _varint_bytes(len(tag)) + tag))
     for chunk in chunks:
-        for match in update_pattern.finditer(chunk):
-            fields = _decode_fields(chunk, match.start())
-            record = {name: fields[number].decode("utf-8", "replace")
-                      for number, name in _PRESENCE_FIELDS.items()
-                      if isinstance(fields.get(number), bytes)}
-            if "battle_tag" not in record:
-                continue
-            stamp = max((value for value in fields.values()
-                         if isinstance(value, int) and value >= _EPOCH_MS_FLOOR), default=0)
-            if stamp >= newest_time:
-                newest, newest_time = record, stamp
-        if object_pattern is not None:
-            for match in object_pattern.finditer(chunk):
-                record = _decode_object(chunk, match.start(), identity)
-                if record is not None:
-                    objects[tuple(sorted(record.items()))] += 1
-
-    candidates = [(dict(key), count) for key, count in objects.most_common()]
-    if newest is not None and newest.get("program_id"):
-        current = [(record, count) for record, count in candidates
-                   if record["program_id"] == newest["program_id"]]
-        if not current:
-            return newest, UPDATE_RECORD
-        candidates = current
-        agreeing = [(record, count) for record, count in candidates
-                    if newest.get("rich_presence")
-                    and record["rich_presence"] == newest["rich_presence"]]
-        candidates = agreeing or candidates
-    if candidates:
-        return candidates[0][0], OBJECT_RECORD
-    if newest is not None:
-        return newest, UPDATE_RECORD
-    return None, None
+        for match in operation_start.finditer(chunk):
+            for block in _account_blocks(chunk, match.end() - 1, account):
+                _count_operations(block, observed)
+        if record_start is not None:
+            for match in record_start.finditer(chunk):
+                _count_record(chunk, match.start(), observed)
+    return observed
 
 
-def _object_anchor(identity):
-    """The account id as a V8 one-byte string's body: a little-endian length, then the
-    characters. The map and hash-field words before it aren't matched — they vary between
-    launches — but they're read back from each match and required of every sibling string,
-    which is what keeps an unrelated string that happens to follow from being taken."""
-    import re
-    import struct
-    if identity is None or not identity.account_id or not identity.battletag:
-        return None
-    account = str(identity.account_id).encode("ascii")
-    return re.compile(re.escape(struct.pack("<I", len(account)) + account))
+_RECORD_MAX_BYTES = 512
 
 
-_OBJECT_WINDOW_BYTES = 600
+def _count_record(chunk, start, observed):
+    fields, last = {}, 0
+    for number, value in _repeated_fields(chunk[start:start + _RECORD_MAX_BYTES]):
+        if number <= last:
+            break                                  # where the next record begins
+        fields[number], last = value, number
+    program, status = fields.get(6), fields.get(13)
+    if isinstance(program, bytes) and program:
+        observed[("program", program.decode("utf-8", "replace"))] += 1
+    if isinstance(status, bytes):
+        observed[("status", status.decode("utf-8", "replace"))] += 1
 
 
-def _decode_object(chunk, id_at, identity):
-    """The presence object's strings in the order Battle.net builds them — id, battletag,
-    program id, program name, then (after the real name, a two-byte string skipped by
-    construction) the rich-presence text and region codes — as a `parse_record` record,
-    or `None` if this match isn't that object."""
-    import struct
-    header_at = id_at - 8
-    if header_at < 0:
-        return None
-    prefix = chunk[header_at:id_at]              # map + hash field, shared by its siblings
-    end = min(len(chunk), header_at + _OBJECT_WINDOW_BYTES)
-    strings, pos = [], header_at
-    while len(strings) < 8:
-        at = chunk.find(prefix, pos, end)
-        if at < 0 or at + 12 > end:
-            break
-        (length,) = struct.unpack_from("<I", chunk, at + 8)
-        text_at = at + 12
-        raw = chunk[text_at:text_at + length]
-        if not 0 < length <= 128 or text_at + length > end or \
-                any(byte < 0x20 or byte == 0x7F for byte in raw):
-            pos = at + 1
+def _account_blocks(chunk, pos, account):
+    """Each block (field 2) of the message whose first block starts at `pos`, for as long
+    as they keep starting with `account`'s id."""
+    end = len(chunk)
+    while pos < end and chunk[pos] == 0x12:
+        length, body_at = _read_varint(chunk, pos + 1, end)
+        if length is None or length > 4096 or body_at + length > end:
+            return
+        block = _repeated_fields(chunk[body_at:body_at + length])
+        if not block or block[0] != (1, account):
+            return
+        yield block
+        pos = body_at + length
+
+
+def _count_operations(block, observed):
+    for number, operation in block:
+        if number != 3 or not isinstance(operation, bytes):
             continue
-        strings.append(raw.decode("latin-1"))
-        pos = text_at + length
-    if len(strings) < 4 or strings[0] != str(identity.account_id) or \
-            strings[1] != identity.battletag:
-        return None
-    if strings[2] == strings[3]:
-        # Another object that also starts with our id and battletag, followed by a pair of
-        # identical region codes ("EU", "EU") rather than a program id and name.
-        return None
-    # Only text `parse` recognises is taken as rich presence: with none set, the next
-    # string is a region code, and naming that the status would be a guess.
-    rich = next((text for text in strings[4:7]
-                 if queuepresence.parse(text)[0] != queuepresence.UNKNOWN), "")
-    return {"id": strings[0], "battle_tag": strings[1], "program_id": strings[2],
-            "program_name": strings[3], "rich_presence": rich}
+        parts = dict(_repeated_fields(operation))
+        if not isinstance(parts.get(1), bytes):
+            continue
+        key = dict(_repeated_fields(parts[1]))
+        if key.get(1) != _PRESENCE_PROGRAM:
+            continue
+        where = (key.get(2), key.get(3))
+        if where not in _PROGRAM_FIELDS and where not in _STATUS_FIELDS:
+            continue
+        value = dict(_repeated_fields(parts[2])) if isinstance(parts.get(2), bytes) else {}
+        text = value.get(4, b"")
+        if not isinstance(text, bytes):
+            continue
+        kind = "program" if where in _PROGRAM_FIELDS else "status"
+        observed[(kind, text.decode("utf-8", "replace"))] += 1
 
 
-def _record_anchor(identity):
-    """The bytes a record for this account starts with: field 1 (the account id) then
-    field 2 (the battletag), each length-prefixed — or just field 2 without an id."""
-    if identity is None or not identity.battletag:
-        return None
-    tag = identity.battletag.encode("utf-8", "ignore")
-    tag_field = b"\x12" + _varint_bytes(len(tag)) + tag
-    if not identity.account_id:
-        return tag_field
-    account = str(identity.account_id).encode("ascii")
-    return b"\x0a" + _varint_bytes(len(account)) + account + tag_field
+def _repeated_fields(buf):
+    """Every top-level protobuf field in `buf`, in order, repeats kept — `(number, value)`
+    pairs, stopping at the first thing that can't be a field."""
+    out, pos, end = [], 0, len(buf)
+    while pos < end:
+        key, pos = _read_varint(buf, pos, end)
+        if key is None or key >> 3 == 0:
+            break
+        wire = key & 7
+        if wire == 0:
+            value, pos = _read_varint(buf, pos, end)
+            if value is None:
+                break
+        elif wire == 2:
+            length, pos = _read_varint(buf, pos, end)
+            if length is None or pos + length > end:
+                break
+            value, pos = bytes(buf[pos:pos + length]), pos + length
+        else:
+            break
+        out.append((key >> 3, value))
+    return out
+
+
+class PresenceTracker:
+    """Which program and status are current, judged by what newly arrived.
+
+    Fed each read's copy counts. A value whose copies grew since the last read just arrived,
+    and becomes current; leftovers of earlier values don't grow, so they never win again on
+    their own. When two values of the same kind grow in one read — leaving a queue was
+    measured to bring the old status along with the new, 2 copies to 6 — a value never seen
+    before beats one that merely grew, then the bigger arrival wins, then a change beats the
+    value already current.
+
+    Before anything has arrived there's nothing to compare against, and taking the most
+    common value was measured to be wrong — "Practice Range" outnumbered the "In App" left
+    after quitting Overwatch. So a value is only taken then if every program and status in
+    memory would read as the same state; otherwise the reading is `UNKNOWN` until the next
+    change arrives. Never a guess.
+    """
+
+    KINDS = ("program", "status")
+
+    def __init__(self, identity):
+        self.identity = identity
+        self._previous = None
+        self._seen = set()
+        self._values = {}
+        self._order = {}
+        self._clock = 0
+
+    def observe(self, observed):
+        if self._previous is not None:
+            grown = {key: count - self._previous.get(key, 0)
+                     for key, count in observed.items()
+                     if count > self._previous.get(key, 0)}
+            for kind in self.KINDS:
+                arrivals = {key: size for key, size in grown.items() if key[0] == kind}
+                if arrivals:
+                    current = self._values.get(kind)
+                    # A real value beats an empty one arriving alongside it: Overwatch
+                    # clears its status while loading and sets one moments later, close
+                    # enough for both to land in one poll.
+                    best = max(arrivals, key=lambda key: (bool(key[1]), key not in self._seen,
+                                                          arrivals[key], key[1] != current))
+                    self._clock += 1
+                    self._values[kind], self._order[kind] = best[1], self._clock
+        # Kept even when empty: every copy having been recycled is a baseline of zero, so the
+        # next change counts as arriving rather than being taken for a first look.
+        self._previous = observed
+        self._seen.update(observed)
+        if not self._values:
+            if not observed:
+                return None
+            agreed = self._unambiguous(observed)
+            if agreed is None:
+                return self._as_record("", "", status_newer=True)     # reads as UNKNOWN
+            self._values = agreed
+            self._order = {kind: 0 for kind in agreed}
+        return self._record()
+
+    def _unambiguous(self, observed):
+        """The most common program and status, but only if every combination of the
+        programs and statuses in memory reads as the same state."""
+        values = {kind: [key[1] for key, _ in observed.most_common() if key[0] == kind] or [""]
+                  for kind in self.KINDS}
+        states = set()
+        for program in values["program"]:
+            for status in values["status"]:
+                reading = queuepresence.parse_record(
+                    self._as_record(program, status, status_newer=True), 0.0,
+                    identity=self.identity)
+                states.add((reading.state, reading.mode) if reading else None)
+        if len(states) != 1:
+            return None
+        return {kind: values[kind][0] for kind in self.KINDS}
+
+    def _record(self):
+        if not self._values:
+            return None
+        return self._as_record(self._values.get("program", ""), self._values.get("status", ""),
+                               self._order.get("status", 0) >= self._order.get("program", 0))
+
+    def _as_record(self, program, status, status_newer):
+        if queuepresence.parse(status)[0] != queuepresence.UNKNOWN:
+            program = queuepresence.OVERWATCH_PROGRAM_ID
+        elif status == _BATTLENET_STATUS and status_newer:
+            # Quitting Overwatch was measured to send only this — the program field kept
+            # saying "Pro" — so it has to be what says Overwatch has gone.
+            program = "App"
+        return {"id": str(self.identity.account_id) if self.identity.account_id else None,
+                "battle_tag": self.identity.battletag, "program_id": program,
+                "program_name": "", "rich_presence": status}
 
 
 def _varint_bytes(value):
@@ -443,35 +530,6 @@ def _read_varint(buf, pos, end):
     return None, pos
 
 
-def _decode_fields(buf, pos, limit=_RECORD_MAX_BYTES):
-    """Top-level protobuf fields from `pos`, stopping at the first thing that can't be
-    one of this record's: a wire type it doesn't use, a length running off the end, or a
-    field number that doesn't climb — which is where the next record begins."""
-    end = min(len(buf), pos + limit)
-    fields, last = {}, 0
-    while pos < end:
-        key, pos = _read_varint(buf, pos, end)
-        if key is None:
-            break
-        number, wire = key >> 3, key & 7
-        if number <= last:
-            break
-        last = number
-        if wire == 0:
-            value, pos = _read_varint(buf, pos, end)
-            if value is None:
-                break
-        elif wire == 2:
-            length, pos = _read_varint(buf, pos, end)
-            if length is None or pos + length > end:
-                break
-            value, pos = bytes(buf[pos:pos + length]), pos + length
-        else:
-            break
-        fields[number] = value
-    return fields
-
-
 class _MEMORY_BASIC_INFORMATION(ctypes.Structure):
     _fields_ = [
         ("BaseAddress", ctypes.c_void_p), ("AllocationBase", ctypes.c_void_p),
@@ -480,7 +538,7 @@ class _MEMORY_BASIC_INFORMATION(ctypes.Structure):
     ]
 
 
-def _readable_regions(k32, handle, max_region_bytes):
+def _readable_regions(k32, handle, max_region_bytes, private_only=False):
     mbi = _MEMORY_BASIC_INFORMATION()
     k32.VirtualQueryEx.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
                                    ctypes.POINTER(_MEMORY_BASIC_INFORMATION), ctypes.c_size_t]
@@ -493,6 +551,7 @@ def _readable_regions(k32, handle, max_region_bytes):
             break
         size = mbi.RegionSize
         if (mbi.State == MemorySource._MEM_COMMIT and
+                (not private_only or mbi.Type == MemorySource._MEM_PRIVATE) and
                 (mbi.Protect & 0xFF) in MemorySource._READABLE_PROTECT and
                 0 < size < max_region_bytes):
             buffer = ctypes.create_string_buffer(size)
