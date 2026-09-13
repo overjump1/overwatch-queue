@@ -18,19 +18,35 @@ public enum QueuePhase: Codable, Hashable, Sendable {
 
 public struct SearchInfo: Codable, Hashable, Sendable {
     public var mode: QueueMode
+    /// The single-value view of `roles` — the one role, or `.flex` for several. Kept on
+    /// the wire for builds that predate multi-role queueing.
     public var role: Role
+    /// Every role queued for. Overwatch lets more than one be checked at once.
+    public var roles: [Role]
     public var startedAt: Date
     /// Server's estimate of total wait. Nil when it has no idea yet.
     public var estimatedWait: TimeInterval?
     public var groupSize: Int
 
-    public init(mode: QueueMode, role: Role, startedAt: Date,
+    public init(mode: QueueMode, role: Role, roles: [Role]? = nil, startedAt: Date,
                 estimatedWait: TimeInterval? = nil, groupSize: Int = 1) {
         self.mode = mode
         self.role = role
+        self.roles = roles ?? [role]
         self.startedAt = startedAt
         self.estimatedWait = estimatedWait
         self.groupSize = groupSize
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try c.decode(QueueMode.self, forKey: .mode)
+        role = try c.decode(Role.self, forKey: .role)
+        // Absent from a server that predates multi-role queueing.
+        roles = try c.decodeIfPresent([Role].self, forKey: .roles) ?? [role]
+        startedAt = try c.decode(Date.self, forKey: .startedAt)
+        estimatedWait = try c.decodeIfPresent(TimeInterval.self, forKey: .estimatedWait)
+        groupSize = try c.decode(Int.self, forKey: .groupSize)
     }
 
     public func elapsed(at now: Date = .now) -> TimeInterval {
@@ -62,6 +78,7 @@ public struct SearchInfo: Codable, Hashable, Sendable {
 public struct MatchFoundInfo: Codable, Hashable, Sendable {
     public var mode: QueueMode
     public var role: Role
+    public var roles: [Role]
     /// How long the player waited, frozen at the moment the match landed.
     public var waited: TimeInterval
     /// When the game pulls you in. There is no accept prompt in Overwatch 2 — this is
@@ -69,11 +86,22 @@ public struct MatchFoundInfo: Codable, Hashable, Sendable {
     /// still land.
     public var lockInAt: Date
 
-    public init(mode: QueueMode, role: Role, waited: TimeInterval, lockInAt: Date) {
+    public init(mode: QueueMode, role: Role, roles: [Role]? = nil, waited: TimeInterval,
+                lockInAt: Date) {
         self.mode = mode
         self.role = role
+        self.roles = roles ?? [role]
         self.waited = waited
         self.lockInAt = lockInAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try c.decode(QueueMode.self, forKey: .mode)
+        role = try c.decode(Role.self, forKey: .role)
+        roles = try c.decodeIfPresent([Role].self, forKey: .roles) ?? [role]
+        waited = try c.decode(TimeInterval.self, forKey: .waited)
+        lockInAt = try c.decode(Date.self, forKey: .lockInAt)
     }
 }
 
@@ -94,11 +122,27 @@ public struct MapVoteInfo: Codable, Hashable, Sendable {
     public var deadline: Date
     /// The local player's pick, once made.
     public var myVote: String?
+    /// What was queued for, carried through so the Live Activity keeps its mode colour
+    /// and role icons while the vote is up. Nil/empty from a server that doesn't send it.
+    public var mode: QueueMode?
+    public var roles: [Role]
 
-    public init(options: [MapOption], deadline: Date, myVote: String? = nil) {
+    public init(options: [MapOption], deadline: Date, myVote: String? = nil,
+                mode: QueueMode? = nil, roles: [Role] = []) {
         self.options = options
         self.deadline = deadline
         self.myVote = myVote
+        self.mode = mode
+        self.roles = roles
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        options = try c.decode([MapOption].self, forKey: .options)
+        deadline = try c.decode(Date.self, forKey: .deadline)
+        myVote = try c.decodeIfPresent(String.self, forKey: .myVote)
+        mode = try c.decodeIfPresent(QueueMode.self, forKey: .mode)
+        roles = try c.decodeIfPresent([Role].self, forKey: .roles) ?? []
     }
 
     public var totalVotes: Int { options.reduce(0) { $0 + $1.votes } }
@@ -143,6 +187,7 @@ public struct TeamPick: Codable, Hashable, Sendable, Identifiable {
 public struct HeroSelectInfo: Codable, Hashable, Sendable {
     public var mode: QueueMode
     public var role: Role
+    public var roles: [Role]
     public var mapKey: String?
     public var deadline: Date
     /// Heroes already locked by teammates.
@@ -158,17 +203,31 @@ public struct HeroSelectInfo: Codable, Hashable, Sendable {
     /// What each player has picked so far, or nil if the server never looked.
     public var teamPicks: [TeamPick]?
 
-    public init(mode: QueueMode, role: Role, mapKey: String? = nil, deadline: Date,
-                takenHeroKeys: [String] = [], myHeroKey: String? = nil,
+    public init(mode: QueueMode, role: Role, roles: [Role]? = nil, mapKey: String? = nil,
+                deadline: Date, takenHeroKeys: [String] = [], myHeroKey: String? = nil,
                 availableHeroKeys: [String]? = nil, teamPicks: [TeamPick]? = nil) {
         self.mode = mode
         self.role = role
+        self.roles = roles ?? [role]
         self.mapKey = mapKey
         self.deadline = deadline
         self.takenHeroKeys = takenHeroKeys
         self.myHeroKey = myHeroKey
         self.availableHeroKeys = availableHeroKeys
         self.teamPicks = teamPicks
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try c.decode(QueueMode.self, forKey: .mode)
+        role = try c.decode(Role.self, forKey: .role)
+        roles = try c.decodeIfPresent([Role].self, forKey: .roles) ?? [role]
+        mapKey = try c.decodeIfPresent(String.self, forKey: .mapKey)
+        deadline = try c.decode(Date.self, forKey: .deadline)
+        takenHeroKeys = try c.decodeIfPresent([String].self, forKey: .takenHeroKeys) ?? []
+        myHeroKey = try c.decodeIfPresent(String.self, forKey: .myHeroKey)
+        availableHeroKeys = try c.decodeIfPresent([String].self, forKey: .availableHeroKeys)
+        teamPicks = try c.decodeIfPresent([TeamPick].self, forKey: .teamPicks)
     }
 }
 
@@ -177,12 +236,25 @@ public struct InGameInfo: Codable, Hashable, Sendable {
     public var mapKey: String?
     public var heroKey: String?
     public var startedAt: Date
+    /// The roles queued for, or empty from a server that doesn't send them.
+    public var roles: [Role]
 
-    public init(mode: QueueMode, mapKey: String? = nil, heroKey: String? = nil, startedAt: Date) {
+    public init(mode: QueueMode, mapKey: String? = nil, heroKey: String? = nil,
+                startedAt: Date, roles: [Role] = []) {
         self.mode = mode
         self.mapKey = mapKey
         self.heroKey = heroKey
         self.startedAt = startedAt
+        self.roles = roles
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try c.decode(QueueMode.self, forKey: .mode)
+        mapKey = try c.decodeIfPresent(String.self, forKey: .mapKey)
+        heroKey = try c.decodeIfPresent(String.self, forKey: .heroKey)
+        startedAt = try c.decode(Date.self, forKey: .startedAt)
+        roles = try c.decodeIfPresent([Role].self, forKey: .roles) ?? []
     }
 }
 
@@ -260,9 +332,10 @@ public extension QueuePhase {
         switch self {
         case .searching(let i): return i.mode
         case .matchFound(let i): return i.mode
+        case .mapVote(let i): return i.mode
         case .heroSelect(let i): return i.mode
         case .inGame(let i): return i.mode
-        case .mapVote, .idle, .cancelled: return nil
+        case .idle, .cancelled: return nil
         }
     }
 
@@ -272,6 +345,45 @@ public extension QueuePhase {
         case .matchFound(let i): return i.role
         case .heroSelect(let i): return i.role
         default: return nil
+        }
+    }
+
+    /// What's happening, in a couple of words — the line beside the mode on a Live
+    /// Activity or widget, where the mode itself is already the icon and the colour.
+    var statusHeadline: String {
+        switch self {
+        case .idle: return "Not queued"
+        case .searching: return "In queue"
+        case .matchFound: return "Match found"
+        case .mapVote: return "Vote for a map"
+        case .heroSelect: return "Choose your hero"
+        case .inGame: return "In game"
+        case .cancelled(let i): return i.displayText
+        }
+    }
+
+    /// The phase's own symbol, for the phases with no mode to show instead.
+    var statusSymbolName: String {
+        switch kind {
+        case .idle: return "moon.zzz.fill"
+        case .searching: return "magnifyingglass"
+        case .matchFound: return "bolt.fill"
+        case .mapVote: return "map.fill"
+        case .heroSelect: return "person.crop.square.fill"
+        case .inGame: return "gamecontroller.fill"
+        case .cancelled: return "xmark.circle.fill"
+        }
+    }
+
+    /// Every role queued for, or empty where the phase doesn't say.
+    var roles: [Role] {
+        switch self {
+        case .searching(let i): return i.roles
+        case .matchFound(let i): return i.roles
+        case .mapVote(let i): return i.roles
+        case .heroSelect(let i): return i.roles
+        case .inGame(let i): return i.roles
+        case .idle, .cancelled: return []
         }
     }
 

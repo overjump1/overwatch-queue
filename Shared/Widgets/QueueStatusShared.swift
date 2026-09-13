@@ -37,7 +37,7 @@ struct QueueStatusWidgetView: View {
     @Environment(\.widgetFamily) private var family
 
     private var phase: QueuePhase { snapshot.phase }
-    private var accent: Color { Palette.accent(for: phase) }
+    private var accent: Color { phase.modeTint }
 
     var body: some View {
         switch family {
@@ -56,9 +56,14 @@ struct QueueStatusWidgetView: View {
             }
         default:
             VStack(alignment: .leading, spacing: 8) {
-                Image(systemName: symbolName)
-                    .font(.title2)
-                    .foregroundStyle(accent)
+                HStack(alignment: .firstTextBaseline) {
+                    Image(systemName: symbolName)
+                        .font(.title2)
+                        .foregroundStyle(accent)
+                    Spacer()
+                    RoleIcons(phase.roles, spacing: 3)
+                        .font(.caption)
+                }
                 Spacer()
                 timer
                     .font(.system(size: 30, weight: .bold, design: .rounded))
@@ -85,27 +90,10 @@ struct QueueStatusWidgetView: View {
         }
     }
 
-    private var symbolName: String {
-        switch phase {
-        case .idle: return "moon.zzz.fill"
-        case .searching(let i): return i.role.symbolName
-        case .matchFound: return "bolt.fill"
-        case .mapVote: return "map.fill"
-        case .heroSelect: return "person.crop.square.fill"
-        case .inGame: return "gamecontroller.fill"
-        case .cancelled: return "xmark.circle.fill"
-        }
-    }
+    private var symbolName: String { phase.modeSymbolName }
 
     private var headline: String {
-        switch phase {
-        case .idle: return "Not queued"
-        case .searching(let i): return "\(i.mode.displayName) · \(i.role.displayName)"
-        case .matchFound: return "Match found"
-        case .mapVote: return "Map vote open"
-        case .heroSelect: return "Hero select"
-        case .inGame: return "In game"
-        case .cancelled(let i): return i.displayText
-        }
+        guard let mode = phase.mode else { return phase.statusHeadline }
+        return "\(mode.displayName) · \(phase.statusHeadline)"
     }
 }

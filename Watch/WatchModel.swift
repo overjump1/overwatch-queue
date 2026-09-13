@@ -22,10 +22,9 @@ public final class WatchModel {
             case .matchFound:
                 self.matchFoundToken += 1
                 // The wrist tap is the immediate, local signal while the app is open and
-                // connected. The server also sends the watch its own time-sensitive push
-                // alert on this phase — see `registerForPushNotifications()` — so a match
-                // still surfaces on the wrist even out of the phone's WatchConnectivity
-                // range, without waiting on this in-app path at all.
+                // connected. Otherwise the wrist hears about a match through the phone's
+                // Live Activity, which the watch mirrors into its Smart Stack on its own —
+                // the server sends the watch no notifications of its own.
                 WKInterfaceDevice.current().play(.notification)
             case .mapVote, .heroSelect:
                 WKInterfaceDevice.current().play(.directionUp)
@@ -78,11 +77,9 @@ public final class WatchModel {
 
     // MARK: - Push notifications
     //
-    // Independent of the phone relay on purpose: this is the token APNs uses to wake the
-    // watch directly, for the case the relay is built to fail over from — the phone is
-    // out of range, asleep, or simply not carried. Alert authorization is what turns that
-    // wake-up into something the wrist actually shows — without it an urgent push still
-    // arrives, but silently, the same as the routine background one.
+    // The token is still registered with the PC, which uses it only to know a watch has
+    // been paired. The PC no longer pushes anything to it: every alert the player gets is
+    // the phone's Live Activity, which the watch mirrors by itself.
 
     private func registerForPushNotifications() {
         UNUserNotificationCenter.current()

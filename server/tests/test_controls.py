@@ -66,6 +66,29 @@ class RoleTests(unittest.TestCase):
             self.assertTrue(controls.queues_by_role)
             self.assertEqual(controls.effective_role, "support")
 
+    def test_several_roles_are_flex_on_the_single_value(self):
+        controls, _ = make_controls()
+        controls.mode = "competitive"
+        controls.roles = ["tank", "support"]
+        self.assertEqual(controls.effective_role, "flex")
+        self.assertEqual(controls.effective_roles, ["tank", "support"])
+
+    def test_setting_the_single_role_replaces_the_list(self):
+        controls, _ = make_controls()
+        controls.roles = ["tank", "support"]
+        controls.role = "damage"
+        self.assertEqual(controls.roles, ["damage"])
+
+    def test_every_phase_carries_the_queued_roles_and_mode(self):
+        controls, server = make_controls()
+        controls.mode, controls.roles = "quickPlay", ["damage", "support"]
+        controls.start_queue()
+        self.assertEqual(server.session.phase["data"]["roles"], ["damage", "support"])
+        for kind in ("matchFound", "mapVote", "inGame"):
+            phase = controls.phase_for(kind)
+            self.assertEqual(phase["data"]["roles"], ["damage", "support"], kind)
+            self.assertEqual(phase["data"]["mode"], "quickPlay", kind)
+
     def test_open_queue_modes_ignore_it(self):
         controls, _ = make_controls()
         for mode in ("arcade", "mysteryHeroes", "custom"):

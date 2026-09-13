@@ -94,3 +94,26 @@ public struct MapImageView: View {
         }
     }
 }
+
+/// One small icon per queued role, each in its own role colour — how a queue for more than
+/// one role reads at a glance. Open queue draws nothing: it isn't a role anyone picked.
+/// Sized by the surrounding font, so the same view fits a Lock Screen line or a watch.
+public struct RoleIcons: View {
+    public var roles: [Role]
+    public var spacing: CGFloat
+
+    public init(_ roles: [Role], spacing: CGFloat = 4) {
+        self.roles = roles
+        self.spacing = spacing
+    }
+
+    public var body: some View {
+        HStack(spacing: spacing) {
+            ForEach(roles.filter { $0 != .open }, id: \.self) { role in
+                Image(systemName: role.symbolName)
+                    .foregroundStyle(role.tint)
+                    .accessibilityLabel(role.displayName)
+            }
+        }
+    }
+}

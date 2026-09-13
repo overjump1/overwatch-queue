@@ -100,6 +100,14 @@ class ActivityTokens:
             return None
         return self._update["token"], self._update["environment"]
 
+    def stale_update_token(self, session_id: str):
+        """`(token, environment)` for a card left over from a session *other* than
+        `session_id` — one that was never ended, and would otherwise sit on the Lock Screen
+        beside the new one — or `None` when there's no such card."""
+        if self._update is None or self._update["session_id"] == session_id:
+            return None
+        return self._update["token"], self._update["environment"]
+
     def forget_update(self):
         if self._update is not None:
             self._update = None

@@ -75,8 +75,8 @@ struct HeroSelectView: View {
                     .font(.caption.weight(.heavy)).tracking(2)
                     .foregroundStyle(info.role.tint)
                 HStack(spacing: 4) {
-                    Image(systemName: info.role.symbolName).font(.caption2)
-                    Text(info.role.displayName)
+                    RoleIcons(info.roles, spacing: 3).font(.caption2)
+                    Text(info.roles.map(\.displayName).joined(separator: " / "))
                     if let map = store.catalog.map(info.mapKey) {
                         Text("· \(map.name)")
                     }

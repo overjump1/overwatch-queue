@@ -36,6 +36,11 @@ class ParseConfirmedStringsTests(unittest.TestCase):
     def test_custom_game_in_game(self):
         self.assertEqual(qp.parse("Custom Game: In Game"), (qp.IN_GAME, "custom"))
 
+    def test_game_ending_is_its_own_state(self):
+        # Both read verbatim out of Battle.net's memory after real matches.
+        self.assertEqual(qp.parse("Quick Play: Game Ending"), (qp.GAME_ENDING, "quickPlay"))
+        self.assertEqual(qp.parse("Competitive: Game Ending"), (qp.GAME_ENDING, "competitive"))
+
     def test_practice_range(self):
         self.assertEqual(qp.parse("Practice Range"), (qp.PLAYING_OTHER, None))
 
@@ -94,8 +99,8 @@ class MalformedInputTests(unittest.TestCase):
         for _ in range(200):
             text = "".join(random.choice(alphabet) for _ in range(random.randint(0, 40)))
             state, mode = qp.parse(text)
-            self.assertIn(state, (qp.UNKNOWN, qp.QUEUEING, qp.IN_GAME, qp.MENUS,
-                                  qp.PLAYING_OTHER))
+            self.assertIn(state, (qp.UNKNOWN, qp.QUEUEING, qp.IN_GAME, qp.GAME_ENDING,
+                                  qp.MENUS, qp.PLAYING_OTHER))
 
 
 class InjectableTableTests(unittest.TestCase):

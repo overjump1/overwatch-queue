@@ -139,6 +139,24 @@ BOX_FRESHNESS_SECONDS = 0.5
 # (0.5s) so one slow poll doesn't wrongly let a real start through.
 ROLE_SELECT_FRESHNESS_SECONDS = 1.5
 
+# Nothing else ever moves a session out of `inGame`, so without these the Live Activity
+# said "In game" long after the match was over.
+#
+# Battle.net's own `<Mode>: Game Ending` is the direct signal, and ends the match the moment
+# it arrives. The weaker evidence — the player back in the menus, somewhere other than
+# Overwatch, or Overwatch's window gone — is the backstop for a match that ended without
+# that status ever being read (a presence poll landing either side of it, or the game
+# quit outright), and has to hold this long first so one stray reading can't end a match
+# that's still being played.
+MATCH_OVER_SECONDS = 10.0
+# Phases a finished match can be left sitting in. Hero select and map vote count: leaving
+# during either still ends with Battle.net saying the game is ending.
+_MATCH_KINDS = frozenset({"matchFound", "mapVote", "heroSelect", "inGame"})
+# Presence states that can't be true mid-match. The practice range counts: you can't be in
+# it and in a match at the same time.
+_MATCH_OVER_PRESENCE = frozenset({queuepresence.MENUS, queuepresence.ELSEWHERE,
+                                  queuepresence.PLAYING_OTHER})
+
 
 class QueueObservation:
     """What the tracker believes right now."""
@@ -308,6 +326,8 @@ class QueueTracker:
             self._presence_in_game(when)
         # PLAYING_OTHER is positively observed and deliberately given no authority over
         # the queue state — the practice range is exactly where people wait out a queue.
+        # GAME_ENDING says nothing about a queue either; it ends a *match*, which is the
+        # server's phase rather than this tracker's — see `QueueWatcher._end_match`.
 
     def _presence_queueing(self, when: float, role_select_visible: bool = False):
         if self.searching:
@@ -589,6 +609,9 @@ class QueueWatcher:
         # `_role_select_confirmed_visible` and `QueueTracker._presence_queueing`.
         self._role_select_visible = False
         self._role_select_checked_at = None
+        # When the evidence that the current match is over started holding — see
+        # `_check_match_over`.
+        self._match_over_since = None
         # Guards `_act`'s read-modify-write of `_acted` and the tracker itself, since a
         # `PresenceWatcher` can call `fold_presence` from its own thread at any moment.
         # Released before `_fast_wait` runs — see that method's own note — so a slow
@@ -619,8 +642,10 @@ class QueueWatcher:
 
         if vision._game_window() is None:
             # No game at all, which is not the same as not being able to see it: let the
-            # grace run out and the queue end.
+            # grace run out and the queue end — and a match that was being played is over.
+            self._check_match_over(True, when)
             return self.tracker.update(None, when, visible=True)
+        self._check_match_over(False, when)
         if not vision._foreground_is_game():
             # A screenshot of somebody's browser says nothing about their queue.
             return self.tracker.update(None, when, visible=False)
@@ -703,10 +728,10 @@ class QueueWatcher:
         self._role_select_checked_at = time.monotonic()
         if not result.on_screen:
             return
-        role = result.effective_role
-        if role is None or role == self.controls.role:
+        roles = result.effective_roles
+        if roles is None or roles == self.controls.roles:
             return
-        self.controls.role = role
+        self.controls.roles = roles
         if self.on_role_detected:
             self.on_role_detected(result)
 
@@ -760,10 +785,45 @@ class QueueWatcher:
         with self._tracker_lock:
             role_select_visible = self._role_select_confirmed_visible(when)
             self.tracker.presence(reading, when, role_select_visible=role_select_visible)
+            if reading is not None and reading.known and self.tracker.presence_authoritative:
+                if reading.state == queuepresence.GAME_ENDING:
+                    self._end_match()
+                else:
+                    self._check_match_over(reading.state in _MATCH_OVER_PRESENCE, when)
             observation = self.tracker.observation(when)
             self.latest = observation
             self._act(observation)
         return observation
+
+    def _check_match_over(self, over: bool, when: float):
+        """Ends an `inGame` session once `over` has held for `MATCH_OVER_SECONDS`.
+
+        `idle`, not `cancelled`: the match happened, so there's nothing to alert anyone
+        about — going idle just takes the Live Activity down quietly. A player who queues
+        straight back up doesn't need this at all (presence saying "In Queue" starts a
+        fresh session on its own), but one who stops playing would otherwise have a card
+        claiming they're still in a game indefinitely.
+
+        A scripted scenario owns its own timeline, so it's left alone — otherwise running
+        one on a PC sitting in the menus would cut its match short.
+        """
+        if not over or self.server.session.kind != "inGame" or self.server.scenario_running:
+            self._match_over_since = None
+            return
+        if self._match_over_since is None:
+            self._match_over_since = when
+            return
+        if when - self._match_over_since < MATCH_OVER_SECONDS:
+            return
+        self._end_match()
+
+    def _end_match(self):
+        """Takes a finished match's session back to idle — see `_check_match_over`."""
+        self._match_over_since = None
+        if self.server.session.kind not in _MATCH_KINDS or self.server.scenario_running:
+            return
+        self.log("Match over")
+        self.server.apply(protocol.idle())
 
     def fold_presence_lost(self, when=None):
         """Tells the tracker a presence source has died or gone stale — see
@@ -838,7 +898,7 @@ class QueueWatcher:
             self.log("Game found after %ds" % observation.queue_elapsed)
             self.server.apply(protocol.match_found(
                 self.controls.mode, self.controls.effective_role,
-                observation.queue_elapsed))
+                observation.queue_elapsed, roles=self.controls.effective_roles))
         elif observation.state == IDLE and was in SEARCHING_STATES:
             self.log("Queue ended without a match")
             self.server.apply(protocol.cancelled("userLeft"))

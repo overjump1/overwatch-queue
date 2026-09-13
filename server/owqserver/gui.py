@@ -37,6 +37,7 @@ QUEUE_STATE_NAMES = {
 PRESENCE_STATE_NAMES = {
     queuepresence.QUEUEING: "In a queue",
     queuepresence.IN_GAME: "In a game",
+    queuepresence.GAME_ENDING: "Game ending",
     queuepresence.MENUS: "In the menus",
     queuepresence.PLAYING_OTHER: "Playing something else in Overwatch",
     queuepresence.ELSEWHERE: "Playing something other than Overwatch",
@@ -418,10 +419,10 @@ class ControlPanel(QMainWindow):
     def _role_scanned(self, result):
         if result is None:
             return
-        role = result.effective_role
-        if role is None:
+        roles = result.effective_roles
+        if roles is None:
             return
-        self.controls.role = role
+        self.controls.roles = roles
         if result.mode and result.mode != self.controls.mode and self.controls.queues_by_role:
             self.controls.mode = result.mode
 
@@ -509,11 +510,11 @@ class ControlPanel(QMainWindow):
         # The same rule the server pushes by — see `QueueServer._push_activity`, which is
         # skipped entirely while a phone is live over MQTT and driving its own activity.
         phone_here = any((client.identity or {}).get("kind") == "phone" for client in clients)
-        if self.server.apns is None:
+        if self.server.fcm is None:
             return self._say(self.delivery,
-                             "Pushing isn't set up, so the Live Activity goes quiet the "
-                             "moment the phone locks. See server/README.md — apns.json or "
-                             "push_relay.json.", ORANGE)
+                             "Firebase isn't set up, so the Live Activity goes quiet the "
+                             "moment the phone locks. See server/README.md — "
+                             "fcm-service-account.json.", ORANGE)
         if phone_here:
             return self._say(self.delivery,
                              "Phone connected — it's driving its own Live Activity.", MUTED)

@@ -209,12 +209,17 @@ still drift.
 ### `searching`
 
 ```json
-{"type":"searching","data":{"mode":"competitive","role":"tank",
+{"type":"searching","data":{"mode":"competitive","role":"flex","roles":["tank","support"],
  "startedAt":"2023-11-14T22:13:20Z","estimatedWait":240,"groupSize":1}}
 ```
 
 `mode`: `quickPlay` · `competitive` · `arcade` · `stadium` · `mysteryHeroes` · `custom`
 `role`: `tank` · `damage` · `support` · `flex` · `open`
+`roles`: every role queued for — Overwatch lets more than one be checked at once, so this
+is a list. `role` stays alongside it as the single-value view for older clients: the one
+role when there's exactly one, `flex` when there are several. A client that receives no
+`roles` (an older server) treats it as `[role]`. The same pair appears on `matchFound` and
+`heroSelect`.
 `estimatedWait` may be omitted when you don't have one — the UI shows an indeterminate
 shimmer instead of a fake progress bar. Once elapsed passes the estimate the UI stops
 pretending and says "longer than usual", so a rough estimate is fine.
@@ -234,8 +239,13 @@ the PC", not a response deadline.
 
 ```json
 {"type":"mapVote","data":{"deadline":"2023-11-14T22:13:20Z","myVote":"ilios",
+ "mode":"competitive","roles":["tank","support"],
  "options":[{"mapKey":"ilios","votes":2},{"mapKey":"havana","votes":1}]}}
 ```
+
+`mode` and `roles` are optional context carried through from the queue, so the Live
+Activity keeps its mode colour and role icons while the vote is up. `inGame` carries an
+optional `roles` for the same reason.
 
 `mapKey` values are OverFast map keys (`ilios`, `kings-row`, `circuit-royal`…). Any key
 the client doesn't recognise still renders, just without art. `myVote` echoes the local
@@ -380,21 +390,16 @@ observed.
 
 ## Push
 
-Silent, deliberately. Every state change — the same one that triggers a `snapshot`
-broadcast — becomes a **background** APNs push to any registered phone/watch token
-(`content-available`, no banner, no sound): just enough for the app to wake up,
-reconnect, and pull a fresh snapshot on its own. The **Live Activity pushes** below are
-what's meant to actually surface a change on screen; `server/` never sends the standalone
-visible **alert** push type on its own device-token, even for
-`matchFound`/`mapVote`/`heroSelect` — that would be a second, separate notification for
-the same event the Live Activity already announces (see below). (The `alert` push type
-itself still exists and is a real, tested capability of both `apns.py`/`pushrelay.py` and
-the relay — a server built differently is free to use it directly; this one's own policy
-just routes the "make noise" moments through the Live Activity's own alert instead.)
+**Live Activity pushes only, all over Firebase.** `server/` sends no plain notification
+to the phone or the watch — no alert, no background wake-up. The Live Activity's own alert
+is the one way it interrupts anyone, and the Apple Watch mirrors that card into its Smart
+Stack by itself. Firebase rather than a direct APNs push because, measured against a real
+device, a direct push-to-start is accepted and then never delivered, and a direct alert on
+a Live Activity push never plays its sound; the same payloads through Firebase do both —
+see `server/owqserver/fcm.py`.
 
-**Live Activity pushes** are a different, more specific mechanism layered on top of the
-same relay: they update the Dynamic Island / Lock Screen card directly, without waking the
-app at all. Three events, all under `apns-push-type: liveactivity` and the **same topic**,
+**Live Activity pushes** update the Dynamic Island / Lock Screen card directly, without
+waking the app at all. Three events, all under `apns-push-type: liveactivity` and the **same topic**,
 `<bundle-id>.push-type.liveactivity` — including the start push. A separate
 `.push-type.liveactivity.start` topic is commonly described online for this, but it's
 wrong, at least for real push-to-start tokens against this account: verified directly by
@@ -414,18 +419,22 @@ on the plain one, unchanged otherwise.
   low-priority best-effort in a way it doesn't one with an alert.
 - **update** — pushed to the activity's own per-activity token on every subsequent change,
   once the phone has had a chance to register one (see `registerActivityPushToken` above).
-  Carries `content-state`, plus an `alert` only for `matchFound`/`mapVote`/`heroSelect` —
-  sound, haptic, a brief peek, the way a delivery app announces "your order is on the way"
-  without a separate notification alongside it. Routine updates stay silent; the card
-  changing is signal enough once it's already visible.
+  Carries `content-state`, plus an `alert` on every real phase change; a patch to the phase
+  already showing (the estimate, a mode correction) stays silent.
 - **end** — sent instead of an update once the phase goes back to `idle`/`cancelled`, then
-  the per-activity token is forgotten.
+  the per-activity token is forgotten. Also sent, silently, to a card left over from an
+  *earlier* session before a new one is started, so a requeue never leaves the last game's
+  card beside the new one. Nothing is pushed while a phone is connected over MQTT (it
+  drives its own card from the snapshot), except this terminal end.
+
+A session in `inGame` goes back to `idle` — ending the card — once the match is over:
+immediately when Battle.net's presence reads `<Mode>: Game Ending`, or once it has said the
+player is in the menus, in the practice range or out of Overwatch for 10 seconds.
 
 Between "start" and the phone registering a real per-activity token, further updates
-have nothing to reach yet — there's a real, expected gap here, since push-to-start
-creates the activity entirely OS-side without running any app code; only the *next*
-ordinary background wake-up (above) gives the app a chance to attach and register one.
-`start` itself keeps retrying in the meantime, so a delayed first attempt isn't fatal.
+have nothing to reach yet — push-to-start creates the activity entirely OS-side, and the
+app is woken to attach to it and register a token. `start` itself keeps retrying in the
+meantime, so a delayed first attempt isn't fatal.
 
 The one thing worth knowing if you implement a server for this from scratch: a Live
 Activity push's `content-state` is decoded with a plain `JSONDecoder`, not this protocol's
@@ -436,13 +445,10 @@ not an ISO-8601 string and not a 1970 Unix timestamp. `server/owqserver/protocol
 
 This is unrelated to the MQTT transport above — a push is how the PC reaches a device that
 currently holds no connection open at all (screen locked, app killed, watch out of range).
-The server in `server/` needs an Apple Push Notification Auth Key to send these, and by
-default reaches Apple through [`relay/`](../relay/README.md) — a small hosted service
-that holds that key so no installed copy of the server has to — rather than talking to
-Apple directly; see [server/README.md](../server/README.md#push-notifications-optional)
-for both that default and the advanced bring-your-own-key path. Nothing here is required
-— a server with neither configured just never pushes, and every client still works
-exactly as it does today.
+The server in `server/` needs a Firebase service account
+(`~/.overwatch-queue/fcm-service-account.json`) to send these. Nothing here is required —
+a server without one just never pushes, and every client still works while its app is
+connected.
 
 ## The server
 

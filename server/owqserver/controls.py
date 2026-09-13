@@ -1,7 +1,7 @@
 """What the panel's controls mean, with no Tk anywhere near it.
 
 The window in `gui.py` is a thin layer over this: it mirrors its widgets into `mode`,
-`role` and `estimate`, and calls the methods below. Keeping the two apart means the part
+`roles` and `estimate`, and calls the methods below. Keeping the two apart means the part
 worth testing — which phase a button produces, which role a mode queues as, what a jump
 does to a running scenario — can be tested without opening a window.
 """
@@ -16,7 +16,9 @@ class Controls:
     def __init__(self, server):
         self.server = server
         self.mode = "competitive"
-        self.role = "tank"
+        # Every role the player queued for. Overwatch lets more than one be checked at
+        # once, so this is a list; `role` below is the single-value view older payloads use.
+        self.roles = ["tank"]
         self.estimate = 240
 
     # ------------------------------------------------------------ selections
@@ -26,9 +28,22 @@ class Controls:
         return self.mode in protocol.ROLE_QUEUE_MODES
 
     @property
+    def role(self) -> str:
+        """The one role, or `flex` when several are queued — see `protocol.role_for`."""
+        return protocol.role_for(self.roles)
+
+    @role.setter
+    def role(self, value: str):
+        self.roles = [value]
+
+    @property
     def effective_role(self) -> str:
         """Arcade, Mystery Heroes and custom games have no role queue."""
         return self.role if self.queues_by_role else "open"
+
+    @property
+    def effective_roles(self) -> list:
+        return list(self.roles) if self.queues_by_role else ["open"]
 
     def set_estimate(self, seconds: int):
         self.estimate = max(0, int(seconds))
@@ -43,7 +58,8 @@ class Controls:
         self.server.stop_scenario()
         self.server.reset()
         return self.server.apply(protocol.searching(
-            self.mode, self.effective_role, protocol.now(), self.estimate))
+            self.mode, self.effective_role, protocol.now(), self.estimate,
+            roles=self.effective_roles))
 
     def jump(self, kind: str) -> bool:
         self.server.stop_scenario()
@@ -60,13 +76,15 @@ class Controls:
 
         if kind == "matchFound":
             waited = self.server.session.elapsed() or self.estimate
-            return protocol.match_found(mode, self.effective_role, waited)
+            return protocol.match_found(mode, self.effective_role, waited,
+                                        roles=self.effective_roles)
         if kind == "mapVote":
             return self.map_vote_phase()
         if kind == "heroSelect":
             return self.hero_select_phase()
         if kind == "inGame":
-            return protocol.in_game(mode, self.map_key(), self.hero_key())
+            return protocol.in_game(mode, self.map_key(), self.hero_key(),
+                                    roles=self.effective_roles)
         if kind == "cancelled":
             return protocol.cancelled("matchCancelled")
         raise ValueError("no such phase: %s" % kind)
@@ -80,9 +98,8 @@ class Controls:
         options behaviour every phase here had before any of them could read a screen.
         """
         scan = self.server.scan_map_vote()
-        if scan:
-            return protocol.map_vote(scan.map_keys, 25)
-        return protocol.map_vote(self.server.catalog.map_vote_options(self.mode), 25)
+        keys = scan.map_keys if scan else self.server.catalog.map_vote_options(self.mode)
+        return protocol.map_vote(keys, 25, mode=self.mode, roles=self.effective_roles)
 
     def hero_select_phase(self) -> dict:
         """Hero select, read off the screen when the game is there to be read.
@@ -93,18 +110,20 @@ class Controls:
         which case we fall back to the old behaviour of naming a few plausible heroes so
         the panel still demonstrates the phase.
         """
-        mode, role = self.mode, self.effective_role
+        mode, role, roles = self.mode, self.effective_role, self.effective_roles
         scan = self.server.scan_hero_select()
         if scan:
             return protocol.hero_select(
                 mode, role, self.map_key(), 40,
                 taken=scan.taken_hero_keys(self.hero_key()),
                 available=scan.available_hero_keys,
-                team_picks=[pick.as_wire() for pick in scan.picks])
+                team_picks=[pick.as_wire() for pick in scan.picks],
+                roles=roles)
 
         heroes = [hero["key"] for hero in self.server.catalog.heroes_for(role, mode)]
         return protocol.hero_select(mode, role, self.map_key(), 40,
-                                    random.sample(heroes, min(3, len(heroes))))
+                                    random.sample(heroes, min(3, len(heroes))),
+                                    roles=roles)
 
     # ------------------------------------------------------------ carry-over
 

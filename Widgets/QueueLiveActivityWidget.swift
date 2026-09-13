@@ -4,6 +4,11 @@ import WidgetKit
 
 /// The Lock Screen banner and Dynamic Island presentations.
 ///
+/// The card is about one queue, so the queue's **mode** owns the big icon and the colour
+/// (Quick Play blue, Competitive pink, …) from the first second of the search to the
+/// match itself, and every **role** queued for is a small icon in its own role colour.
+/// What's happening right now is the words and the timer.
+///
 /// Every timer here is driven by `Text(timerInterval:)` against an absolute date carried
 /// in the content state, so the whole thing keeps counting with no updates from the app.
 struct QueueLiveActivityWidget: Widget {
@@ -11,21 +16,21 @@ struct QueueLiveActivityWidget: Widget {
         ActivityConfiguration(for: QueueActivityAttributes.self) { context in
             ActivityRootView(state: context.state, attributes: context.attributes)
                 .activityBackgroundTint(Palette.night.opacity(0.92))
-                .activitySystemActionForegroundColor(Palette.orange)
+                .activitySystemActionForegroundColor(context.state.accent)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     Image(systemName: context.state.symbolName)
                         .font(.title2)
-                        .foregroundStyle(accent(context.state.phase))
+                        .foregroundStyle(context.state.accent)
                         .padding(.leading, 4)
                 }
 
                 DynamicIslandExpandedRegion(.trailing) {
-                    timerText(for: context.state, attributes: context.attributes)
+                    ActivityTimer(state: context.state, attributes: context.attributes)
                         .font(.system(.title2, design: .rounded, weight: .bold))
                         .monospacedDigit()
-                        .foregroundStyle(Palette.white)
+                        .foregroundStyle(timerTint(context.state))
                         .padding(.trailing, 4)
                 }
 
@@ -40,18 +45,18 @@ struct QueueLiveActivityWidget: Widget {
                 }
             } compactLeading: {
                 Image(systemName: context.state.symbolName)
-                    .foregroundStyle(accent(context.state.phase))
+                    .foregroundStyle(context.state.accent)
             } compactTrailing: {
-                timerText(for: context.state, attributes: context.attributes)
+                ActivityTimer(state: context.state, attributes: context.attributes)
                     .monospacedDigit()
-                    .foregroundStyle(Palette.white)
+                    .foregroundStyle(timerTint(context.state))
                     .frame(maxWidth: 54)
             } minimal: {
                 Image(systemName: context.state.symbolName)
-                    .foregroundStyle(accent(context.state.phase))
+                    .foregroundStyle(context.state.accent)
             }
             .widgetURL(DeepLink.openURL)
-            .keylineTint(accent(context.state.phase))
+            .keylineTint(context.state.accent)
         }
         // The Apple Watch mirrors this activity into the Smart Stack on its own, with no
         // code at all — but without this it would render the Dynamic Island's leading and
@@ -59,14 +64,12 @@ struct QueueLiveActivityWidget: Widget {
         // leftover on the wrist. `.small` is the wrist's own presentation.
         .supplementalActivityFamilies([.small])
     }
+}
 
-    private func accent(_ phase: QueuePhase) -> Color { Palette.accent(for: phase) }
-
-    @ViewBuilder
-    private func timerText(for state: QueueActivityAttributes.ContentState,
-                           attributes: QueueActivityAttributes) -> some View {
-        ActivityTimer(state: state, attributes: attributes)
-    }
+/// A deadline is the one thing on the card the player is racing, so it takes the alarm
+/// colour; an elapsed count is just information and stays neutral.
+func timerTint(_ state: QueueActivityAttributes.ContentState) -> Color {
+    state.phase.deadline != nil ? Palette.orange : Palette.white
 }
 
 /// Which presentation to draw. The Lock Screen and the watch's Smart Stack are different
@@ -115,6 +118,23 @@ struct ActivityTimer: View {
     }
 }
 
+/// The mode's name and the small role icons beside it — the "what is this queue" line
+/// every presentation shares.
+struct QueueContextLine: View {
+    var state: QueueActivityAttributes.ContentState
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if let detail = state.detail {
+                Text(detail)
+                    .foregroundStyle(state.accent)
+            }
+            RoleIcons(state.roles, spacing: 3)
+        }
+        .lineLimit(1)
+    }
+}
+
 private struct ExpandedBottom: View {
     var state: QueueActivityAttributes.ContentState
 
@@ -124,38 +144,41 @@ private struct ExpandedBottom: View {
             VStack(spacing: 6) {
                 TimedWaitMeter(start: info.startedAt,
                                estimatedEnd: info.estimatedEnd,
-                               tint: info.role.tint)
+                               tint: state.accent)
                 HStack {
-                    Text(info.mode.displayName)
+                    QueueContextLine(state: state)
                     Spacer()
                     Text(info.isOverdue() ? "Longer than usual"
                                           : "Estimated \(QueueTime.estimate(info.estimatedWait))")
+                        .foregroundStyle(Palette.white.opacity(0.6))
                 }
                 .font(.caption2)
-                .foregroundStyle(Palette.white.opacity(0.6))
             }
             .padding(.horizontal, 4)
 
         case .mapVote(let info):
-            HStack(spacing: 6) {
-                ForEach(info.options.prefix(3)) { option in
-                    Text(option.mapKey.replacingOccurrences(of: "-", with: " ").capitalized)
-                        .font(.caption2.weight(.medium))
-                        .lineLimit(1)
-                        .padding(.vertical, 4)
-                        .frame(maxWidth: .infinity)
-                        .background(info.myVote == option.mapKey
-                                    ? Palette.orange.opacity(0.35)
-                                    : Palette.white.opacity(0.10),
-                                    in: Capsule())
+            VStack(spacing: 6) {
+                HStack(spacing: 6) {
+                    ForEach(info.options.prefix(3)) { option in
+                        Text(option.mapKey.replacingOccurrences(of: "-", with: " ").capitalized)
+                            .font(.caption2.weight(.medium))
+                            .lineLimit(1)
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity)
+                            .background(info.myVote == option.mapKey
+                                        ? state.accent.opacity(0.35)
+                                        : Palette.white.opacity(0.10),
+                                        in: Capsule())
+                    }
                 }
+                .foregroundStyle(Palette.white)
+                QueueContextLine(state: state)
+                    .font(.caption2)
             }
-            .foregroundStyle(Palette.white)
 
         default:
-            Text(state.headline)
+            QueueContextLine(state: state)
                 .font(.caption2)
-                .foregroundStyle(Palette.white.opacity(0.6))
         }
     }
 }
@@ -168,10 +191,12 @@ private struct LockScreenView: View {
         HStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(Palette.accent(for: state.phase).opacity(0.18))
+                    .fill(state.accent.opacity(0.18))
+                Circle()
+                    .strokeBorder(state.accent.opacity(0.45), lineWidth: 1.5)
                 Image(systemName: state.symbolName)
                     .font(.title2.weight(.semibold))
-                    .foregroundStyle(Palette.accent(for: state.phase))
+                    .foregroundStyle(state.accent)
             }
             .frame(width: 46, height: 46)
 
@@ -180,10 +205,13 @@ private struct LockScreenView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Palette.white)
 
+                QueueContextLine(state: state)
+                    .font(.caption.weight(.semibold))
+
                 if case .searching(let info) = state.phase {
                     TimedWaitMeter(start: info.startedAt,
                                    estimatedEnd: info.estimatedEnd,
-                                   tint: info.role.tint)
+                                   tint: state.accent)
                         .frame(maxWidth: 150)
                     Text(info.isOverdue() ? "Longer than usual"
                                           : "Estimated \(QueueTime.estimate(info.estimatedWait))")
@@ -195,24 +223,27 @@ private struct LockScreenView: View {
             Spacer(minLength: 4)
 
             VStack(alignment: .trailing, spacing: 2) {
-                if let deadline = state.phase.deadline {
-                    Text.countdown(to: deadline)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(Palette.orange)
-                    Text("remaining").font(.caption2)
-                        .foregroundStyle(Palette.white.opacity(0.45))
-                } else if case .searching(let info) = state.phase {
-                    Text(timerInterval: info.startedAt...Date.distantFuture, countsDown: false)
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(Palette.white)
-                    Text("waiting").font(.caption2)
-                        .foregroundStyle(Palette.white.opacity(0.45))
-                }
+                ActivityTimer(state: state, attributes: attributes)
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(timerTint(state))
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: 110, alignment: .trailing)
+                Text(timerCaption)
+                    .font(.caption2)
+                    .foregroundStyle(Palette.white.opacity(0.45))
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+
+    private var timerCaption: String {
+        if state.phase.deadline != nil { return "remaining" }
+        switch state.phase.kind {
+        case .searching: return "waiting"
+        case .inGame: return "playing"
+        default: return ""
+        }
     }
 }

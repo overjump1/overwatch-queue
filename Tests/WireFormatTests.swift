@@ -52,6 +52,35 @@ final class WireFormatTests: XCTestCase {
         }
     }
 
+    func testSeveralRolesAndTheVotesQueueContextRoundTrip() throws {
+        let phases: [QueuePhase] = [
+            .searching(SearchInfo(mode: .competitive, role: .flex, roles: [.tank, .support],
+                                  startedAt: fixedDate)),
+            .mapVote(MapVoteInfo(options: [MapOption(mapKey: "ilios")], deadline: fixedDate,
+                                 mode: .quickPlay, roles: [.damage])),
+            .inGame(InGameInfo(mode: .competitive, startedAt: fixedDate, roles: [.tank, .support])),
+        ]
+        for phase in phases {
+            let decoded = try Wire.decode(QueuePhase.self, from: try Wire.encode(phase))
+            XCTAssertEqual(decoded, phase, "round trip lost data for \(phase.kind.rawValue)")
+        }
+    }
+
+    /// A server that predates multi-role queueing sends `role` alone — and no mode on a
+    /// map vote. Both must still decode, with `roles` falling back to the one role.
+    func testAnOlderServerWithoutRolesStillDecodes() throws {
+        let searching = Data(#"{"v":1,"body":{"type":"searching","data":{"mode":"quickPlay","role":"damage","startedAt":"2023-11-14T22:13:20Z","groupSize":1}}}"#.utf8)
+        guard case .searching(let info) = try Wire.decode(QueuePhase.self, from: searching) else {
+            return XCTFail("expected searching")
+        }
+        XCTAssertEqual(info.roles, [.damage])
+
+        let vote = Data(#"{"v":1,"body":{"type":"mapVote","data":{"options":[{"mapKey":"ilios","votes":0}],"deadline":"2023-11-14T22:13:20Z"}}}"#.utf8)
+        let phase = try Wire.decode(QueuePhase.self, from: vote)
+        XCTAssertNil(phase.mode)
+        XCTAssertEqual(phase.roles, [])
+    }
+
     func testEveryCommandRoundTrips() throws {
         let commands: [ClientCommand] = [
             .hello(client: ClientIdentity(kind: .phone, name: "iPhone", appVersion: "1.0"),

@@ -9,7 +9,7 @@ import WidgetKit
 ///
 /// - It is glanced at, not read. One line of status, one big number, nothing else.
 /// - It is competing with the watch face, so the timer carries the emphasis and the
-///   phase's colour does the rest of the work.
+///   mode's colour does the rest of the work.
 /// - The wait meter is dropped. At this width a progress bar is a few pixels of nothing,
 ///   and the elapsed time already says everything it would have.
 ///
@@ -23,19 +23,22 @@ struct WatchActivityView: View {
         HStack(spacing: 10) {
             Image(systemName: state.symbolName)
                 .font(.title3.weight(.semibold))
-                .foregroundStyle(Palette.accent(for: state.phase))
+                .foregroundStyle(state.accent)
                 .frame(width: 24)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(state.headline)
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Palette.white.opacity(0.7))
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(state.headline)
+                        .foregroundStyle(Palette.white.opacity(0.7))
+                        .lineLimit(1)
+                    RoleIcons(state.roles, spacing: 2)
+                }
+                .font(.caption2.weight(.semibold))
 
                 ActivityTimer(state: state, attributes: attributes)
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .monospacedDigit()
-                    .foregroundStyle(timerTint)
+                    .foregroundStyle(timerTint(state))
                     .lineLimit(1)
             }
 
@@ -43,11 +46,5 @@ struct WatchActivityView: View {
         }
         .padding(.horizontal, 4)
         .containerBackground(Palette.night.gradient, for: .widget)
-    }
-
-    /// A deadline is the one thing on this card the player is racing, so it takes the
-    /// alarm colour; an elapsed count is just information and stays neutral.
-    private var timerTint: Color {
-        state.phase.deadline != nil ? Palette.orange : Palette.white
     }
 }
