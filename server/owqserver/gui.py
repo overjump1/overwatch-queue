@@ -396,9 +396,9 @@ class ControlPanel(QMainWindow):
             return self._say_presence("Battle.net — connecting…", MUTED)
         if watcher.dead:
             return self._say_presence(
-                "Battle.net disconnected — reconnecting (relaunching it if it's "
-                "closed). The queue waits for it rather than guessing from the screen.",
-                ORANGE)
+                "Battle.net isn't answering — still trying. Right after Battle.net "
+                "starts this can take a few minutes; the screen covers the queue until "
+                "it does.", ORANGE)
         if not seen.known:
             return self._say_presence("Battle.net isn't answering.", MUTED)
 
