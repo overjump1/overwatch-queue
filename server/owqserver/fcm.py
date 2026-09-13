@@ -86,18 +86,29 @@ class FCMClient:
             return None
         if alert:
             aps["alert"] = alert
+            # Lets the alert through a Focus that would otherwise hold it back — the app
+            # has the time-sensitive entitlement for exactly this. A silent push has
+            # nothing to break through with, so it never carries one.
+            aps["interruption-level"] = "time-sensitive"
 
+        # Every push is logged, loud or silent, so the panel shows exactly what the phone
+        # was sent — a missing line is a push that never went, not one that went quietly.
+        phase = aps["content-state"].get("phase")
+        phase = phase.get("type", "?") if isinstance(phase, dict) else phase
+        what = "%s %s (%s)" % (label, phase, "loud" if alert else "silent")
         body = {"deviceToken": device_token, "liveActivityToken": live_activity_token,
                 "aps": aps}
         try:
             response = self._post("%s/v1/push" % self.url, body)
         except (urllib.error.URLError, OSError) as error:
-            self.log("Push to %s failed: %s" % (label, error))
+            self.log("Push %s failed: %s" % (what, error))
             return None
 
         if response.status_code >= 400:
-            self.log("Push to %s refused: %s %s"
-                     % (label, response.status_code, response.text.strip()))
+            self.log("Push %s refused: %s %s"
+                     % (what, response.status_code, response.text.strip()))
+        else:
+            self.log("Pushed %s" % what)
         return response
 
     def _post(self, url: str, body: dict):

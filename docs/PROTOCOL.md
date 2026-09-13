@@ -427,6 +427,25 @@ on the plain one, unchanged otherwise.
   card beside the new one. Nothing is pushed while a phone is connected over MQTT (it
   drives its own card from the snapshot), except this terminal end.
 
+**Loud or silent.** A loud push carries an `alert` (sound, haptic, a peek at the card) and
+`interruption-level: time-sensitive`, so a Focus doesn't hold it back. A silent one
+carries neither and only redraws the card. The server logs every push as one or the other
+(`Pushed activity-update matchFound (loud)`), so a phase with no log line was never sent.
+
+| Push | When | Loud? |
+|---|---|---|
+| start | A phase starts and there's no card yet, **every retry included** | loud |
+| update | The phase changed since the last push (`searching` → `matchFound`, …) | loud |
+| update | Same phase, new data: the estimate, map vote tallies, a mode correction | silent |
+| end | The queue was cancelled (first push for `cancelled`) | loud |
+| end | The queue went back to `idle` — the match ended, or a reset | silent |
+| end | A card left over from an earlier session, before a new one starts | silent |
+
+Nothing is pushed while a phone is connected over MQTT (it updates its own card and plays
+its own alert), except the ends above. A phase change that lands while the start is still
+waiting for a per-activity token isn't pushed either; the next start retry carries the new
+phase.
+
 A session in `inGame` goes back to `idle` — ending the card — once the match is over:
 immediately when Battle.net's presence reads `<Mode>: Game Ending`, or once it has said the
 player is in the menus, in the practice range or out of Overwatch for 10 seconds.
