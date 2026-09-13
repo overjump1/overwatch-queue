@@ -8,9 +8,11 @@ rather than calling an OCR engine - no injection, and Overwatch itself is never 
 It needs nothing from Battle.net at all, however Battle.net was started, which is why it
 is the default: the debug port below only exists if Battle.net was launched with a flag,
 and Battle.net rewrites its own auto-start entry and shortcut, so there is no dependable
-way to make sure it was. It decodes the record's protobuf fields and hands them to the
+way to make sure it was. It reads the same presence object the Battle.net window is built
+from, checked against update messages for which program is current, and hands it to the
 same `queuepresence.parse_record` as `CDPSource` - confirmed live to read identically,
-through Battle.net's own "In App" and Overwatch's "In Menus".
+through Battle.net's own "In App" and Overwatch's "In Menus", and to know the status
+~17 seconds after a fresh Battle.net start.
 
 `CDPSource` talks to Battle.net's own embedded Chromium (CEF) over the Chrome DevTools
 Protocol, if Battle.net was started with `--remote-debugging-port`. Once connected it
@@ -186,22 +188,24 @@ def _pick_app_shell(targets):
 
 
 class MemorySource:
-    """Reads the same presence record out of Battle.net's own process memory.
+    """Reads your own presence out of Battle.net's own process memory.
 
-    Battle.net keeps each presence record as the protobuf message it arrived in, so this
-    decodes it rather than pattern-matching bytes: field 1 is the account id, 2 the
-    battletag, 6 `program_id`, 7 `program_name` and 13 `rich_presence` — mapped field by
-    field against the very record `CDPSource` reads for the same account, and handed to
-    the same `queuepresence.parse_record`, so both sources mean exactly the same thing.
-    Field numbers are a protobuf schema, which Battle.net can't renumber without breaking
-    its own clients, so this survives far more than a byte-offset match would; if they
-    ever do change, a record just stops decoding and reads as `UNKNOWN`, never a guess.
+    Two forms of it live there, both mapped field by field against the very record
+    `CDPSource` reads for the same account and handed to the same
+    `queuepresence.parse_record`, so both sources mean exactly the same thing:
 
-    Memory also holds stale copies of earlier records — freed, not zeroed — so every
-    copy found is decoded and the newest by its own millisecond timestamps wins, rather
-    than whichever happened to sit at the lowest address. And every Battle.net process
-    is considered, not just the first renderer: the record lives in the main process and
-    in only some of the renderers.
+    - The presence *object* the Battle.net window is built from — the same merged record
+      the debug port returns. It's there from ~15 seconds after launch, and it's the one
+      that's right: see `find_presence_record` for the case where update messages alone
+      were measured to be wrong.
+    - Presence *update* messages, protobuf, carrying millisecond timestamps. Used to rule
+      out an object left over from a previous program, and on their own once the object
+      can't be decoded any more (garbage collection moves its strings apart in a long
+      session).
+
+    Only Battle.net's renderers are read by default — both forms were found there, and
+    the main process (which also holds updates) costs more to scan than all the renderers
+    together. It's a fallback for when no renderer has anything.
     """
 
     poll_seconds = MEMORY_POLL_SECONDS
@@ -212,25 +216,34 @@ class MemorySource:
     _READABLE_PROTECT = frozenset({0x02, 0x04, 0x08, 0x20, 0x40, 0x80})
     _MAX_REGION_BYTES = 200 * 1024 * 1024
     _RESCAN_AFTER_FAILURES = 3
+    # Every other read scans only the processes the record was last found in — Battle.net
+    # keeps several renderers and most hold nothing — so a full rescan now and then is
+    # what notices a newer copy turning up somewhere else.
+    _RESCAN_EVERY_READS = 20
 
     def __init__(self, identity, log=None):
         self.identity = identity
         self.log = log or (lambda message: None)
-        self._pid = None
+        self._pids = []
         self._failures = 0
+        self._reads_since_scan = 0
 
     def read(self, when):
         unknown = queuepresence.PresenceReading(queuepresence.UNKNOWN, None, "", None, when)
         try:
             record = None
-            if self._pid is not None and self._failures < self._RESCAN_AFTER_FAILURES:
-                record = self._newest_record(self._pid)
+            self._reads_since_scan += 1
+            if (self._pids and self._failures < self._RESCAN_AFTER_FAILURES
+                    and self._reads_since_scan < self._RESCAN_EVERY_READS):
+                record, _ = self._find_record(self._pids)
             else:
-                self._pid, self._failures = None, 0
-                for pid in _battlenet_pids():
-                    record = self._newest_record(pid)
-                    if record is not None:
-                        self._pid = pid
+                self._pids, self._failures, self._reads_since_scan = [], 0, 0
+                renderers, main = _battlenet_pids()
+                for group in (renderers, main):
+                    holding = [pid for pid in group if self._find_record([pid])[0] is not None]
+                    if holding:
+                        self._pids = holding
+                        record, _ = self._find_record(holding)
                         break
         except Exception as problem:                  # noqa: BLE001 - never raise
             self.log("Reading Battle.net's memory failed: %s" % problem)
@@ -244,20 +257,24 @@ class MemorySource:
         return queuepresence.parse_record(record, when, identity=self.identity) or unknown
 
     def close(self):
-        self._pid = None
+        self._pids = []
 
-    def _newest_record(self, pid):
+    def _find_record(self, pids):
         k32 = ctypes.WinDLL("kernel32", use_last_error=True)
         k32.OpenProcess.restype = ctypes.c_void_p
-        handle = k32.OpenProcess(self._PROCESS_QUERY_INFORMATION | self._PROCESS_VM_READ,
-                                 False, pid)
-        if not handle:
-            return None
-        try:
-            return newest_presence_record(
-                _readable_regions(k32, handle, self._MAX_REGION_BYTES), self.identity)
-        finally:
-            k32.CloseHandle(handle)
+
+        def chunks():
+            for pid in pids:
+                handle = k32.OpenProcess(
+                    self._PROCESS_QUERY_INFORMATION | self._PROCESS_VM_READ, False, pid)
+                if not handle:
+                    continue
+                try:
+                    yield from _readable_regions(k32, handle, self._MAX_REGION_BYTES)
+                finally:
+                    k32.CloseHandle(handle)
+
+        return find_presence_record(chunks(), self.identity)
 
 
 # Presence-record protobuf fields, by number, to the names `parse_record` reads — mapped
@@ -268,18 +285,40 @@ _RECORD_MAX_BYTES = 512
 _EPOCH_MS_FLOOR = 10 ** 12            # a varint this big is a millisecond timestamp
 
 
-def newest_presence_record(chunks, identity):
-    """The newest presence record for `identity` across `chunks` of raw memory, as a
-    `parse_record`-shaped dict, or `None` if no copy decodes. Pure — no process access —
-    so the decoding itself is testable against plain bytes."""
+UPDATE_RECORD = "update"
+OBJECT_RECORD = "object"
+
+
+def find_presence_record(chunks, identity):
+    """`(record, kind)` for `identity` across `chunks` of raw memory — a `parse_record`-
+    shaped dict and which form it came from — or `(None, None)`. Pure, no process access,
+    so the decoding is testable against plain bytes.
+
+    The object wins whenever one decodes. Update messages were measured live to carry
+    only what changed: launching Overwatch produced updates naming the program with no
+    status text at all, while the object — like the Battle.net window — said "In Menus".
+    Taking the update there reads `UNKNOWN` for as long as nothing else changes.
+
+    What updates are good for is the program. Their timestamps move when it changes, so
+    the newest one says which program is current, and an object left over from an earlier
+    one (Battle.net's own "App", say, not yet collected) is set aside for one that matches
+    it. Among objects for the same program the most common decoding wins, preferring one
+    that agrees with the update's own status text when it has any.
+
+    An update record stands on its own only when no object decodes at all.
+    """
     import re
+    from collections import Counter
+
     anchor = _record_anchor(identity)
     if anchor is None:
-        return None
-    pattern = re.compile(re.escape(anchor))
-    best, best_time = None, -1
+        return None, None
+    update_pattern = re.compile(re.escape(anchor))
+    object_pattern = _object_anchor(identity)
+    newest, newest_time = None, -1
+    objects = Counter()
     for chunk in chunks:
-        for match in pattern.finditer(chunk):
+        for match in update_pattern.finditer(chunk):
             fields = _decode_fields(chunk, match.start())
             record = {name: fields[number].decode("utf-8", "replace")
                       for number, name in _PRESENCE_FIELDS.items()
@@ -288,9 +327,86 @@ def newest_presence_record(chunks, identity):
                 continue
             stamp = max((value for value in fields.values()
                          if isinstance(value, int) and value >= _EPOCH_MS_FLOOR), default=0)
-            if stamp >= best_time:
-                best, best_time = record, stamp
-    return best
+            if stamp >= newest_time:
+                newest, newest_time = record, stamp
+        if object_pattern is not None:
+            for match in object_pattern.finditer(chunk):
+                record = _decode_object(chunk, match.start(), identity)
+                if record is not None:
+                    objects[tuple(sorted(record.items()))] += 1
+
+    candidates = [(dict(key), count) for key, count in objects.most_common()]
+    if newest is not None and newest.get("program_id"):
+        current = [(record, count) for record, count in candidates
+                   if record["program_id"] == newest["program_id"]]
+        if not current:
+            return newest, UPDATE_RECORD
+        candidates = current
+        agreeing = [(record, count) for record, count in candidates
+                    if newest.get("rich_presence")
+                    and record["rich_presence"] == newest["rich_presence"]]
+        candidates = agreeing or candidates
+    if candidates:
+        return candidates[0][0], OBJECT_RECORD
+    if newest is not None:
+        return newest, UPDATE_RECORD
+    return None, None
+
+
+def _object_anchor(identity):
+    """The account id as a V8 one-byte string's body: a little-endian length, then the
+    characters. The map and hash-field words before it aren't matched — they vary between
+    launches — but they're read back from each match and required of every sibling string,
+    which is what keeps an unrelated string that happens to follow from being taken."""
+    import re
+    import struct
+    if identity is None or not identity.account_id or not identity.battletag:
+        return None
+    account = str(identity.account_id).encode("ascii")
+    return re.compile(re.escape(struct.pack("<I", len(account)) + account))
+
+
+_OBJECT_WINDOW_BYTES = 600
+
+
+def _decode_object(chunk, id_at, identity):
+    """The presence object's strings in the order Battle.net builds them — id, battletag,
+    program id, program name, then (after the real name, a two-byte string skipped by
+    construction) the rich-presence text and region codes — as a `parse_record` record,
+    or `None` if this match isn't that object."""
+    import struct
+    header_at = id_at - 8
+    if header_at < 0:
+        return None
+    prefix = chunk[header_at:id_at]              # map + hash field, shared by its siblings
+    end = min(len(chunk), header_at + _OBJECT_WINDOW_BYTES)
+    strings, pos = [], header_at
+    while len(strings) < 8:
+        at = chunk.find(prefix, pos, end)
+        if at < 0 or at + 12 > end:
+            break
+        (length,) = struct.unpack_from("<I", chunk, at + 8)
+        text_at = at + 12
+        raw = chunk[text_at:text_at + length]
+        if not 0 < length <= 128 or text_at + length > end or \
+                any(byte < 0x20 or byte == 0x7F for byte in raw):
+            pos = at + 1
+            continue
+        strings.append(raw.decode("latin-1"))
+        pos = text_at + length
+    if len(strings) < 4 or strings[0] != str(identity.account_id) or \
+            strings[1] != identity.battletag:
+        return None
+    if strings[2] == strings[3]:
+        # Another object that also starts with our id and battletag, followed by a pair of
+        # identical region codes ("EU", "EU") rather than a program id and name.
+        return None
+    # Only text `parse` recognises is taken as rich presence: with none set, the next
+    # string is a region code, and naming that the status would be a guess.
+    rich = next((text for text in strings[4:7]
+                 if queuepresence.parse(text)[0] != queuepresence.UNKNOWN), "")
+    return {"id": strings[0], "battle_tag": strings[1], "program_id": strings[2],
+            "program_name": strings[3], "rich_presence": rich}
 
 
 def _record_anchor(identity):
@@ -388,8 +504,8 @@ def _readable_regions(k32, handle, max_region_bytes):
 
 
 def _battlenet_pids():
-    """Every Battle.net process, renderers first — the presence record has been found in
-    the main process and in only some renderers, never all of them.
+    """`(renderers, main)` — Battle.net's renderer process ids, and its main process's.
+    Its GPU and utility processes never hold presence, so they aren't worth a scan.
 
     Shells out to PowerShell rather than walking every process by hand: this runs only
     when there's no known-good process to read, not every poll.
@@ -398,17 +514,21 @@ def _battlenet_pids():
         completed = subprocess.run(
             ["powershell", "-NoProfile", "-Command",
             "Get-CimInstance Win32_Process -Filter \"Name='Battle.net.exe'\" | "
-            "ForEach-Object { '{0} {1}' -f $_.ProcessId, "
-            "[int]($_.CommandLine -match '--type=renderer') }"],
+            "ForEach-Object { '{0} {1}' -f $_.ProcessId, $(if ($_.CommandLine -match "
+            "'--type=renderer') { 'renderer' } elseif ($_.CommandLine -match '--type=') "
+            "{ 'helper' } else { 'main' }) }"],
             capture_output=True, text=True, timeout=10)
     except Exception:                                 # noqa: BLE001 - best effort
         return []
-    renderers, others = [], []
+    renderers, main = [], []
     for line in completed.stdout.splitlines():
         parts = line.split()
         if len(parts) == 2 and parts[0].isdigit():
-            (renderers if parts[1] == "1" else others).append(int(parts[0]))
-    return renderers + others
+            if parts[1] == "renderer":
+                renderers.append(int(parts[0]))
+            elif parts[1] == "main":
+                main.append(int(parts[0]))
+    return renderers, main
 
 
 def find_identity(log=None):

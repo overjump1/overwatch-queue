@@ -186,30 +186,153 @@ def _presence_record(rich_presence, stamp_ms, program_id="Pro", program_name="Ov
     """A record laid out the way it was found in a live Battle.net's memory: id, tag, a
     status varint, a timestamp, program id and name, real name, rich presence, then a
     second timestamp — whose tag byte (`x`) sits directly after the rich-presence text,
-    which is what used to glue itself onto it."""
+    which is what used to glue itself onto it. `rich_presence=None` leaves field 13 out,
+    the way a live update naming only a new program did."""
+    rich = _pb_string(13, rich_presence) if rich_presence is not None else b""
     return (_pb_string(1, account_id) + _pb_string(2, battletag) + _pb_int(3, 2) +
             _pb_int(4, stamp_ms) + _pb_int(5, 368) + _pb_string(6, program_id) +
             _pb_string(7, program_name) + _pb_int(10, 0) + _pb_string(11, "Tomer ady") +
-            _pb_string(13, rich_presence) + _pb_int(14, stamp_ms + 410) +
-            _pb_string(20, "US"))
+            rich + _pb_int(14, stamp_ms + 410) + _pb_string(20, "US"))
+
+
+def _record(chunks, identity):
+    return bnetpresence.find_presence_record(chunks, identity)[0]
+
+
+_ONE_BYTE_HEADER = b'-%\x18"\x03\x00\x00\x00'       # map + hash field, as found live
+_TWO_BYTE_HEADER = b'10\x18"\x03\x00\x00\x00'
+
+
+def _v8_string(text, header=_ONE_BYTE_HEADER):
+    if header == _TWO_BYTE_HEADER:
+        data, length = text.encode("utf-16-le"), len(text)
+    else:
+        data, length = text.encode("latin-1"), len(text)
+    body = header + length.to_bytes(4, "little") + data
+    return body + b"\x00" * (-len(body) % 4)
+
+
+def _presence_object(program_id="App", program_name="In Battle.net", rich="In App",
+                     account_id="482667935", battletag="overjump#2179"):
+    """The presence object as a fresh Battle.net lays it out: one-byte strings sharing a
+    map and hash word, other small heap objects between some of them, and the real name
+    as a two-byte string with a different map."""
+    junk = b"\x99\xa1!(\xb1!t^\xb1!t^Q$t^\xbe\x8b\x00\x00}\x91\x86+"
+    parts = [_v8_string(account_id), junk, _v8_string(battletag), junk,
+             _v8_string(program_id), _v8_string(program_name),
+             _v8_string("Tomer ady", _TWO_BYTE_HEADER)]
+    if rich:
+        parts.append(_v8_string(rich))
+    parts += [_v8_string("US"), _v8_string("US")]
+    return b"\x00" * 16 + b"".join(parts)
+
+
+class PresenceObjectTests(unittest.TestCase):
+    """`find_presence_record`'s object form — what Battle.net holds before any update
+    record exists. Pure bytes, no process."""
+
+    IDENTITY = queuepresence.Identity("overjump#2179", "482667935")
+
+    def test_reads_the_object_before_any_update_exists(self):
+        chunk = _presence_object(program_id="Pro", program_name="Overwatch",
+                                 rich="Quick Play: In Queue")
+        record, kind = bnetpresence.find_presence_record([chunk], self.IDENTITY)
+        self.assertEqual(kind, bnetpresence.OBJECT_RECORD)
+        self.assertEqual(record, {"id": "482667935", "battle_tag": "overjump#2179",
+                                  "program_id": "Pro", "program_name": "Overwatch",
+                                  "rich_presence": "Quick Play: In Queue"})
+        reading = queuepresence.parse_record(record, 0.0, identity=self.IDENTITY)
+        self.assertEqual((reading.state, reading.mode), (queuepresence.QUEUEING, "quickPlay"))
+
+    def test_battlenet_itself_reads_as_elsewhere(self):
+        record, _ = bnetpresence.find_presence_record([_presence_object()], self.IDENTITY)
+        reading = queuepresence.parse_record(record, 0.0, identity=self.IDENTITY)
+        self.assertEqual(reading.state, queuepresence.ELSEWHERE)
+
+    def test_the_object_wins_over_an_update_that_only_names_the_program(self):
+        """Measured live: launching Overwatch produced updates naming the program with no
+        status text, while the object (and Battle.net's own window) said "In Menus"."""
+        update = _presence_record(None, 1789308396752)
+        current = _presence_object(program_id="Pro", program_name="Overwatch", rich="In Menus")
+        record, kind = bnetpresence.find_presence_record([update, current], self.IDENTITY)
+        self.assertEqual(kind, bnetpresence.OBJECT_RECORD)
+        self.assertEqual(record["rich_presence"], "In Menus")
+
+    def test_an_object_left_over_from_another_program_is_set_aside(self):
+        """Update timestamps move when the program does, so they say which object is old."""
+        stale_object = _presence_object(program_id="App", program_name="In Battle.net")
+        update = _presence_record("In Menus", 1789305461335)
+        record, kind = bnetpresence.find_presence_record([stale_object, update],
+                                                         self.IDENTITY)
+        self.assertEqual(kind, bnetpresence.UPDATE_RECORD)
+        self.assertEqual(record["rich_presence"], "In Menus")
+
+    def test_the_newest_update_decides_which_program_is_current(self):
+        older = _presence_record("In App", 1789302245274, program_id="App",
+                                 program_name="In Battle.net")
+        newer = _presence_record(None, 1789305461335)
+        app = _presence_object()
+        overwatch = _presence_object(program_id="Pro", program_name="Overwatch", rich="In Menus")
+        record, _ = bnetpresence.find_presence_record([app, app, older, newer, overwatch],
+                                                      self.IDENTITY)
+        self.assertEqual((record["program_id"], record["rich_presence"]), ("Pro", "In Menus"))
+
+    def test_an_object_agreeing_with_the_updates_status_is_preferred(self):
+        update = _presence_record("Quick Play: In Queue", 1789305461335)
+        stale = _presence_object(program_id="Pro", program_name="Overwatch", rich="In Menus")
+        current = _presence_object(program_id="Pro", program_name="Overwatch",
+                                   rich="Quick Play: In Queue")
+        record, _ = bnetpresence.find_presence_record([stale, stale, current, update],
+                                                      self.IDENTITY)
+        self.assertEqual(record["rich_presence"], "Quick Play: In Queue")
+
+    def test_a_region_object_is_not_the_presence_object(self):
+        """Live memory holds one that also starts with our id and battletag, then EU, EU."""
+        region = b"\x00" * 16 + _v8_string("482667935") + _v8_string("overjump#2179") + \
+            _v8_string("EU") + _v8_string("EU")
+        self.assertEqual(bnetpresence.find_presence_record([region], self.IDENTITY),
+                         (None, None))
+
+    def test_no_rich_presence_is_never_filled_in_with_a_region_code(self):
+        chunk = _presence_object(program_id="Pro", program_name="Overwatch", rich="")
+        record, _ = bnetpresence.find_presence_record([chunk], self.IDENTITY)
+        self.assertEqual(record["rich_presence"], "")
+
+    def test_another_object_starting_with_our_id_is_not_the_presence_object(self):
+        """Live memory holds an account-settings object that also starts with the id."""
+        other = b"\x00" * 16 + _v8_string("482667935") + _v8_string("enUS") + \
+            _v8_string("US") + _v8_string("Americas")
+        self.assertEqual(bnetpresence.find_presence_record([other], self.IDENTITY),
+                         (None, None))
+
+    def test_a_friends_object_is_never_ours(self):
+        friend = _presence_object(account_id="111222333", battletag="friend#1234")
+        self.assertEqual(bnetpresence.find_presence_record([friend], self.IDENTITY),
+                         (None, None))
+
+    def test_the_most_common_object_wins(self):
+        menus = _presence_object(program_id="Pro", program_name="Overwatch", rich="In Menus")
+        app = _presence_object()
+        record, _ = bnetpresence.find_presence_record([menus, menus, app], self.IDENTITY)
+        self.assertEqual(record["program_id"], "Pro")
 
 
 class NewestPresenceRecordTests(unittest.TestCase):
-    """`newest_presence_record` — decoding presence records out of raw memory bytes.
+    """`find_presence_record` — decoding update records out of raw memory bytes.
     Pure, so no process and no platform needed."""
 
     IDENTITY = queuepresence.Identity("overjump#2179", "482667935")
 
     def test_decodes_the_fields_parse_record_reads(self):
         chunk = b"\x00noise\x00" + _presence_record("Quick Play: In Queue", 1789302245274)
-        record = bnetpresence.newest_presence_record([chunk], self.IDENTITY)
+        record = _record([chunk], self.IDENTITY)
         self.assertEqual(record, {"id": "482667935", "battle_tag": "overjump#2179",
                                   "program_id": "Pro", "program_name": "Overwatch",
                                   "rich_presence": "Quick Play: In Queue"})
 
     def test_reads_the_same_as_the_debug_port_through_parse_record(self):
         chunk = _presence_record("Competitive: In Queue", 1789302245274)
-        record = bnetpresence.newest_presence_record([chunk], self.IDENTITY)
+        record = _record([chunk], self.IDENTITY)
         reading = queuepresence.parse_record(record, 0.0, identity=self.IDENTITY)
         self.assertEqual((reading.state, reading.mode), (queuepresence.QUEUEING, "competitive"))
 
@@ -217,20 +340,20 @@ class NewestPresenceRecordTests(unittest.TestCase):
         """Memory keeps stale copies of old records; address order means nothing."""
         newer = _presence_record("Quick Play: In Game", 1789302300000)
         older = _presence_record("Quick Play: In Queue", 1789302200000)
-        record = bnetpresence.newest_presence_record([newer + b"\x00" * 8, older],
+        record = _record([newer + b"\x00" * 8, older],
                                                      self.IDENTITY)
         self.assertEqual(record["rich_presence"], "Quick Play: In Game")
 
     def test_a_friends_record_is_never_ours(self):
         friend = _presence_record("Quick Play: In Queue", 1789302245274,
                                   account_id="111", battletag="friend#1234")
-        self.assertIsNone(bnetpresence.newest_presence_record([friend], self.IDENTITY))
+        self.assertIsNone(_record([friend], self.IDENTITY))
 
     def test_decoding_stops_where_the_next_record_starts(self):
         first = _presence_record("In App", 1789302245274, program_id="App",
                                  program_name="In Battle.net")
         second = _presence_record("Quick Play: In Queue", 1789302245274)
-        record = bnetpresence.newest_presence_record([first + second], self.IDENTITY)
+        record = _record([first + second], self.IDENTITY)
         # Equal timestamps: whichever decodes, it must be one whole record, never a mix.
         self.assertIn((record["program_id"], record["rich_presence"]),
                       [("App", "In App"), ("Pro", "Quick Play: In Queue")])
@@ -238,16 +361,16 @@ class NewestPresenceRecordTests(unittest.TestCase):
     def test_a_battletag_only_identity_still_finds_the_record(self):
         chunk = _presence_record("Quick Play: In Queue", 1789302245274)
         identity = queuepresence.Identity("overjump#2179")
-        record = bnetpresence.newest_presence_record([chunk], identity)
+        record = _record([chunk], identity)
         self.assertEqual(record["rich_presence"], "Quick Play: In Queue")
 
     def test_nothing_to_anchor_on_is_none(self):
         chunk = _presence_record("Quick Play: In Queue", 1789302245274)
-        self.assertIsNone(bnetpresence.newest_presence_record([chunk], None))
+        self.assertIsNone(_record([chunk], None))
 
     def test_a_truncated_record_does_not_raise(self):
         chunk = _presence_record("Quick Play: In Queue", 1789302245274)[:30]
-        record = bnetpresence.newest_presence_record([chunk], self.IDENTITY)
+        record = _record([chunk], self.IDENTITY)
         self.assertNotIn("rich_presence", record or {})
 
 
