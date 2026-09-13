@@ -41,7 +41,19 @@ public final class LiveActivityController {
     /// Fires once this activity's own push token is known — `AppModel` forwards it to the
     /// PC as `registerActivityPushToken`, which is what lets a background wake-up push
     /// keep this exact activity current without the app process being alive at all.
-    public var onActivityPushToken: ((_ sessionID: UUID, _ token: String) -> Void)?
+    public var onActivityPushToken: ((_ sessionID: UUID, _ token: String) -> Void)? {
+        didSet {
+            guard let pending = pendingActivityPushToken, onActivityPushToken != nil else { return }
+            pendingActivityPushToken = nil
+            onActivityPushToken?(pending.sessionID, pending.token)
+        }
+    }
+
+    /// A token that arrived before anything was listening. A background wake started by a
+    /// push-to-start reaches `observeActivityUpdates()` well before `AppModel` has wired
+    /// itself up, and that is exactly the launch whose token matters most — dropping it
+    /// would leave the PC unable to update the card it just created.
+    private var pendingActivityPushToken: (sessionID: UUID, token: String)?
     /// Fires once the app-level push-to-start token is known — forwarded as
     /// `registerActivityStartToken`. Independent of any running activity: this is what
     /// lets the PC create the *next* one from nothing.
@@ -49,6 +61,7 @@ public final class LiveActivityController {
 
     private var pushTokenObserver: Task<Void, Never>?
     private var pushToStartTokenObserver: Task<Void, Never>?
+    private var activityUpdatesObserver: Task<Void, Never>?
 
     private init() {}
 
@@ -77,17 +90,46 @@ public final class LiveActivityController {
             Task { await stale.end(nil, dismissalPolicy: .immediate) }
         }
 
-        guard activity?.id != newest.id else { return }        // already adopted this one
+        adopt(newest)
+    }
 
-        activity = newest
-        lastPushedKind = newest.content.state.phase.kind
-        lastPushedState = newest.content.state
+    /// Watches for activities this process didn't start — above all one a push-to-start
+    /// created while the app wasn't running at all.
+    ///
+    /// `adoptRunningActivity()` is a one-shot poll, and that is the whole problem: a card
+    /// a push-to-start conjures up seconds later is never seen by it, so its per-activity
+    /// push token is never registered, and the PC has no way to update the card it just
+    /// created. Every subsequent update then needs someone to open the app by hand, which
+    /// defeats the point of push-to-start entirely.
+    ///
+    /// `activityUpdates` is the stream that does see it. iOS wakes the app precisely so
+    /// this can run, so it's started from `didFinishLaunchingWithOptions` rather than a
+    /// SwiftUI `.task` — a background wake has no view to appear.
+    public func observeActivityUpdates() {
+        guard activityUpdatesObserver == nil else { return }
+        activityUpdatesObserver = Task { [weak self] in
+            for await activity in Activity<QueueActivityAttributes>.activityUpdates {
+                guard !Task.isCancelled else { return }
+                self?.adopt(activity)
+            }
+        }
+    }
+
+    /// Takes ownership of `activity`: remembers it, and starts watching both its state and
+    /// its push token. Safe to call for one already adopted.
+    private func adopt(_ activity: Activity<QueueActivityAttributes>) {
+        guard self.activity?.id != activity.id else { return }
+
+        self.activity = activity
+        lastPushedKind = activity.content.state.phase.kind
+        lastPushedState = activity.content.state
         // Whatever it's showing was pushed by a process that's gone; let the first
         // snapshot of this launch through the rate limit to correct it.
         lastPushedAt = .distantPast
-        observeState(of: newest)
-        observePushToken(of: newest)
-        scheduleOverdueRefresh(for: newest.content.state.phase)
+        observeState(of: activity)
+        observePushToken(of: activity)
+        scheduleOverdueRefresh(for: activity.content.state.phase)
+        Self.log("adopted \(activity.id)")
     }
 
     /// Starts listening for the app-level push-to-start token. Call once, independent of
@@ -111,7 +153,14 @@ public final class LiveActivityController {
         pushTokenObserver = Task { [weak self] in
             for await tokenData in activity.pushTokenUpdates {
                 guard !Task.isCancelled else { return }
-                self?.onActivityPushToken?(sessionID, tokenData.hexEncoded)
+                guard let self else { return }
+                let token = tokenData.hexEncoded
+                Self.log("activity push token for \(sessionID)")
+                if self.onActivityPushToken != nil {
+                    self.onActivityPushToken?(sessionID, token)
+                } else {
+                    self.pendingActivityPushToken = (sessionID, token)
+                }
             }
         }
     }

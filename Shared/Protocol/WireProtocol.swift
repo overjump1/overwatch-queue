@@ -67,6 +67,14 @@ public enum ClientCommand: Codable, Sendable {
     /// itself. Independent of any one session; sent once it's available and again
     /// whenever the system hands over a new one.
     case registerActivityStartToken(token: String, environment: PushEnvironment)
+    /// The device's Firebase Cloud Messaging registration token — how the PC addresses
+    /// this device through Firebase rather than talking to Apple's APNs directly.
+    ///
+    /// Worth the extra hop: pushed straight at APNs, a push-to-start is accepted with a
+    /// 200 and then, in practice, almost never delivered, and an alert on a Live Activity
+    /// push never carries its sound. The same payloads routed through Firebase arrive,
+    /// and arrive with sound. Sent once per launch alongside the tokens above.
+    case registerFCMToken(token: String)
     /// Asks the server to say what time it is, carrying this device's own clock so the
     /// reply can be timed. See `pong`, and `ClockSync.verify(clientTime:serverTime:receivedAt:)`
     /// for why a measured round trip is the only honest way to do this.

@@ -65,5 +65,11 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+	<!-- TEMPORARY — FCM diagnostic only, remove once resolved. Firebase swizzles
+	     didRegisterForRemoteNotificationsWithDeviceToken by default, which can conflict
+	     with SwiftUI's @UIApplicationDelegateAdaptor; we already forward the APNs token
+	     to Messaging manually. -->
+	<key>FirebaseAppDelegateProxyEnabled</key>
+	<false/>
 </dict>
 </plist>

@@ -21,6 +21,7 @@ struct OverwatchQueueApp: App {
                     appDelegate.shouldPresentWhileForeground = {
                         model.store.transport?.status.isLive != true
                     }
+                    appDelegate.onFCMToken = { model.store.registerFCMToken($0) }
                     model.start()
                     model.registerForPushNotifications()
                 }

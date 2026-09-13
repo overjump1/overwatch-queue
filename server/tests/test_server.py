@@ -335,6 +335,9 @@ class PushDispatchTests(unittest.TestCase):
                         activity_tokens=ActivityTokens(os.devnull))
         self.fake = _FakeAPNs()
         self.server.apns = self.fake
+        # These cover the dispatch logic itself, so they pin the transport to APNs.
+        # `FCMDispatchTests` is where the Firebase path is exercised.
+        self.server.fcm = None
         self.server.push_tokens.register("phone", "phone-token", "sandbox")
         self.server.push_tokens.register("watch", "watch-token", "production")
 
@@ -426,6 +429,9 @@ class LiveActivityPushDispatchTests(unittest.TestCase):
                                   activity_tokens=ActivityTokens(os.devnull))
         self.fake = _FakeAPNs()
         self.server.apns = self.fake
+        # These cover the dispatch logic itself, so they pin the transport to APNs.
+        # `FCMDispatchTests` is where the Firebase path is exercised.
+        self.server.fcm = None
 
     def test_no_start_token_means_nothing_is_sent(self):
         self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
@@ -615,6 +621,9 @@ class ActivityFallbackTests(unittest.TestCase):
                                   activity_tokens=ActivityTokens(os.devnull))
         self.fake = _FakeAPNs()
         self.server.apns = self.fake
+        # These cover the dispatch logic itself, so they pin the transport to APNs.
+        # `FCMDispatchTests` is where the Firebase path is exercised.
+        self.server.fcm = None
         self.server.push_tokens.register("phone", "phone-token", "sandbox")
         self.server.activity_tokens.register_start("start-token", "sandbox")
 

@@ -34,6 +34,7 @@ public final class QueueStore {
     private var pendingActivityPushToken: (sessionID: UUID, token: String, environment: PushEnvironment)?
     /// The app-level push-to-start token — independent of any one session.
     private var pendingActivityStartToken: (token: String, environment: PushEnvironment)?
+    private var pendingFCMToken: String?
     /// Commands that arrived with no live socket to carry them. The case this exists for
     /// is the watch: `transferUserInfo` wakes the phone in the background, long after the
     /// socket was torn down, so a pick made on the wrist would otherwise be handed to a
@@ -90,6 +91,12 @@ public final class QueueStore {
     /// `ClientCommand.registerActivityStartToken`.
     public func registerActivityStartToken(_ token: String, environment: PushEnvironment) {
         pendingActivityStartToken = (token, environment)
+        sendPendingRegistrations()
+    }
+
+    /// Registers this device's Firebase token — see `ClientCommand.registerFCMToken`.
+    public func registerFCMToken(_ token: String) {
+        pendingFCMToken = token
         sendPendingRegistrations()
     }
 
@@ -190,6 +197,9 @@ public final class QueueStore {
         }
         if let pending = pendingActivityStartToken {
             transport?.send(.registerActivityStartToken(token: pending.token, environment: pending.environment))
+        }
+        if let pending = pendingFCMToken {
+            transport?.send(.registerFCMToken(token: pending))
         }
     }
 
