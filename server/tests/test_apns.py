@@ -157,7 +157,36 @@ class LiveActivityPushTests(unittest.TestCase):
             "start-token", "sandbox", attributes={}, content_state={}, timestamp=1,
             alert={"title": "Match Found", "body": "Get back to your PC."})
         aps = self.fake.calls[0]["json"]["aps"]
-        self.assertEqual(aps["alert"], {"title": "Match Found", "body": "Get back to your PC."})
+        # `sound` belongs *inside* the alert dict for a Live Activity push — unlike a
+        # plain notification, where it's a sibling of `alert` on `aps` itself. Verified
+        # against Apple's own WWDC23 payload example after a sibling `sound` silently
+        # updated the card with no sound, haptic, or screen wake at all.
+        self.assertEqual(aps["alert"], {"title": "Match Found", "body": "Get back to your PC.",
+                                        "sound": "default"})
+        self.assertNotIn("sound", aps)
+
+    def test_update_includes_a_sound_inside_the_alert_when_given_one(self):
+        self.client.send_activity_update(
+            "activity-token", "production", content_state={}, timestamp=1,
+            alert={"title": "Match Found", "body": "Get back to your PC."})
+        aps = self.fake.calls[0]["json"]["aps"]
+        self.assertEqual(aps["alert"]["sound"], "default")
+        self.assertNotIn("sound", aps)
+
+    def test_update_has_no_alert_or_sound_when_silent(self):
+        self.client.send_activity_update(
+            "activity-token", "production", content_state={}, timestamp=1)
+        aps = self.fake.calls[0]["json"]["aps"]
+        self.assertNotIn("sound", aps)
+        self.assertNotIn("alert", aps)
+
+    def test_end_includes_a_sound_inside_the_alert_when_given_one(self):
+        self.client.send_activity_end(
+            "activity-token", "production", content_state={}, timestamp=1,
+            alert={"title": "Queue cancelled", "body": "Back to the front page."})
+        aps = self.fake.calls[0]["json"]["aps"]
+        self.assertEqual(aps["alert"]["sound"], "default")
+        self.assertNotIn("sound", aps)
 
     def test_update_uses_the_plain_topic_no_dot_start(self):
         self.client.send_activity_update(

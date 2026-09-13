@@ -170,7 +170,14 @@ describe("sendPush", () => {
     });
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.aps.alert).toEqual({ title: "Match Found", body: "Get back to your PC." });
+    // `sound` belongs *inside* the alert dict for a Live Activity push, not as a
+    // sibling of `alert` on `aps` (that's the plain-notification shape above). A
+    // sibling `sound` is silently ignored — the card updates with no sound, haptic,
+    // or screen wake. Verified against Apple's own WWDC23 payload example.
+    expect(body.aps.alert).toEqual({
+      title: "Match Found", body: "Get back to your PC.", sound: "default",
+    });
+    expect(body.aps.sound).toBeUndefined();
   });
 
   it("posts a Live Activity update to the plain topic, no .start suffix", async () => {
@@ -193,6 +200,25 @@ describe("sendPush", () => {
     expect(body.aps.event).toBe("update");
     expect(body.aps["stale-date"]).toBe(1700000600);
     expect(body.aps["content-state"]).toEqual({ phase: { type: "searching" }, sequence: 3 });
+    // A patch to the phase already showing carries no title/body, so it should stay
+    // fully silent — no sound key at all, not even a falsy one.
+    expect(body.aps.sound).toBeUndefined();
+  });
+
+  it("includes a sound on a Live Activity update when title/body are given", async () => {
+    const { config } = await generateConfig();
+    const fetchMock = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await sendPush(config, {
+      token: "activity-token", environment: "production", pushType: "liveActivityUpdate",
+      timestamp: 1700000005, contentState: { phase: { type: "matchFound" } },
+      title: "Match Found", body: "Get back to your PC.",
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.aps.alert.sound).toBe("default");
+    expect(body.aps.sound).toBeUndefined();
   });
 
   it("posts a Live Activity end with the end event and an optional dismissalDate", async () => {
@@ -226,8 +252,9 @@ describe("sendPush", () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.aps.event).toBe("end");
     expect(body.aps.alert).toEqual({
-      title: "Queue Cancelled", body: "The queue ended without a match.",
+      title: "Queue Cancelled", body: "The queue ended without a match.", sound: "default",
     });
+    expect(body.aps.sound).toBeUndefined();
   });
 
   it("leaves a Live Activity end silent when no title or body is given", async () => {

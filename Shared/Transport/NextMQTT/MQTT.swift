@@ -97,8 +97,47 @@ public final class MQTT {
 
     /// Reconnect attempts since the last successful connection — drives the backoff in
     /// `reconnect()` so a long outage (PC asleep/off) doesn't hammer a retry every 5s
-    /// forever. Reset to 0 on every successful CONNACK.
+    /// forever. Reset to 0 on every successful CONNACK. Unbounded: a PC left off for a
+    /// day can run this into the hundreds, which is exactly why `backoffSeconds(forAttempt:)`
+    /// caps the exponent rather than trusting this count to stay small.
     private var reconnectAttempts = 0
+
+    /// Which reconnect attempt is the current one. Every step scheduled on the way to a
+    /// connection carries the generation it was scheduled for, and does nothing at all if
+    /// a newer attempt has begun since.
+    ///
+    /// Without it, reconnecting *forks*. `reconnect()` schedules a retry and starts an
+    /// attempt; an attempt against an unreachable host fails almost immediately, and its
+    /// `didStop` calls `reconnect()` again — so from then on both the new chain and the
+    /// old chain's still-pending timer go on retrying. The number of chains doubles every
+    /// round, and each one leaves a socket behind. Measured on a phone pointed at a PC
+    /// that was simply switched off: ~4,800 open sockets inside two minutes, after which
+    /// the app could not open *any* connection — `Too many open files` — including the one
+    /// it needed the moment the PC came back.
+    private var reconnectGeneration = 0
+
+    /// How long a started attempt is given before it is assumed dead. It normally ends in
+    /// a CONNACK or a `didStop` long before this; the timeout only covers a host that
+    /// accepts the socket and then says nothing, where neither would ever arrive.
+    private static let reconnectTimeoutSeconds = 30
+
+    /// Exponential backoff floored at 5s and capped at 30s — a long outage (PC asleep or
+    /// off) should back off instead of hammering a connect attempt every few seconds
+    /// forever. The floor matters on its own: a PC that's simply unreachable (broker down,
+    /// wrong network) fails each attempt near-instantly, so a 1s/2s start reconnects in a
+    /// tight loop rather than actually waiting — and doing that fast enough, for long
+    /// enough, is what tipped a real crash in `Transport.handleStart()`'s stream-task
+    /// setup racing its own teardown.
+    ///
+    /// The exponent itself has to be capped, not just the final result: at 2^5 = 32 the
+    /// value already clears the 30s ceiling, but `attempt` can climb into the hundreds
+    /// over a long outage, and `pow(2, Double(attempt))` overflows Int64 long before
+    /// `min` ever gets a chance to clamp it — Swift's `Int(Double)` traps on that
+    /// overflow instead of saturating, crashing the app on what should be a routine
+    /// retry. Internal (not private) so it can be tested without standing up a transport.
+    static func backoffSeconds(forAttempt attempt: Int) -> Int {
+        min(30, max(5, Int(pow(2, Double(min(attempt, 5))))))
+    }
 
     private var connAckHandler: ((Result<Bool, MQTT.ConnectError>) -> Void)?
     
@@ -157,6 +196,9 @@ public extension MQTT {
     
     func connect(completion: ((Result<Bool, MQTT.ConnectError>) -> Void)? = nil) {
         connectionState = .connecting
+        // Retires any reconnect chain still in flight, so a connect the app asks for
+        // (a fresh pairing, coming back to the foreground) doesn't end up racing one.
+        reconnectGeneration += 1
         connAckHandler = { [weak self] result in
             guard let self = self else { return }
             switch result {
@@ -216,6 +258,14 @@ private extension MQTT {
     }
     
     func resetTransport() {
+        // Stop it before dropping it. Discarding the old Transport (and the
+        // URLSessionStreamTask it owns) without telling it to stop leaves that task
+        // running in CFNetwork's own internal machinery with nothing keeping the objects
+        // its in-flight callbacks reference alive — when one of those callbacks then
+        // fires (connection-established, a read completing) it messages already-freed
+        // memory. Reproduced directly: a reconnect racing this exact teardown crashed
+        // with SIGSEGV inside `_onqueue_ioTick` / `_onqueue_connectionEstablishedWithError:`.
+        _transport?.stop()
         transport = nil
     }
     
@@ -258,22 +308,34 @@ private extension MQTT {
                 }
             }
         }
-        // Exponential backoff capped at 30s — a long outage (PC asleep or off) should
-        // back off instead of hammering a connect attempt every few seconds forever.
-        let backoffSeconds = min(30, Int(pow(2, Double(reconnectAttempts))))
+        reconnectGeneration += 1
+        let generation = reconnectGeneration
+        let backoffSeconds = MQTT.backoffSeconds(forAttempt: reconnectAttempts)
         reconnectAttempts += 1
-        let deadline = DispatchTime.now() + .seconds(backoffSeconds)
-        transportQueue.asyncAfter(deadline: deadline) { [weak self] in
-            guard let self = self else { return }
-            if self.connectionState == .dropped || self.connectionState == .reconnecting {
-                os_log("Reconnect timed out. Trying again...", log: .mqtt, type: .info)
-                self.reconnect()
-            }
+
+        // The attempt itself waits out the backoff. It used to start immediately, with the
+        // delay on the retry timer only — so an attempt that failed instantly, which is
+        // exactly what an unreachable host does, was retried instantly through `didStop`
+        // and the backoff never actually slowed anything down.
+        transportQueue.asyncAfter(deadline: .now() + .seconds(backoffSeconds)) { [weak self] in
+            guard let self = self, self.reconnectGeneration == generation else { return }
+            guard self.connectionState == .dropped || self.connectionState == .reconnecting else { return }
+            self.resetTransport()
+            self.transport.start()
+            self.scheduleReconnectTimeout(for: generation)
         }
-        resetTransport()
-        transport.start()
     }
-    
+
+    func scheduleReconnectTimeout(for generation: Int) {
+        let deadline = DispatchTime.now() + .seconds(MQTT.reconnectTimeoutSeconds)
+        transportQueue.asyncAfter(deadline: deadline) { [weak self] in
+            guard let self = self, self.reconnectGeneration == generation else { return }
+            guard self.connectionState == .dropped || self.connectionState == .reconnecting else { return }
+            os_log("Reconnect timed out. Trying again...", log: .mqtt, type: .info)
+            self.reconnect()
+        }
+    }
+
     func sendConnect() {
         let conn = try! ConnectPacket(clientId: clientId, username: username, password: password, keepAlive: pingInterval, cleanStart: cleanStart, sessionExpiry: sessionExpiry, will: will)
         transport.send(packet: conn)

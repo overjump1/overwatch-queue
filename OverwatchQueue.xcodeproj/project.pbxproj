@@ -212,6 +212,7 @@
 		1281BAF29B1FB332DC26E02B /* QueueStatusShared.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 6897941C613857FBCC154938 /* QueueStatusShared.swift */; };
 		581EBCB27826E2E23AD3EA0B /* DeepLinkTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = EC9259A65DC652AD88872EA3 /* DeepLinkTests.swift */; };
 		7974AB10858DC333A6BACEAA /* PairingTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 42A8C109434B734937E3F222 /* PairingTests.swift */; };
+		0540D8063F944216B27231B3 /* MQTTBackoffTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 1C20F186CB9F464595656074 /* MQTTBackoffTests.swift */; };
 		C398537B44F77B3E9C37440C /* QueueFlowTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = E6C011C75766DAFBD287BE49 /* QueueFlowTests.swift */; };
 		1F7AC518CEA70B427A1E7BB2 /* WatchTransportTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = A02A3426807971E70BEF33DE /* WatchTransportTests.swift */; };
 		F56C4CC6D58ADA38D9673AC5 /* WireFormatTests.swift in QueueKitTests */ = {isa = PBXBuildFile; fileRef = 3F6ABE9B0A695EEC57459C64 /* WireFormatTests.swift */; };
@@ -220,6 +221,8 @@
 		EBFB4D1A7EE20658B53354E3 /* QueueWidgets.appex in Embed */ = {isa = PBXBuildFile; fileRef = 3E4A586A896575F13D8EC72C /* QueueWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		5BA2431BCA520B75FDD0D6B0 /* OverwatchQueue Watch App.app in Embed */ = {isa = PBXBuildFile; fileRef = 76F69111ACF81C83B7705C45 /* OverwatchQueue Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		0C33FCFF2A5828E00B8C4D89 /* WatchQueueWidgets.appex in Embed */ = {isa = PBXBuildFile; fileRef = FB46D0B1859F7E2A474C8675 /* WatchQueueWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		5ACE988A8344492A8E9EC456 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 1DBB1B9C1E64479BACB4B477 /* FirebaseMessaging */; };
+		EFE63AB9A0184094AFEFD349 /* GoogleService-Info.plist in OverwatchQueue */ = {isa = PBXBuildFile; fileRef = AD866B94FD52494188F3FFFC /* GoogleService-Info.plist */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -325,6 +328,7 @@
 		6D197AAE8CB99CF568FC65D5 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "SettingsView.swift"; path = "iOS/Views/SettingsView.swift"; sourceTree = "<group>"; };
 		76F5D0BC4EA614EE0252E6C0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = "Assets.xcassets"; path = "iOS/Assets.xcassets"; sourceTree = "<group>"; };
 		B6C6645AE76DCF53BCBAA2C1 /* catalog-fallback.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; name = "catalog-fallback.json"; path = "Shared/Resources/catalog-fallback.json"; sourceTree = "<group>"; };
+		AD866B94FD52494188F3FFFC /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = "GoogleService-Info.plist"; path = "iOS/GoogleService-Info.plist"; sourceTree = "<group>"; };
 		3F3D700670D50849DBE7768A /* match_found.caf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "match_found.caf"; path = "Shared/Resources/match_found.caf"; sourceTree = "<group>"; };
 		549B5A70375368168EFFDA7E /* QueueActivityWatchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueActivityWatchView.swift"; path = "Widgets/QueueActivityWatchView.swift"; sourceTree = "<group>"; };
 		7A636B92BC4F8FA1BD065E82 /* QueueLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueLiveActivityWidget.swift"; path = "Widgets/QueueLiveActivityWidget.swift"; sourceTree = "<group>"; };
@@ -338,6 +342,7 @@
 		0A9A41F77A0BF6C1852394B5 /* WatchWidgetsBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchWidgetsBundle.swift"; path = "WatchWidgets/WatchWidgetsBundle.swift"; sourceTree = "<group>"; };
 		EC9259A65DC652AD88872EA3 /* DeepLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "DeepLinkTests.swift"; path = "Tests/DeepLinkTests.swift"; sourceTree = "<group>"; };
 		42A8C109434B734937E3F222 /* PairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "PairingTests.swift"; path = "Tests/PairingTests.swift"; sourceTree = "<group>"; };
+		1C20F186CB9F464595656074 /* MQTTBackoffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "MQTTBackoffTests.swift"; path = "Tests/MQTTBackoffTests.swift"; sourceTree = "<group>"; };
 		E6C011C75766DAFBD287BE49 /* QueueFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "QueueFlowTests.swift"; path = "Tests/QueueFlowTests.swift"; sourceTree = "<group>"; };
 		A02A3426807971E70BEF33DE /* WatchTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WatchTransportTests.swift"; path = "Tests/WatchTransportTests.swift"; sourceTree = "<group>"; };
 		3F6ABE9B0A695EEC57459C64 /* WireFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WireFormatTests.swift"; path = "Tests/WireFormatTests.swift"; sourceTree = "<group>"; };
@@ -361,6 +366,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5ACE988A8344492A8E9EC456 /* FirebaseMessaging in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -528,6 +534,7 @@
 			children = (
 				EC9259A65DC652AD88872EA3 /* DeepLinkTests.swift */,
 				42A8C109434B734937E3F222 /* PairingTests.swift */,
+				1C20F186CB9F464595656074 /* MQTTBackoffTests.swift */,
 				E6C011C75766DAFBD287BE49 /* QueueFlowTests.swift */,
 				A02A3426807971E70BEF33DE /* WatchTransportTests.swift */,
 				3F6ABE9B0A695EEC57459C64 /* WireFormatTests.swift */,
@@ -850,6 +857,7 @@
 				1281BAF29B1FB332DC26E02B /* QueueStatusShared.swift */,
 				581EBCB27826E2E23AD3EA0B /* DeepLinkTests.swift */,
 				7974AB10858DC333A6BACEAA /* PairingTests.swift */,
+				0540D8063F944216B27231B3 /* MQTTBackoffTests.swift */,
 				C398537B44F77B3E9C37440C /* QueueFlowTests.swift */,
 				1F7AC518CEA70B427A1E7BB2 /* WatchTransportTests.swift */,
 				F56C4CC6D58ADA38D9673AC5 /* WireFormatTests.swift */,
@@ -866,6 +874,7 @@
 				C69C3E13C1B783F81FE9583D /* Assets.xcassets */,
 				D64A36B6EF1C828A05E1681A /* catalog-fallback.json */,
 				A9CF1F0E954069705A077853 /* match_found.caf */,
+				EFE63AB9A0184094AFEFD349 /* GoogleService-Info.plist */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -964,6 +973,9 @@
 				2CE8ABC0E8D2775299C483C1 /* OverwatchQueue Watch App */,
 			);
 			name = "OverwatchQueue";
+			packageProductDependencies = (
+				1DBB1B9C1E64479BACB4B477 /* FirebaseMessaging */,
+			);
 			productName = "OverwatchQueue";
 			productReference = 78E5CC47FF90E110335866BB /* OverwatchQueue.app */;
 			productType = "com.apple.product-type.application";
@@ -1076,6 +1088,9 @@
 				Base,
 			);
 			mainGroup = 17F256149C150F24744854F9;
+			packageReferences = (
+				96D70AD0B2D54C46B33E2950 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			productRefGroup = 08E6EFA53DDAC9B63DAB9836 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -1235,6 +1250,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "com.tomerady.OverwatchQueue.watchkitapp";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = -Onone;
 				TARGETED_DEVICE_FAMILY = 4;
@@ -1253,6 +1269,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "com.tomerady.OverwatchQueue.watchkitapp";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
 				SWIFT_OPTIMIZATION_LEVEL = -O;
 				TARGETED_DEVICE_FAMILY = 4;
@@ -1385,6 +1402,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		96D70AD0B2D54C46B33E2950 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1DBB1B9C1E64479BACB4B477 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 96D70AD0B2D54C46B33E2950 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 46F86FAA6BBF9AC94A7E4595 /* Project object */;
 }

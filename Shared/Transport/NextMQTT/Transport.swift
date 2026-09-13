@@ -327,6 +327,15 @@ extension Transport {
         case .started(let started):
             started.streamTask.closeRead()
             started.streamTask.closeWrite()
+            // `closeRead`/`closeWrite` only half-close an established stream — for a
+            // task that failed to connect at all (the exact case a dead/unreachable
+            // server hits on every attempt), they don't stop CFNetwork's own internal
+            // connection machinery from still running. `cancel()` actually invalidates
+            // the task, so a callback that machinery schedules can't fire afterward and
+            // message whatever's left of this object. Reproduced directly: connecting to
+            // an unreachable host crashed with SIGSEGV in CFNetwork's own internals
+            // moments after this handler ran without it.
+            started.streamTask.cancel()
         case .stopped:
             fatalError()
         }

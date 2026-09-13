@@ -114,6 +114,9 @@ extension ClientCommand {
     private struct HeroKey: Codable { var heroKey: String }
     private struct Hello: Codable { var token: String?; var client: ClientIdentity }
     private struct PushToken: Codable { var token: String; var environment: PushEnvironment }
+    // No environment: an FCM token isn't sandbox/production the way an APNs one is —
+    // Firebase holds both Auth Keys and picks per its own app configuration.
+    private struct FCMToken: Codable { var token: String }
     private struct DevicePushToken: Codable {
         var token: String; var environment: PushEnvironment; var kind: ClientIdentity.Kind
     }
@@ -150,6 +153,9 @@ extension ClientCommand {
         case .registerActivityStartToken(let token, let environment):
             try c.tag("registerActivityStartToken")
             try c.encode(PushToken(token: token, environment: environment), forKey: .data)
+        case .registerFCMToken(let token):
+            try c.tag("registerFCMToken")
+            try c.encode(FCMToken(token: token), forKey: .data)
         case .ping(let clientTime):
             try c.tag("ping")
             try c.encode(Ping(clientTime: clientTime), forKey: .data)
@@ -184,6 +190,8 @@ extension ClientCommand {
         case "registerActivityStartToken":
             let push = try c.decode(PushToken.self, forKey: .data)
             self = .registerActivityStartToken(token: push.token, environment: push.environment)
+        case "registerFCMToken":
+            self = .registerFCMToken(token: try c.decode(FCMToken.self, forKey: .data).token)
         case "ping":
             self = .ping(clientTime: try c.decode(Ping.self, forKey: .data).clientTime)
         case "diagnostic":

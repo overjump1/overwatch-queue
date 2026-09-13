@@ -16,6 +16,8 @@ import time
 from . import bnetpresence, protocol, queuemapvote, queueroles, queuevision, queuewatch, vision
 from .activitytokens import ActivityTokens
 from .apns import APNsClient, APNsConfig
+from .fcm import FCMClient, FCMConfig
+from .fcmtokens import FCMTokens
 from .heroimages import TemplateStore
 from .protocol import QueueSession
 from .pushrelay import PushRelayClient, PushRelayConfig
@@ -30,6 +32,7 @@ HEARTBEAT_SECONDS = 10
 
 class QueueServer:
     def __init__(self, pairing, catalog, log=None, push_tokens=None, activity_tokens=None,
+                 fcm_tokens=None,
                  vision_enabled=False, queue_vision_enabled=False, presence_enabled=False,
                  presence_source="memory", presence_port=bnetpresence.DEFAULT_CDP_PORT):
         self.pairing = pairing
@@ -91,6 +94,9 @@ class QueueServer:
         # A Live Activity's own push tokens — see `_push_activity` for how the two get
         # used differently from the phone/watch tokens above.
         self.activity_tokens = activity_tokens if activity_tokens is not None else ActivityTokens()
+        # How Firebase addresses this phone, kept apart from the APNs tokens above because
+        # it means something different — see `fcmtokens.py`.
+        self.fcm_tokens = fcm_tokens if fcm_tokens is not None else FCMTokens()
         # A background push-to-start is best-effort like any other APNs push — it can be
         # delayed or dropped, and there's no acknowledgement. So this isn't a one-shot: a
         # session with no update token yet keeps retrying `start` on every subsequent
@@ -101,7 +107,11 @@ class QueueServer:
         self._activity_session_id = None
         self._activity_started_at = None
         self._activity_start_last_sent_at = 0.0
-        self._activity_start_retry_seconds = 20
+        # Also the floor between the once-a-second retries `_retry_activity_start` drives
+        # while nothing else is changing the phase — kept short enough that several
+        # attempts actually fit inside `_activity_fallback_delay_seconds` below, rather
+        # than the fallback notification firing after just the one.
+        self._activity_start_retry_seconds = 4
         self._activity_start_first_sent_at = None
         # ...and when the retries don't take either, `_check_activity_fallback` gives up on
         # the Live Activity and sends the phone a plain notification instead — the one
@@ -109,12 +119,13 @@ class QueueServer:
         # push-to-start with a 200 whether or not it ever delivers one, so the only thing
         # this side can observe is the app never coming back with a per-activity token.
         self._activity_fallback_sent_for = None
-        self._activity_fallback_delay_seconds = 15
+        self._activity_fallback_delay_seconds = 20
         # The phase an update alert was last sent for, so a patch to the *same* phase's
         # data — the estimate ticking, a mode correction — never earns one of its own.
         # See `_push_activity` for why every real phase change now does.
         self._last_activity_kind = None
         self.apns = self._make_push_client()
+        self.fcm = self._make_fcm_client()
 
         self.broker = MQTTBroker(port=pairing.port, log=lambda message: self.log(message))
         self.mqtt = MQTTClient(host="127.0.0.1", port=pairing.port,
@@ -138,6 +149,17 @@ class QueueServer:
         if relay_config:
             return PushRelayClient(relay_config, log=log)
         return None
+
+    def _make_fcm_client(self):
+        """The transport for Live Activity pushes specifically, when a service account is
+        configured. Everything else keeps going out through `self.apns` — see `fcm.py` for
+        what Firebase delivers that a direct APNs push measurably doesn't."""
+        config = FCMConfig.load()
+        if not config:
+            return None
+        client = FCMClient(config, log=lambda message: self.log(message))
+        client.device_token = self.fcm_tokens.get()
+        return client
 
     # ------------------------------------------------------------ lifecycle
 
@@ -339,10 +361,13 @@ class QueueServer:
         just published, driving the same start/update/end its APNs push would — pushing
         here too would fire a second, independent alert for the one event this queue only
         needs told about once. See `_phone_is_live_connected`."""
-        if not self.apns:
+        # Either transport is enough on its own: the watch's plain alert goes out over
+        # APNs, the Live Activity over Firebase, and a server configured for only one of
+        # the two should still send what it can.
+        if not self.apns and not self.fcm:
             return
         session_id, sequence, kind = self.session.session_id, self.session.sequence, self.session.kind
-        watch = self.push_tokens.get("watch")
+        watch = self.push_tokens.get("watch") if self.apns else None
         if watch:
             device_token, environment = watch
             title, body = protocol.notification_copy(kind)
@@ -350,7 +375,17 @@ class QueueServer:
                                             title, body, session_id, sequence)
             if self.apns.token_is_invalid(response):
                 self.push_tokens.forget("watch")
-        if not self._phone_is_live_connected():
+        # An idle/cancelled push is skipped here on live-connected only up to the point
+        # where doing so is safe: it's the terminal event for this queue, nothing else
+        # will ever trigger `_push_activity` again for it. If the phone's own local
+        # `LiveActivityController.end()` doesn't land — the socket looking live a moment
+        # longer than the phone actually is, or the process getting suspended mid-`await`
+        # right as the screen locks — the card is stuck showing its last real phase
+        # forever, with no later phase change left to retry the push. Sending the end
+        # push here too is harmless even when the phone *does* land its own: ending an
+        # already-ended activity is a no-op, and unlike start/update, end carries an
+        # alert only on a genuine cancellation, so there's nothing to double up.
+        if not self._phone_is_live_connected() or kind in ("idle", "cancelled"):
             self._push_activity(session_id, sequence, kind)
 
     def _phone_is_live_connected(self) -> bool:
@@ -407,16 +442,26 @@ class QueueServer:
             token, environment = activity
             if kind in ("idle", "cancelled"):
                 end_alert = start_alert if kind == "cancelled" and changed_kind else None
-                self.apns.send_activity_end(token, environment, content_state, timestamp,
-                                            alert=end_alert)
+                if self.fcm:
+                    self.fcm.send_activity_end(token, content_state, timestamp,
+                                               alert=end_alert)
+                else:
+                    self.apns.send_activity_end(token, environment, content_state, timestamp,
+                                                alert=end_alert)
                 self.activity_tokens.forget_update()
                 self._activity_session_id = None
                 self._last_activity_kind = None
             else:
                 self._last_activity_kind = kind
-                response = self.apns.send_activity_update(token, environment, content_state,
-                                                          timestamp, alert=update_alert)
-                if self.apns.token_is_invalid(response):
+                if self.fcm:
+                    response = self.fcm.send_activity_update(token, content_state, timestamp,
+                                                             alert=update_alert)
+                    invalid = self.fcm.token_is_invalid(response)
+                else:
+                    response = self.apns.send_activity_update(token, environment, content_state,
+                                                              timestamp, alert=update_alert)
+                    invalid = self.apns.token_is_invalid(response)
+                if invalid:
                     # Apple will never accept this token again (reinstall, or the token
                     # was rotated/revoked mid-session) — forgetting it now is what lets
                     # `_check_activity_fallback` stop treating a dead card as attached
@@ -456,12 +501,57 @@ class QueueServer:
         token, environment = start
         attributes = {"sessionID": session_id, "startedAt": self._activity_started_at}
         self._last_activity_kind = kind
-        response = self.apns.send_activity_start(token, environment, attributes, content_state,
-                                                 timestamp, alert=start_alert)
-        if self.apns.token_is_invalid(response):
+        if self.fcm:
+            response = self.fcm.send_activity_start(token, attributes, content_state,
+                                                    timestamp, alert=start_alert)
+            invalid = self.fcm.token_is_invalid(response)
+        else:
+            response = self.apns.send_activity_start(token, environment, attributes,
+                                                     content_state, timestamp,
+                                                     alert=start_alert)
+            invalid = self.apns.token_is_invalid(response)
+        if invalid:
             # Same reasoning as the per-activity token above: a dead push-to-start token
             # would otherwise keep "succeeding" into the void every retry, forever.
             self.activity_tokens.forget_start()
+
+    def _retry_activity_start(self):
+        """Gives push-to-start a real second (and third...) try instead of just the one.
+
+        `_push_activity`'s own retry ("Retried on every subsequent change" — see its
+        docstring) only fires from `_push_apns`, which only runs off an actual phase
+        change. A queue that sits in `searching` for a while — the common case, and the
+        one push-to-start most needs retried for — has no such change to ride: the first
+        attempt goes out the moment the phase starts, `_activity_start_retry_seconds` is
+        20s, but `_check_activity_fallback` gives up and sends a plain notification after
+        only 15 — so in practice exactly one push-to-start attempt ever gets tried before
+        this queue falls back to a notification, no matter how generous the retry window
+        looks on paper. Running the same retry off the once-a-second tick instead gives it
+        every chance the throttle allows before the fallback timeout takes over.
+
+        `_push_activity` already no-ops instantly once a per-activity token has
+        registered, so this can't step on a card that already exists — checked here too,
+        first, so a session with nothing left to retry doesn't pay for a lock + push
+        machinery on every single tick.
+
+        Gated on either transport, not just `self.apns` — `_push_activity` itself sends
+        push-to-start over Firebase when that's what's configured (see its own `if
+        self.fcm:` branch), and an FCM-only server is exactly the recommended setup now
+        that direct-APNs push-to-start is known to be unreliable (see `fcm.py`). Gating
+        this solely on `self.apns` silently disabled every retry for that setup, leaving
+        push-to-start with only its single initial attempt — the precise failure this
+        function exists to cover."""
+        if not self.apns and not self.fcm:
+            return
+        with self._lock:
+            session_id, sequence, kind = self.session.session_id, self.session.sequence, self.session.kind
+            if kind in ("idle", "cancelled"):
+                return
+            if self._activity_start_first_sent_at is None:
+                return                                  # never asked for a card
+            if self.activity_tokens.update_token(session_id):
+                return                                  # already has one
+        self._push_activity(session_id, sequence, kind)
 
     def _check_activity_fallback(self):
         """Once a session has asked for a Live Activity and not got one, say it plainly.
@@ -713,6 +803,8 @@ class QueueServer:
                 data.get("sessionID"), data.get("token"), data.get("environment"))
         elif kind == "registerActivityStartToken":
             self._register_activity_start_token(data.get("token"), data.get("environment"))
+        elif kind == "registerFCMToken":
+            self._register_fcm_token(data.get("token"))
         elif kind == "ping":
             # Answered inline and immediately: anything this end waits on is time the
             # client can only read as distance to the server.
@@ -796,6 +888,16 @@ class QueueServer:
         self.activity_tokens.register_start(token, environment)
         self.log("Registered for Live Activity push-to-start")
 
+    def _register_fcm_token(self, token):
+        if not token:
+            return
+        self.fcm_tokens.register(token)
+        # The client is built once at startup, before any device has said hello, so it
+        # starts out addressing nobody. This is where it learns who to talk to.
+        if self.fcm:
+            self.fcm.device_token = token
+        self.log("Registered for Firebase push")
+
     # A device is the only thing that can see whether its Live Activity actually appeared,
     # and until this existed the only way to find out was to pick the phone up and ask.
     # Truncated because it lands in a one-line log view, and marked so nobody mistakes a
@@ -832,6 +934,7 @@ class QueueServer:
         last_heartbeat = 0.0
         while self._running:
             time.sleep(1)
+            self._retry_activity_start()
             self._check_activity_fallback()
             now = time.time()
             if now - last_heartbeat >= HEARTBEAT_SECONDS:

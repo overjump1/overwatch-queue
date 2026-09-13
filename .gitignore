@@ -31,3 +31,17 @@ server/.cache/
 relay/node_modules/
 relay/.wrangler/
 relay/.dev.vars
+
+# Push credentials. These live in ~/.overwatch-queue, never in the tree — the Firebase
+# service account and the APNs `.p8` are private keys that can push to every paired
+# device. Belt and braces, in case one is ever dropped in here by hand.
+*-service-account.json
+AuthKey_*.p8
+*.p8
+
+# Firebase's iOS client config. Google's own stance is that this key isn't a bearer
+# secret — it ships inside every copy of the app binary regardless — but GitHub's
+# secret scanner flags it on a public repo either way, and there's no upside to leaving
+# it in tree. Drop your own copy in `iOS/GoogleService-Info.plist`; the build needs it
+# locally, it just doesn't need to be committed.
+iOS/GoogleService-Info.plist
