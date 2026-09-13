@@ -445,9 +445,10 @@ not an ISO-8601 string and not a 1970 Unix timestamp. `server/owqserver/protocol
 
 This is unrelated to the MQTT transport above — a push is how the PC reaches a device that
 currently holds no connection open at all (screen locked, app killed, watch out of range).
-The server in `server/` needs a Firebase service account
-(`~/.overwatch-queue/fcm-service-account.json`) to send these. Nothing here is required —
-a server without one just never pushes, and every client still works while its app is
+The server in `server/` never holds a Firebase credential: it posts each push to the
+hosted relay in `relay/` (`POST /v1/push` with `deviceToken`, `liveActivityToken` and the
+`aps` dictionary), which checks it is a Live Activity push for `QueueActivityAttributes`
+and forwards it to Firebase. Every client still works without pushes while its app is
 connected.
 
 ## The server

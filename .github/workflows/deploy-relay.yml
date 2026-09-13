@@ -1,0 +1,93 @@
+name: Push relay
+
+on:
+  pull_request:
+    paths:
+      - "relay/**"
+      - ".github/workflows/deploy-relay.yml"
+  push:
+    branches: [main]
+    paths:
+      - "relay/**"
+      - ".github/workflows/deploy-relay.yml"
+  workflow_dispatch: {}
+
+defaults:
+  run:
+    working-directory: relay
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: relay/package-lock.json
+
+      - run: npm ci
+
+      # No network, no deployed Worker needed — this is the pure OAuth-signing,
+      # request-validation and rate-limiting logic in src/.
+      - run: npm test
+
+      - run: npx tsc --noEmit
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: relay/package-lock.json
+
+      - run: npm ci
+
+      # Refuses to deploy a relay that can't reach Firebase. Without the service account
+      # every push fails at the relay, and nothing on the PC or the phone says why.
+      - name: Check the Firebase secret
+        env:
+          FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
+        run: |
+          # Checked here, not with a step-level `if:` — GitHub Actions doesn't allow the
+          # `secrets` context in a step's `if:` condition at all.
+          if [ -z "$FCM_SERVICE_ACCOUNT" ]; then
+            echo "::error::The FCM_SERVICE_ACCOUNT repository secret isn't set. See relay/README.md."
+            exit 1
+          fi
+          printf '%s' "$FCM_SERVICE_ACCOUNT" | node -e '
+            const account = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            for (const key of ["project_id", "client_email", "private_key"]) {
+              if (!account[key]) { console.error(`::error::FCM_SERVICE_ACCOUNT has no ${key}`); process.exit(1); }
+            }'
+
+      - name: Deploy
+        run: npx wrangler deploy
+
+      # After the deploy, so the secret lands on the Worker version that reads it.
+      - name: Sync the Firebase secret
+        env:
+          FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
+        run: printf '%s' "$FCM_SERVICE_ACCOUNT" | npx wrangler secret put FCM_SERVICE_ACCOUNT
+
+      # Only the new relay answers an empty push with this validation error; the old APNs
+      # one asked for an API key instead.
+      - name: Smoke test
+        working-directory: .
+        run: |
+          body=$(curl -s -X POST -H "Content-Type: application/json" \
+            -H "User-Agent: OverwatchQueueServer/1.0" -d '{}' \
+            https://overwatch-queue-push-relay.tomerady.workers.dev/v1/push)
+          echo "$body"
+          echo "$body" | grep -q "deviceToken"

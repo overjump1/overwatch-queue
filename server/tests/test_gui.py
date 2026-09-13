@@ -97,7 +97,7 @@ class PanelTests(unittest.TestCase):
         # the home directory, so this would otherwise depend on the machine.
         self.server.fcm = None
         self.panel._refresh()
-        self.assertIn("Firebase isn't set up", self.panel.delivery.text())
+        self.assertIn("Pushing is turned off", self.panel.delivery.text())
 
     def test_a_connected_phone_is_named_as_driving_its_own_activity(self):
         self.server.fcm = _PushConfigured()

@@ -1,0 +1,9 @@
+name = "overwatch-queue-push-relay"
+main = "src/worker.ts"
+compatibility_date = "2024-11-01"
+
+# No non-secret config: the Firebase project comes off the service account itself.
+#
+# The one secret is NOT set here — never commit a service account to this file. Set it
+# once with:
+#   wrangler secret put FCM_SERVICE_ACCOUNT

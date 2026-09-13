@@ -27,9 +27,14 @@ venv/
 # Hero portraits downloaded for template matching — re-fetched from the catalog on demand
 server/.cache/
 
-# Push credentials. These live in ~/.overwatch-queue, never in the tree — the Firebase
-# service account and the APNs `.p8` are private keys that can push to every paired
-# device. Belt and braces, in case one is ever dropped in here by hand.
+# relay/ (Node)
+relay/node_modules/
+relay/.wrangler/
+relay/.dev.vars
+
+# Push credentials. The Firebase service account lives only in the relay's secrets (see
+# relay/README.md), never in the tree — it and an APNs `.p8` are private keys that can
+# push to every user's device. Belt and braces, in case one is ever dropped in here.
 *-service-account.json
 AuthKey_*.p8
 *.p8

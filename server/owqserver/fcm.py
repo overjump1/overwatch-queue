@@ -1,7 +1,8 @@
 """Sends Live Activity pushes through Firebase Cloud Messaging instead of straight at
-Apple.
+Apple — by way of the push relay in `relay/`, which is the only thing holding the
+Firebase credential.
 
-Why the extra hop, when a push could go straight to APNs and this ends up at the same
+Why Firebase at all, when a push could go straight to APNs and this ends up at the same
 place? Because measured against a real device, the two do not behave the same:
 
 - A **push-to-start** posted straight to APNs is accepted with a 200 and an `apns-id`,
@@ -17,60 +18,45 @@ Neither difference is documented anywhere; both are reproducible. So Firebase is
 server's only push transport, and Live Activity pushes are the only thing it sends — no
 plain notification goes to the phone or the watch at all.
 
-Addressing takes two tokens at once, which is easy to trip over: `message.token` is the
-*device's* FCM registration token (see `fcmtokens.py`), while `apns.live_activity_token`
-is the ActivityKit token for the specific card — push-to-start for `start`, per-activity
-for `update`/`end`. Both are required; neither substitutes for the other.
+Why the relay rather than calling Firebase from here: sending needs a service account,
+and a service account is scoped to the whole Firebase project, not to one household.
+Any copy of it on a customer's PC could push to every user of the app. The relay keeps
+that credential in one place, and this server needs nothing configured at all.
+
+Addressing takes two tokens at once, which is easy to trip over: `deviceToken` is the
+*device's* FCM registration token (see `fcmtokens.py`), while `liveActivityToken` is the
+ActivityKit token for the specific card — push-to-start for `start`, per-activity for
+`update`/`end`. Both are required; neither substitutes for the other.
 """
 from __future__ import annotations
 
 import json
 import os
+import urllib.error
+import urllib.request
 
-CONFIG_DIR = os.path.join(os.path.expanduser("~"), ".overwatch-queue")
-CONFIG_PATH = os.path.join(CONFIG_DIR, "fcm-service-account.json")
-
-_SCOPE = "https://www.googleapis.com/auth/firebase.messaging"
-_SEND_URL = "https://fcm.googleapis.com/v1/projects/%s/messages:send"
-
-# Apple requires immediate priority for every Live Activity push.
-_LIVE_ACTIVITY_HEADERS = {"apns-priority": "10", "apns-push-type": "liveactivity"}
+RELAY_URL = "https://overwatch-queue-push-relay.tomerady.workers.dev"
+# Points the server at another relay — a `wrangler dev` one, say. Set but empty, it turns
+# pushing off entirely, which is how the test suite keeps a bare `QueueServer` from ever
+# reaching the real one.
+RELAY_URL_ENV = "OWQ_PUSH_RELAY_URL"
 
 
-class FCMConfig:
-    """The service-account JSON downloaded from the Firebase console, plus the project it
-    belongs to. Dropped in by hand next to `pairing.json` — and deliberately never committed."""
-
-    def __init__(self, project_id: str, service_account_path: str):
-        self.project_id = project_id
-        self.service_account_path = service_account_path
-
-    @classmethod
-    def load(cls, path: str = CONFIG_PATH):
-        """`None` when no service account is configured — Live Activity pushes are then
-        skipped, the same way they are when no APNs key is."""
-        try:
-            with open(path) as handle:
-                data = json.load(handle)
-        except (OSError, ValueError):
-            return None
-        project_id = data.get("project_id")
-        if not project_id:
-            return None
-        return cls(project_id, path)
+def relay_url():
+    """The relay to push through, or `None` when pushing has been turned off."""
+    url = os.environ.get(RELAY_URL_ENV, RELAY_URL)
+    return url.rstrip("/") or None
 
 
 class FCMClient:
-    """Sends one push at a time over HTTPS. The OAuth access token is minted from the
-    service account and cached by `google-auth`, which refreshes it as it expires."""
+    """Sends one push at a time to the relay over HTTPS."""
 
-    def __init__(self, config: FCMConfig, log=None):
-        self.config = config
+    def __init__(self, url: str, log=None):
+        self.url = url.rstrip("/")
         self.log = log or (lambda message: None)
-        self._credentials = None
 
     def close(self):
-        pass            # nothing held open; `requests` opens a connection per call
+        pass            # nothing held open; `urllib` opens a connection per call
 
     # ------------------------------------------------------------ sending
 
@@ -95,33 +81,40 @@ class FCMClient:
         return self._send("activity-end", activity_token, aps, alert)
 
     def _send(self, label: str, live_activity_token: str, aps: dict, alert):
-        import requests       # imported lazily so a server without the extras installed
-                              # can still run everything that doesn't touch Firebase
-
         device_token = self.device_token
         if not device_token or not live_activity_token:
             return None
         if alert:
             aps["alert"] = alert
 
-        body = {"message": {"token": device_token,
-                            "apns": {"live_activity_token": live_activity_token,
-                                     "headers": dict(_LIVE_ACTIVITY_HEADERS),
-                                     "payload": {"aps": aps}}}}
+        body = {"deviceToken": device_token, "liveActivityToken": live_activity_token,
+                "aps": aps}
         try:
-            response = requests.post(
-                _SEND_URL % self.config.project_id,
-                headers={"Authorization": "Bearer %s" % self._access_token(),
-                         "Content-Type": "application/json"},
-                data=json.dumps(body), timeout=10)
-        except Exception as error:              # noqa: BLE001 - any transport failure
-            self.log("FCM push to %s failed: %s" % (label, error))
+            response = self._post("%s/v1/push" % self.url, body)
+        except (urllib.error.URLError, OSError) as error:
+            self.log("Push to %s failed: %s" % (label, error))
             return None
 
         if response.status_code >= 400:
-            self.log("FCM push to %s refused: %s %s"
+            self.log("Push to %s refused: %s %s"
                      % (label, response.status_code, response.text.strip()))
         return response
+
+    def _post(self, url: str, body: dict):
+        request = urllib.request.Request(
+            url, data=json.dumps(body).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json",
+                     # `urllib`'s default "Python-urllib/x.y" User-Agent gets caught by
+                     # Cloudflare's automated bot protection (a 403 with error code 1010)
+                     # before the request ever reaches the Worker.
+                     "User-Agent": "OverwatchQueueServer/1.0"})
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return _Response(response.status, response.read())
+        except urllib.error.HTTPError as error:
+            # The relay proxies Firebase's own status and body through unchanged, so a
+            # refusal here reads exactly as it would talking to Firebase directly.
+            return _Response(error.code, error.read())
 
     # The device's FCM registration token, set by `queueserver` as it registers. Kept as a
     # plain attribute rather than passed per call, so the activity methods take only the
@@ -136,20 +129,22 @@ class FCMClient:
         if response is None or response.status_code not in (400, 404):
             return False
         try:
-            status = response.json().get("error", {}).get("status")
-        except ValueError:
+            error = response.json().get("error", {})
+        except (ValueError, AttributeError):
             return False
-        return status in ("UNREGISTERED", "NOT_FOUND", "INVALID_ARGUMENT")
+        # The relay's own 400s carry `error` as a plain string — a request it refused to
+        # forward says nothing about whether the phone's token is still good.
+        if not isinstance(error, dict):
+            return False
+        return error.get("status") in ("UNREGISTERED", "NOT_FOUND", "INVALID_ARGUMENT")
 
-    # ------------------------------------------------------------ auth
 
-    def _access_token(self) -> str:
-        import google.auth.transport.requests      # imported lazily, as above
-        from google.oauth2 import service_account
+class _Response:
+    """Just the parts of an HTTP response the server reads back."""
 
-        if self._credentials is None:
-            self._credentials = service_account.Credentials.from_service_account_file(
-                self.config.service_account_path, scopes=[_SCOPE])
-        if not self._credentials.valid:
-            self._credentials.refresh(google.auth.transport.requests.Request())
-        return self._credentials.token
+    def __init__(self, status_code: int, body: bytes):
+        self.status_code = status_code
+        self.text = body.decode("utf-8", "replace")
+
+    def json(self):
+        return json.loads(self.text)

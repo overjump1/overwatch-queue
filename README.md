@@ -87,6 +87,7 @@ Watch/        The watch app
 WatchWidgets/ Smart Stack accessory
 Tests/        Wire format, pairing codes, transition rules, clock sync, catalog schema
 server/       The PC server and its control panel — Python
+relay/        The hosted push relay: holds the Firebase credential so no PC ever does
 tools/        Project generator, catalog refresh
 docs/         PROTOCOL.md, ASSETS.md
 ```
