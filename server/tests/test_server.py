@@ -326,6 +326,94 @@ class _FakeAPNs:
         return response == "invalid"
 
 
+class _FakeFCM:
+    """Records what would have gone to Firebase, without a network in sight. Distinct
+    call shape from `_FakeAPNs` on purpose — FCM addresses a device by its own
+    registration token, not an (device_token, environment) pair — so a test that
+    accidentally exercises the wrong transport fails loudly instead of quietly
+    matching the other fake's signature."""
+
+    def __init__(self, invalid_kinds=()):
+        self.activity_starts = []
+        self.activity_updates = []
+        self.activity_ends = []
+        self._invalid_kinds = set(invalid_kinds)
+
+    def send_activity_start(self, token, attributes, content_state, timestamp, alert=None):
+        self.activity_starts.append((token, attributes, content_state, timestamp, alert))
+        return "invalid" if "start" in self._invalid_kinds else "ok"
+
+    def send_activity_update(self, token, content_state, timestamp, alert=None, stale_date=None):
+        self.activity_updates.append((token, content_state, timestamp, alert, stale_date))
+        return "invalid" if "update" in self._invalid_kinds else "ok"
+
+    def send_activity_end(self, token, content_state, timestamp, alert=None, dismissal_date=None):
+        self.activity_ends.append((token, content_state, timestamp, alert, dismissal_date))
+        return "invalid" if "end" in self._invalid_kinds else "ok"
+
+    @staticmethod
+    def token_is_invalid(response):
+        return response == "invalid"
+
+
+class FCMDispatchTests(unittest.TestCase):
+    """The Firebase-only path: no `apns.json`/`push_relay.json` configured at all, just
+    a Firebase service account — the setup `fcm.py`'s own docstring recommends now that
+    direct-APNs push-to-start is known to be unreliable. Regression coverage for the bug
+    where `_retry_activity_start` and the once-a-second tick loop silently did nothing
+    on a server shaped exactly like this, because the retry was gated on `self.apns`
+    alone instead of on either transport."""
+
+    def setUp(self):
+        pairing = Pairing(token=TOKEN, port=PORT + 5, path=os.devnull)
+        self.server = QueueServer(pairing, Catalog(), push_tokens=PushTokens(os.devnull),
+                                  activity_tokens=ActivityTokens(os.devnull))
+        self.fake = _FakeFCM()
+        self.server.fcm = self.fake
+        self.server.apns = None
+
+    def test_a_fresh_session_with_only_a_start_token_gets_a_start_push_over_fcm(self):
+        self.server.activity_tokens.register_start("start-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        time.sleep(0.05)                      # `apply()` pushes off-thread; see `_broadcast_snapshot`
+        self.assertEqual(len(self.fake.activity_starts), 1)
+        token, attributes, content_state, _timestamp, alert = self.fake.activity_starts[0]
+        self.assertEqual(token, "start-token")
+        self.assertEqual(attributes["sessionID"], self.server.session.session_id)
+        self.assertEqual(content_state["phase"]["type"], "searching")
+
+    def test_tick_retries_a_start_over_fcm_with_no_further_phase_change(self):
+        # The exact regression: with only `self.fcm` configured (no `self.apns`),
+        # `_retry_activity_start` used to bail out on its very first line and this
+        # queue would never get a second push-to-start attempt no matter how long it
+        # sat in `searching`.
+        self.server.activity_tokens.register_start("start-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        time.sleep(0.05)
+        self.assertEqual(len(self.fake.activity_starts), 1)
+        self.server._activity_start_last_sent_at -= self.server._activity_start_retry_seconds + 1
+        self.server._retry_activity_start()
+        self.assertEqual(len(self.fake.activity_starts), 2)
+
+    def test_tick_retry_is_a_noop_once_a_card_exists_over_fcm(self):
+        self.server.activity_tokens.register_start("start-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        time.sleep(0.05)
+        self.server.activity_tokens.register_update(
+            self.server.session.session_id, "activity-token", "sandbox")
+        self.server._activity_start_last_sent_at -= self.server._activity_start_retry_seconds + 1
+        self.server._retry_activity_start()
+        self.assertEqual(len(self.fake.activity_starts), 1)
+
+    def test_an_existing_activity_token_gets_updates_over_fcm(self):
+        self.server.activity_tokens.register_update(
+            self.server.session.session_id, "activity-token", "sandbox")
+        self.server.apply(protocol.searching("quickPlay", "damage", protocol.now(), 30))
+        time.sleep(0.05)
+        self.assertEqual(len(self.fake.activity_updates), 1)
+        self.assertEqual(len(self.fake.activity_starts), 0)
+
+
 class PushDispatchTests(unittest.TestCase):
     """`_push_apns` in isolation: given some registered tokens, what does it send?"""
 

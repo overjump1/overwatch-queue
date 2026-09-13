@@ -532,8 +532,16 @@ class QueueServer:
         `_push_activity` already no-ops instantly once a per-activity token has
         registered, so this can't step on a card that already exists — checked here too,
         first, so a session with nothing left to retry doesn't pay for a lock + push
-        machinery on every single tick."""
-        if not self.apns:
+        machinery on every single tick.
+
+        Gated on either transport, not just `self.apns` — `_push_activity` itself sends
+        push-to-start over Firebase when that's what's configured (see its own `if
+        self.fcm:` branch), and an FCM-only server is exactly the recommended setup now
+        that direct-APNs push-to-start is known to be unreliable (see `fcm.py`). Gating
+        this solely on `self.apns` silently disabled every retry for that setup, leaving
+        push-to-start with only its single initial attempt — the precise failure this
+        function exists to cover."""
+        if not self.apns and not self.fcm:
             return
         with self._lock:
             session_id, sequence, kind = self.session.session_id, self.session.sequence, self.session.kind

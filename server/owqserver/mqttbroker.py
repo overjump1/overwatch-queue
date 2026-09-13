@@ -47,18 +47,25 @@ def _find_binary(name: str) -> str:
 class MQTTBroker:
     """Starts, stops and restarts the Mosquitto process this server talks to."""
 
-    def __init__(self, port: int = 1883, log=None):
+    def __init__(self, port: int = 1883, log=None, config_dir: str = None):
         self.port = port
         self.log = log or (lambda message: None)
         self._process = None
         self._registered_atexit = False
+        # Defaults to the real, shared `~/.overwatch-queue/mosquitto/` — overridable so a
+        # second, throwaway instance (a test, a second server on the same machine) doesn't
+        # overwrite the config/passwd files a real running broker was launched from.
+        self._config_dir = config_dir or CONFIG_DIR
+        self._conf_path = os.path.join(self._config_dir, "mosquitto.conf")
+        self._passwd_path = os.path.join(self._config_dir, "passwd")
+        self._acl_path = os.path.join(self._config_dir, "acl")
 
     def start(self, phone_password: str, server_password: str):
         self.stop()
         self._write_config(phone_password, server_password)
         binary = _find_binary("mosquitto")
         self._process = subprocess.Popen(
-            [binary, "-c", CONF_PATH],
+            [binary, "-c", self._conf_path],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         # A real child process, unlike the WebSocket server's daemon threads, outlives a
@@ -93,10 +100,10 @@ class MQTTBroker:
         self._process = None
 
     def _write_config(self, phone_password: str, server_password: str):
-        os.makedirs(CONFIG_DIR, exist_ok=True)
-        _write_passwd_file(PASSWD_PATH, {PHONE_USER: phone_password,
-                                         SERVER_USER: server_password})
-        with open(ACL_PATH, "w") as handle:
+        os.makedirs(self._config_dir, exist_ok=True)
+        _write_passwd_file(self._passwd_path, {PHONE_USER: phone_password,
+                                               SERVER_USER: server_password})
+        with open(self._acl_path, "w") as handle:
             handle.write(
                 "user %s\n"
                 "topic read owq/snapshot\n"
@@ -111,7 +118,7 @@ class MQTTBroker:
                 "topic read owq/command/#\n"
                 "topic readwrite owq/presence/#\n"
                 % (PHONE_USER, SERVER_USER))
-        with open(CONF_PATH, "w") as handle:
+        with open(self._conf_path, "w") as handle:
             handle.write(
                 "listener %d 0.0.0.0\n"
                 "allow_anonymous false\n"
@@ -119,7 +126,7 @@ class MQTTBroker:
                 "acl_file %s\n"
                 "persistence false\n"
                 "log_dest none\n"
-                % (self.port, PASSWD_PATH, ACL_PATH))
+                % (self.port, self._passwd_path, self._acl_path))
 
 
 def _write_passwd_file(path: str, users: dict):
