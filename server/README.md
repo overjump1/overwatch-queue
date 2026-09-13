@@ -106,10 +106,10 @@ for this app, so it should never leave a machine you personally control.
 
 ## Watching for a queue
 
-On by default wherever the vision extras import; `--no-queue-vision` turns it off, as does
-the **Watch for a queue** checkbox in the panel. It captures the top 15% of the screen a
-few times a second and looks for the queue banner — a flat, saturated box that the game
-draws and the game world never does. What it can tell from that:
+On by default wherever the vision extras import; `--no-queue-vision` turns it off. It
+captures the top 15% of the screen a few times a second and looks for the queue banner —
+a flat, saturated box that the game draws and the game world never does. What it can tell
+from that:
 
 | | |
 |---|---|
@@ -154,9 +154,9 @@ Role-queue modes show a "Select a Role" screen before searching starts — Tank,
 Support and a fourth, each with its own checkbox, and more than one can be checked at
 once. Nothing about the queue banner says which of those was chosen, so this is a
 separate look at that screen — but unlike hero select, reading it is nothing more than a
-screenshot, so `queuewatch.QueueWatcher` reads it on every idle poll and keeps the panel's
-own role picker in step automatically. **Detect from screen** beside the role dropdown and
-`QueueServer.scan_role_select()` are still there for a manual, one-off read on demand.
+screenshot, so `queuewatch.QueueWatcher` reads it on every idle poll and keeps the role
+it queues by in step automatically, with no button to press. `QueueServer.scan_role_select()`
+is still there for a manual, one-off read from code.
 
 It finds each card by its icon — the same shield, bullets, cross and three-circle glyphs
 the rest of the game uses — rather than by position, then reads each one's own checkbox
@@ -200,13 +200,15 @@ project has always shown — `Controls.map_vote_phase` is where that fallback li
 
 ## The controls
 
-| | |
-|---|---|
-| **Queue** | Mode, role and estimated wait, then *Start queue*. *Skip ahead* back-dates the start so you can see a ten-minute wait without waiting ten minutes. |
-| **Jump to phase** | Match Found → Map Vote → Hero Select → In Game. Steps that aren't reachable from the current phase are greyed out, using the same transition rules the app enforces on the way in. |
-| **Scenarios** | Scripted timelines that play out on a timer, so you can watch the real transitions and animations end to end rather than jumping between them. |
-| **Honour cancel** | Off is the honest case: Overwatch usually won't let you leave. The app is built to be told so, and this is how you rehearse it. |
-| **Traffic** | Connections, pairings, and the votes and hero picks coming back from the phone. |
+The window has two pages: **Pair** (a QR code, shown until a phone connects) and
+**Status** (the live phase, what vision/presence currently see, and who's paired). Vision
+and Battle.net presence run automatically whenever their extras are installed — there's no
+on/off switch in the window; `--no-vision`, `--no-queue-vision` and `--no-presence` are the
+way to turn them off (see `python3 server/run.py --help`).
+
+The status page also has one **Manual override**: pick a phase and hit *Set* to hand-drive
+the queue past whatever vision/presence are seeing — useful with nothing installed, or to
+jump straight to a phase without waiting for the real thing.
 
 Maps and heroes come from `Shared/Resources/catalog-fallback.json`, the same catalog the
 app ships, so the vote and hero-select screens get keys the app has art for.
