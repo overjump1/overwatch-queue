@@ -192,6 +192,13 @@ extension Transport {
             fatalError()
         case (.started(let started), .send(let packet)):
             state = handleSend(packet: packet, started: started)
+        case (.stopped, .send):
+            // The socket can die (e.g. the broker rejects our credentials and closes
+            // the connection) in the same instant something on the MQTT queue decides
+            // to send its own disconnect over it. `.stop` already treats this as a
+            // no-op (see `handleStop`); `.send` needs to as well, or that ordinary race
+            // is a crash instead of a message that simply has nowhere left to go.
+            break
         case (_, .send):
             fatalError()
         case (.started(let started), .readCompleted(let data, let isEOF)):

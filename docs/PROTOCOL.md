@@ -112,8 +112,9 @@ stopped answering (see `owqserver.bnetpresence.PresenceWatcher.dead`). It rides 
 the heartbeat rather than a message of its own, since it changes at most as often as
 Battle.net's connection does — there's nothing a dedicated topic buys over a field on an
 already-periodic broadcast. `false` covers both "presence is fine" and "presence was
-never asked for" — the app is simply running on the screen alone in either case, exactly
-as it always did before presence was ever involved. **Not yet decoded by the Swift
+never asked for". While it is `true`, the questions presence owns — whether a queue is
+running, and its mode — wait for Battle.net to answer again rather than being read off
+the screen instead (see `QueueTracker.presence_lost`). **Not yet decoded by the Swift
 client** — `Shared/Protocol/WireProtocol.swift`'s `.heartbeat` case and its `WireCoding`
 would need the field added to actually surface a disconnect notice on the phone/watch;
 this document and the server side are ahead of it.

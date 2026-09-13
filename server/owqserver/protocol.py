@@ -217,9 +217,10 @@ def heartbeat(presence_degraded: bool = False) -> str:
     it changes at most as often as Battle.net's own connection does, so there's nothing
     for a dedicated topic to buy that a field on an already-periodic broadcast doesn't.
     True means Battle.net's presence link has gone quiet — see `bnetpresence.
-    PresenceWatcher.dead` — so the app is running on the screen alone again, exactly as
-    it always did before presence was ever involved; it is not itself an error, just
-    something worth a player being able to see rather than a silent downgrade."""
+    PresenceWatcher.dead`. Whatever presence owns (queue start/end, the mode) is waiting
+    on it to come back rather than being answered off the screen instead — see
+    `QueueTracker.presence_lost` — so this is worth a player being able to see rather
+    than a silent stall; it is not itself an error."""
     return envelope({"type": "heartbeat",
                      "data": {"serverTime": iso(now()), "presenceDegraded": bool(presence_degraded)}})
 

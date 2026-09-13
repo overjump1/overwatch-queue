@@ -385,6 +385,144 @@ _BATTLENET_EXE_CANDIDATES = (
     r"C:\Program Files\Battle.net\Battle.net.exe",
 )
 
+# The Start Menu icon points at `Battle.net Launcher.exe` by default — a bootstrapper
+# that hands off to `Battle.net.exe` and exits, with no confirmed way to know whether it
+# forwards its own arguments to the process it starts. Repointing the shortcut at
+# `Battle.net.exe` directly sidesteps that question entirely: it's the exact executable
+# `launch_battlenet`/`force_relaunch_battlenet` already start this same way, so a normal
+# double-click ends up doing precisely what this project already knows works.
+DEFAULT_SHORTCUT_PATH = (r"C:\ProgramData\Microsoft\Windows\Start Menu\Programs"
+                         r"\Battle.net\Battle.net.lnk")
+
+
+def ensure_shortcut_targets_debug_port(port=DEFAULT_CDP_PORT,
+                                       shortcut_path=DEFAULT_SHORTCUT_PATH,
+                                       log=None) -> bool:
+    """Repoints the Battle.net Start Menu shortcut at `Battle.net.exe` directly, with
+    `--remote-debugging-port` already on it — so a person launching Battle.net the
+    ordinary way (not through this server at all) still gets a client presence can talk
+    to, without needing to know this project exists. Returns whether the shortcut
+    needed changing; idempotent otherwise. Does nothing to the running Battle.net, if
+    any — see `QueueServer.relaunch_battlenet` for actually picking the change up.
+    """
+    log = log or (lambda message: None)
+    if not PRESENCE_AVAILABLE or not os.path.exists(shortcut_path):
+        return False
+    exe = next((path for path in _BATTLENET_EXE_CANDIDATES if os.path.exists(path)), None)
+    if exe is None:
+        return False
+    wanted_args = "--remote-debugging-port=%d" % port
+
+    current = _read_shortcut(shortcut_path, log)
+    if current is None:
+        return False
+    if current[0].lower() == exe.lower() and current[1] == wanted_args:
+        return False                                     # already right
+
+    # Verified rather than trusted: a `.Save()` on this particular shortcut has been
+    # seen, once, to persist a new `Arguments` while silently keeping the old
+    # `TargetPath` — nothing here explains why, and it didn't reproduce on a retry, but
+    # a shortcut this is willing to repoint is worth reading back rather than assuming.
+    for attempt in range(2):
+        if _write_shortcut(shortcut_path, exe, wanted_args, log):
+            written = _read_shortcut(shortcut_path, log)
+            if written is not None and written[0].lower() == exe.lower() \
+                    and written[1] == wanted_args:
+                log("Pointed the Battle.net Start Menu shortcut at Battle.net.exe "
+                    "with its debug port on")
+                return True
+        if attempt == 0:
+            log("The Battle.net shortcut didn't take the first time — trying once more")
+    log("Couldn't get the Battle.net shortcut to keep the change")
+    return False
+
+
+def _read_shortcut(path, log):
+    script = ("$sh = New-Object -ComObject WScript.Shell; "
+             "$lnk = $sh.CreateShortcut('%s'); "
+             "Write-Output $lnk.TargetPath; Write-Output $lnk.Arguments"
+             % path.replace("'", "''"))
+    try:
+        completed = subprocess.run(["powershell", "-NoProfile", "-Command", script],
+                                   capture_output=True, text=True, timeout=10)
+    except Exception as problem:                        # noqa: BLE001 - best effort
+        log("Couldn't read the Battle.net shortcut: %s" % problem)
+        return None
+    lines = completed.stdout.splitlines()
+    return (lines[0].strip() if lines else "", lines[1].strip() if len(lines) > 1 else "")
+
+
+def _write_shortcut(path, target, args, log) -> bool:
+    script = ("$sh = New-Object -ComObject WScript.Shell; "
+             "$lnk = $sh.CreateShortcut('%s'); "
+             "$lnk.TargetPath = '%s'; "
+             "$lnk.Arguments = '%s'; "
+             "$lnk.Save()"
+             % (path.replace("'", "''"), target.replace("'", "''"), args.replace("'", "''")))
+    try:
+        subprocess.run(["powershell", "-NoProfile", "-Command", script],
+                       capture_output=True, timeout=10, check=True)
+        return True
+    except Exception as problem:                        # noqa: BLE001 - best effort
+        log("Couldn't update the Battle.net shortcut: %s" % problem)
+        return False
+
+
+_AUTOSTART_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_AUTOSTART_VALUE_NAME = "Battle.net"
+
+
+def ensure_autostart_has_debug_port(port=DEFAULT_CDP_PORT, log=None) -> bool:
+    """Battle.net's own auto-start entry — the `HKCU\\...\\Run` value it installs
+    itself, launched at every login — has no debug flag on it, and fixing the Start
+    Menu shortcut alone does nothing about that: Battle.net enforces one running copy,
+    so a later, better-armed launch just wakes the already-running, unflagged one
+    instead of starting fresh. This is the actual reason "start it manually" can look
+    like it didn't take. Returns whether the entry needed changing; `False` if Battle.net
+    isn't set to auto-start at all (nothing to fix)."""
+    log = log or (lambda message: None)
+    if not PRESENCE_AVAILABLE:
+        return False
+    import winreg              # imported lazily: Windows-only, like this whole module
+
+    wanted_flag = "--remote-debugging-port=%d" % port
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _AUTOSTART_KEY_PATH, 0,
+                            winreg.KEY_READ) as key:
+            current, value_type = winreg.QueryValueEx(key, _AUTOSTART_VALUE_NAME)
+    except FileNotFoundError:
+        return False
+    except OSError as problem:
+        log("Couldn't read Battle.net's auto-start entry: %s" % problem)
+        return False
+
+    if wanted_flag in current:
+        return False
+
+    new_value = "%s %s" % (current, wanted_flag)
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _AUTOSTART_KEY_PATH, 0,
+                            winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, _AUTOSTART_VALUE_NAME, 0, value_type, new_value)
+    except OSError as problem:
+        log("Couldn't update Battle.net's auto-start entry: %s" % problem)
+        return False
+
+    verify_ok = False
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _AUTOSTART_KEY_PATH, 0,
+                            winreg.KEY_READ) as key:
+            written, _ = winreg.QueryValueEx(key, _AUTOSTART_VALUE_NAME)
+            verify_ok = wanted_flag in written
+    except OSError:
+        pass
+    if not verify_ok:
+        log("Couldn't get Battle.net's auto-start entry to keep the change")
+        return False
+
+    log("Added --remote-debugging-port to Battle.net's auto-start entry")
+    return True
+
 
 def battlenet_running() -> bool:
     """Whether any `Battle.net.exe` process exists at all, regardless of whether its
@@ -430,6 +568,55 @@ def launch_battlenet(port=DEFAULT_CDP_PORT, log=None) -> bool:
         subprocess.Popen([exe, "--remote-debugging-port=%d" % port],
                          creationflags=creationflags, close_fds=True)
         log("Battle.net wasn't running — launching it with its debug port open")
+        return True
+    except Exception as problem:                        # noqa: BLE001 - best effort
+        log("Couldn't launch Battle.net: %s" % problem)
+        return False
+
+
+def force_relaunch_battlenet(port=DEFAULT_CDP_PORT, log=None) -> bool:
+    """Closes a running Battle.net and starts it again with its debug port open — the
+    fix for the one case `launch_battlenet` deliberately won't touch: Battle.net already
+    open, but started by hand (no `--remote-debugging-port`), so presence can never
+    become authoritative no matter how long this waits.
+
+    Never called on its own — a person has to ask for this, because closing Battle.net
+    can end an active game exactly the way an accidental automatic relaunch was written
+    never to. Ignores `LAUNCH_COOLDOWN_SECONDS`, the same way asking twice in a row for
+    anything else this deliberate would still mean it twice.
+    """
+    log = log or (lambda message: None)
+    if not PRESENCE_AVAILABLE:
+        return False
+
+    if battlenet_running():
+        try:
+            subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                "Stop-Process -Name 'Battle.net' -Force -ErrorAction SilentlyContinue"],
+                capture_output=True, timeout=10)
+        except Exception as problem:                    # noqa: BLE001 - best effort
+            log("Couldn't close Battle.net: %s" % problem)
+            return False
+
+        deadline = time.monotonic() + 10.0
+        while battlenet_running():
+            if time.monotonic() > deadline:
+                log("Battle.net wouldn't close — leaving it alone")
+                return False
+            time.sleep(0.5)
+
+    exe = next((path for path in _BATTLENET_EXE_CANDIDATES if os.path.exists(path)), None)
+    if exe is None:
+        log("Battle.net closed, but couldn't be found to launch again")
+        return False
+    try:
+        creationflags = getattr(subprocess, "DETACHED_PROCESS", 0) | \
+            getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        subprocess.Popen([exe, "--remote-debugging-port=%d" % port],
+                         creationflags=creationflags, close_fds=True)
+        _last_launch_attempt[0] = time.monotonic()
+        log("Relaunched Battle.net with its debug port open")
         return True
     except Exception as problem:                        # noqa: BLE001 - best effort
         log("Couldn't launch Battle.net: %s" % problem)

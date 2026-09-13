@@ -24,7 +24,9 @@ it's just found a match; a role-select screen (which Battle.net also reports as 
 queue") holds that off until vision confirms it's actually closed, or falls back to
 trusting Battle.net outright wherever vision can't see at all. The screen still keeps
 what presence can't give at all — the queue timer, map vote, hero select — and its own
-fast match-found check keeps running too, so whichever notices first wins. If Battle.net
+fast match-found check keeps running too, so whichever notices first wins. What presence
+owns it keeps: if it goes quiet, the queue waits for it to answer again rather than
+guessing from the screen. If Battle.net
 closes or its debug port stops answering, it's relaunched automatically and the paired
 phone/watch are told it disconnected. `--no-presence` turns all of this off; on by
 default, it only ever reads (a websocket to Battle.net's own debug port, or a plain

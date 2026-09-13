@@ -202,9 +202,8 @@ class QueueTracker:
         # Whether presence has proven itself alive and therefore owns queue-start,
         # queue-end and the mode outright. Starts False — vision is exactly as
         # authoritative as it always was until a first known reading says otherwise —
-        # and reverts to False the moment presence goes quiet (`presence_lost`), so a
-        # dead Battle.net hands full control back rather than freezing the tracker with
-        # no one left driving it.
+        # and stays True from then on, including while Battle.net is quiet. See
+        # `presence_lost` for why a disconnect no longer hands these questions back.
         self.presence_authoritative = False
 
     # ------------------------------------------------------------ reading it
@@ -388,16 +387,22 @@ class QueueTracker:
         """Called when a presence source dies, or its last reading has gone stale — the
         tracker gets no ticks of its own, so the loss has to be told to it explicitly.
 
-        Hands full authority back to vision (`presence_authoritative = False`) rather
-        than leaving the tracker frozen with no one left driving queue-start/end — a
-        dead Battle.net must never mean a queue quietly stops being noticed. Separately,
-        resets a queue only if presence itself started it and vision never corroborated
-        it (`_banner_at is None`) — zero evidence remains behind it. A queue vision has
-        seen is left strictly alone; vision's own rules govern it once it's back in
-        charge, same as they always did before presence was ever involved.
+        Authority is **not** handed back to vision. Once Battle.net has answered once it
+        keeps queue-start, queue-end and the mode for the rest of the run, quiet or not:
+        a hue read off a banner was never as good as text naming the mode outright, and
+        falling back to it meant a disconnect silently swapped in the worse answer for
+        the questions presence exists to answer. A quiet Battle.net now means waiting for
+        it to come back rather than guessing from the screen in the meantime; it is
+        reconnected (and relaunched) automatically, and the panel says so while it isn't
+        there. What vision does regardless is unchanged — the elapsed timer, map vote,
+        hero select and its own fast match-found check are all things presence cannot
+        give at all.
+
+        Resets a queue only if presence itself started it and vision never corroborated
+        it (`_banner_at is None`) — zero evidence remains behind it, and nothing is left
+        that could ever end it. A queue vision has seen is left strictly alone.
         """
         self._presence = self._presence_at = None
-        self.presence_authoritative = False
         if self.searching and self.source == "presence" and self._banner_at is None:
             self._reset(when)
 

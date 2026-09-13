@@ -220,6 +220,20 @@ class QueueServer:
             self.presence_watcher.close()
             self.presence_watcher = None
 
+    def relaunch_battlenet(self) -> bool:
+        """A person's own "it's open but not working" button — closes Battle.net and
+        starts it again with its debug port open.
+
+        `_reopen_presence`'s automatic path deliberately never does this: a Battle.net
+        that's merely lost its debug port, or was simply started by hand without it, is
+        left running rather than closed out from under an active game. This is the same
+        recovery with that one safety removed, because a person watching the panel
+        pressed a button asking for exactly that. Once Battle.net is back up, the
+        watcher already retrying `_reopen_presence` on every dead poll is what actually
+        reconnects — nothing further to do here."""
+        return bnetpresence.force_relaunch_battlenet(
+            port=self.presence_port, log=lambda message: self.log(message))
+
     def stop(self):
         self._running = False
         self.stop_scenario()
@@ -239,7 +253,7 @@ class QueueServer:
     def presence_degraded(self) -> bool:
         """Whether Battle.net's presence link is down — pushed to the phone/watch on
         every heartbeat (see `protocol.heartbeat`) so a disconnect is visible rather
-        than a silent downgrade to the screen alone. `False` whenever presence was
+        than a silent stall while the queue waits for it. `False` whenever presence was
         never enabled in the first place, same as it always was."""
         return bool(self.presence_watcher and self.presence_watcher.dead)
 
