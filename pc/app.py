@@ -58,7 +58,8 @@ log = logging.getLogger("owqueue")
 
 
 def setup_logging():
-    log.addHandler(logging.StreamHandler(sys.stdout))
+    if sys.stdout:  # None in the installed build, which has no console
+        log.addHandler(logging.StreamHandler(sys.stdout))
     log.setLevel(logging.INFO)
     try:
         os.makedirs(DATA_DIR, exist_ok=True)

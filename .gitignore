@@ -16,6 +16,7 @@ venv/
 build/
 dist/
 *.spec
+!pc/owqueue.spec
 
 # Xcode
 xcuserdata/
