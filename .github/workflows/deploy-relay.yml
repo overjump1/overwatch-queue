@@ -1,20 +1,20 @@
-name: Push relay
+name: Worker
 
 on:
   pull_request:
     paths:
-      - "relay/**"
+      - "worker/**"
       - ".github/workflows/deploy-relay.yml"
   push:
     branches: [main]
     paths:
-      - "relay/**"
+      - "worker/**"
       - ".github/workflows/deploy-relay.yml"
   workflow_dispatch: {}
 
 defaults:
   run:
-    working-directory: relay
+    working-directory: worker
 
 jobs:
   test:
@@ -26,12 +26,10 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: relay/package-lock.json
+          cache-dependency-path: worker/package-lock.json
 
       - run: npm ci
 
-      # No network, no deployed Worker needed — this is the pure OAuth-signing,
-      # request-validation and rate-limiting logic in src/.
       - run: npm test
 
       - run: npx tsc --noEmit
@@ -50,7 +48,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: relay/package-lock.json
+          cache-dependency-path: worker/package-lock.json
 
       - run: npm ci
 
@@ -63,7 +61,7 @@ jobs:
           # Checked here, not with a step-level `if:` — GitHub Actions doesn't allow the
           # `secrets` context in a step's `if:` condition at all.
           if [ -z "$FCM_SERVICE_ACCOUNT" ]; then
-            echo "::error::The FCM_SERVICE_ACCOUNT repository secret isn't set. See relay/README.md."
+            echo "::error::The FCM_SERVICE_ACCOUNT repository secret isn't set. See README.md."
             exit 1
           fi
           printf '%s' "$FCM_SERVICE_ACCOUNT" | node -e '
@@ -81,13 +79,10 @@ jobs:
           FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
         run: printf '%s' "$FCM_SERVICE_ACCOUNT" | npx wrangler secret put FCM_SERVICE_ACCOUNT
 
-      # Only the new relay answers an empty push with this validation error; the old APNs
-      # one asked for an API key instead.
       - name: Smoke test
         working-directory: .
         run: |
-          body=$(curl -s -X POST -H "Content-Type: application/json" \
-            -H "User-Agent: OverwatchQueueServer/1.0" -d '{}' \
-            https://overwatch-queue-push-relay.tomerady.workers.dev/v1/push)
+          body=$(curl -s -H "User-Agent: OWQueue/2.0" \
+            https://overwatch-queue-push-relay.tomerady.workers.dev/v1/pair/not-a-pair/state)
           echo "$body"
-          echo "$body" | grep -q "deviceToken"
+          echo "$body" | grep -q "bad_pair_id"

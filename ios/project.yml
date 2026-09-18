@@ -1,0 +1,114 @@
+name: OverwatchQueue
+options:
+  bundleIdPrefix: com.tomerady
+  deploymentTarget:
+    iOS: "18.0"
+    watchOS: "11.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: 56N4LCCUN2
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "2.0"
+    CURRENT_PROJECT_VERSION: "1"
+packages:
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    from: 11.0.0
+targets:
+  OverwatchQueue:
+    type: application
+    platform: iOS
+    sources:
+      - iOS
+      - Shared
+    dependencies:
+      - target: QueueWidgets
+      - target: OverwatchQueue Watch App
+      - package: Firebase
+        product: FirebaseMessaging
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tomerady.OverwatchQueue
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: iOS/Info.plist
+      properties:
+        CFBundleDisplayName: OW Queue
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIUserInterfaceStyle: Dark
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
+        NSCameraUsageDescription: Scans the pairing code shown on your PC.
+        UIBackgroundModes: [remote-notification]
+        FirebaseAppDelegateProxyEnabled: false
+        CFBundleURLTypes:
+          - CFBundleURLName: com.tomerady.OverwatchQueue.pair
+            CFBundleURLSchemes: [owq]
+    entitlements:
+      path: iOS/OverwatchQueue.entitlements
+      properties:
+        aps-environment: development
+        com.apple.developer.usernotifications.time-sensitive: true
+
+  QueueWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Widgets
+      - path: Shared
+        excludes: ["*.caf"]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tomerady.OverwatchQueue.QueueWidgets
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      path: Widgets/Info.plist
+      properties:
+        CFBundleDisplayName: OW Queue
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  OverwatchQueue Watch App:
+    type: application
+    platform: watchOS
+    sources:
+      - Watch
+      - Shared
+    dependencies:
+      - package: Firebase
+        product: FirebaseMessaging
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.tomerady.OverwatchQueue.watchkitapp
+        TARGETED_DEVICE_FAMILY: "4"
+        SKIP_INSTALL: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: Watch/Info.plist
+      properties:
+        CFBundleDisplayName: OW Queue
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: com.tomerady.OverwatchQueue
+        WKRunsIndependentlyOfCompanionApp: true
+        WKSupportsLiveActivityLaunchAttributeTypes: [QueueActivityAttributes]
+        UIBackgroundModes: [remote-notification]
+        FirebaseAppDelegateProxyEnabled: false
+    entitlements:
+      path: Watch/Watch.entitlements
+      properties:
+        aps-environment: development
+        com.apple.developer.usernotifications.time-sensitive: true
+
+schemes:
+  OverwatchQueue:
+    build:
+      targets:
+        OverwatchQueue: all
+    run:
+      config: Debug
+    archive:
+      config: Release

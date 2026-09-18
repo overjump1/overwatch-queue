@@ -1,0 +1,13 @@
+name = "overwatch-queue-push-relay"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+# Secret, set once: wrangler secret put FCM_SERVICE_ACCOUNT
+
+[[durable_objects.bindings]]
+name = "PAIR"
+class_name = "Pair"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Pair"]

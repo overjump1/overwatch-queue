@@ -1,47 +1,15 @@
-# Xcode
-build/
-DerivedData/
-*.xcuserstate
-*.xcuserdatad/
-xcuserdata/
-*.moved-aside
-*.hmap
-*.ipa
-*.dSYM.zip
-*.dSYM
-
-# Swift Package Manager
-.build/
-.swiftpm/
-Packages/
-
-# macOS
 .DS_Store
-
-# Python
 __pycache__/
 *.pyc
-.venv/
-venv/
-
-# Hero portraits downloaded for template matching — re-fetched from the catalog on demand
-server/.cache/
-
-# relay/ (Node)
-relay/node_modules/
-relay/.wrangler/
-relay/.dev.vars
-
-# Push credentials. The Firebase service account lives only in the relay's secrets (see
-# relay/README.md), never in the tree — it and an APNs `.p8` are private keys that can
-# push to every user's device. Belt and braces, in case one is ever dropped in here.
+worker/node_modules/
+worker/.wrangler/
+worker/.dev.vars
+ios/OverwatchQueue.xcodeproj/
+ios/iOS/Info.plist
+ios/Widgets/Info.plist
+ios/Watch/Info.plist
+ios/**/GoogleService-Info.plist
+xcuserdata/
+DerivedData/
 *-service-account.json
-AuthKey_*.p8
 *.p8
-
-# Firebase's iOS client config. Google's own stance is that this key isn't a bearer
-# secret — it ships inside every copy of the app binary regardless — but GitHub's
-# secret scanner flags it on a public repo either way, and there's no upside to leaving
-# it in tree. Drop your own copy in `iOS/GoogleService-Info.plist`; the build needs it
-# locally, it just doesn't need to be committed.
-iOS/GoogleService-Info.plist

@@ -1,0 +1,59 @@
+import SwiftUI
+import UIKit
+import UserNotifications
+import FirebaseCore
+import FirebaseMessaging
+
+@main
+struct OverwatchQueueApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
+    @StateObject private var model = AppModel.shared
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+                .environmentObject(model)
+                .preferredColorScheme(.dark)
+                .onOpenURL { model.pair(with: $0.absoluteString) }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            model.setActive(phase == .active)
+        }
+    }
+}
+
+final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
+            FirebaseApp.configure()
+            Messaging.messaging().delegate = self
+        }
+        Task { @MainActor in AppModel.shared.launch() }
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in
+            DispatchQueue.main.async { application.registerForRemoteNotifications() }
+        }
+        return true
+    }
+
+    func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        guard FirebaseApp.app() != nil else { return }
+        Messaging.messaging().apnsToken = deviceToken
+        Messaging.messaging().token { token, _ in
+            guard let token else { return }
+            Task { @MainActor in AppModel.shared.setFCMToken(token) }
+        }
+    }
+
+    func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
+        guard let fcmToken else { return }
+        Task { @MainActor in AppModel.shared.setFCMToken(fcmToken) }
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        [.banner, .sound, .list]
+    }
+}
