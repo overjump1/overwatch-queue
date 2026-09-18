@@ -37,6 +37,8 @@ targets:
       path: ios/iOS/Info.plist
       properties:
         CFBundleDisplayName: OW Queue
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         UIUserInterfaceStyle: Dark
@@ -70,6 +72,8 @@ targets:
       path: ios/Widgets/Info.plist
       properties:
         CFBundleDisplayName: OW Queue
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
@@ -92,6 +96,8 @@ targets:
       path: ios/Watch/Info.plist
       properties:
         CFBundleDisplayName: OW Queue
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         WKApplication: true
         WKCompanionAppBundleIdentifier: com.tomerady.OverwatchQueue
         WKRunsIndependentlyOfCompanionApp: true
