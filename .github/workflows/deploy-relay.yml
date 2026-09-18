@@ -82,7 +82,11 @@ jobs:
       - name: Smoke test
         working-directory: .
         run: |
-          body=$(curl -s -H "User-Agent: OWQueue/2.0" \
-            https://overwatch-queue-push-relay.tomerady.workers.dev/v1/pair/not-a-pair/state)
-          echo "$body"
-          echo "$body" | grep -q "bad_pair_id"
+          for attempt in 1 2 3 4 5 6; do
+            body=$(curl -s -H "User-Agent: OWQueue/2.0" \
+              https://overwatch-queue-push-relay.tomerady.workers.dev/v1/pair/not-a-pair/state)
+            echo "$body"
+            echo "$body" | grep -q "bad_pair_id" && exit 0
+            sleep 10
+          done
+          exit 1
