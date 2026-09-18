@@ -25,6 +25,7 @@
 		909C40CD27E5CB513DDA1E0F /* QueueViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53D8452B54B85C5F6773307C /* QueueViews.swift */; };
 		B668E038F94433D0BD9F3612 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3B9910EFF63BA8C9C0FBAB9 /* ContentView.swift */; };
 		BD5EFEF644643719B8796693 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45118B133C188480BDE7CDCF /* App.swift */; };
+		CF98E6A7AA6D3F08F21027C7 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = A3756F43E5C290460B2422B1 /* GoogleService-Info.plist */; };
 		D2D3D6E75975615459548234 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8B0DBC86D46BB9FA775DED79 /* Assets.xcassets */; };
 		E005C36336FCAC82F45C6903 /* Queue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D377DEDFE44A9D7C8884CED /* Queue.swift */; };
 		EB4EA9AAF7D037273AC96778 /* Queue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D377DEDFE44A9D7C8884CED /* Queue.swift */; };
@@ -94,6 +95,7 @@
 		68FE4F8DDAE02A0D2CEA52D7 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		8B0DBC86D46BB9FA775DED79 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9E72CEF42640090BE81BA831 /* QueueLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueLiveActivity.swift; sourceTree = "<group>"; };
+		A3756F43E5C290460B2422B1 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		B434A9892332FC8CB6A5E924 /* Worker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Worker.swift; sourceTree = "<group>"; };
 		CD7B8A949F39D71DD933025E /* OverwatchQueue.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OverwatchQueue.entitlements; sourceTree = "<group>"; };
 		DEA9355FDD5EBB241C46D253 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -125,6 +127,7 @@
 			isa = PBXGroup;
 			children = (
 				3DE549A2751A23DEFD41FFC1 /* Assets.xcassets */,
+				A3756F43E5C290460B2422B1 /* GoogleService-Info.plist */,
 				0519382B477F3EE920FB409B /* Info.plist */,
 				3654B66725FC45AD40E6DF76 /* Watch.entitlements */,
 				2F34A0DC3CBADF87BDE26B18 /* WatchApp.swift */,
@@ -324,6 +327,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				221E3D8BA534A385810FBF1C /* Assets.xcassets in Resources */,
+				CF98E6A7AA6D3F08F21027C7 /* GoogleService-Info.plist in Resources */,
 				36A5B759DD525C59FAA9B507 /* match_found.caf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
