@@ -34,13 +34,13 @@ struct QueueLiveActivity: Widget {
                         Text(status.title)
                             .font(.headline)
                             .foregroundStyle(status.accent)
-                        Text(status.mode?.name ?? "Overwatch")
+                        Text(status.subtitle)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
             } compactLeading: {
-                Image(systemName: status.state == .found ? "checkmark.circle.fill" : status.mode?.symbol ?? "hourglass")
+                Image(systemName: status.symbol)
                     .foregroundStyle(status.accent)
             } compactTrailing: {
                 ElapsedText(status: status)
@@ -48,7 +48,7 @@ struct QueueLiveActivity: Widget {
                     .frame(maxWidth: 52)
                     .foregroundStyle(status.accent)
             } minimal: {
-                Image(systemName: status.state == .found ? "checkmark.circle.fill" : status.mode?.symbol ?? "hourglass")
+                Image(systemName: status.symbol)
                     .foregroundStyle(status.accent)
             }
             .keylineTint(status.accent)
@@ -70,9 +70,16 @@ private struct ActivityView: View {
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(status.accent)
                         .lineLimit(1)
-                    ElapsedText(status: status)
-                        .font(.system(size: 22, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
+                    if status.state == .idle {
+                        Text(status.subtitle)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        ElapsedText(status: status)
+                            .font(.system(size: 22, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -84,20 +91,22 @@ private struct ActivityView: View {
                     Text(status.title)
                         .font(.system(size: 20, weight: .bold, design: .rounded))
                         .foregroundStyle(status.accent)
-                    Text(status.mode?.name ?? "Overwatch")
+                    Text(status.subtitle)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
-                VStack(alignment: .trailing, spacing: 0) {
-                    ElapsedText(status: status)
-                        .font(.system(size: 34, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .multilineTextAlignment(.trailing)
-                        .frame(maxWidth: 130, alignment: .trailing)
-                    Text(status.state == .found ? "waited" : "in queue")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if status.state != .idle {
+                    VStack(alignment: .trailing, spacing: 0) {
+                        ElapsedText(status: status)
+                            .font(.system(size: 34, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 130, alignment: .trailing)
+                        Text(status.timerCaption)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .padding(16)

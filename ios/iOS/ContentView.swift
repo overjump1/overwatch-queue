@@ -56,7 +56,7 @@ struct ContentView: View {
                     Text(status.title)
                         .font(.system(size: 34, weight: .bold, design: .rounded))
                         .foregroundStyle(status.state == .idle ? .white : status.accent)
-                    Text(status.state == .idle ? "Start a queue on your PC" : status.mode?.name ?? "Overwatch")
+                    Text(status.subtitle)
                         .font(.title3.weight(.medium))
                         .foregroundStyle(.secondary)
                 }
@@ -64,10 +64,14 @@ struct ContentView: View {
                     ElapsedText(status: status)
                         .font(.system(size: 76, weight: .semibold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(status.state == .queueing ? .white : .secondary)
+                        .foregroundStyle(status.state == .found ? .secondary : .primary)
                 }
                 if status.state == .found {
                     Text("Head back to your PC")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+                } else if status.state == .playing {
+                    Text("\(status.mode?.name ?? "Overwatch") · in match")
                         .font(.headline)
                         .foregroundStyle(.secondary)
                 }

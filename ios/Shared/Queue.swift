@@ -1,7 +1,8 @@
 import SwiftUI
 
 enum QueueState: String, Codable, Hashable {
-    case idle, queueing, found
+    /// `playing` is what `found` turns into a minute after the match is found.
+    case idle, queueing, found, playing
 }
 
 enum GameMode: String, Codable, Hashable {
@@ -73,16 +74,27 @@ struct QueueStatus: Codable, Hashable {
         case .idle: "Not in queue"
         case .queueing: "In queue"
         case .found: "Match found!"
+        case .playing: "In a match"
+        }
+    }
+
+    var subtitle: String {
+        switch state {
+        case .idle: "Start a queue on your PC"
+        case .queueing, .found: mode?.name ?? "Overwatch"
+        case .playing: "Good luck, have fun!"
         }
     }
 
     var accent: Color {
         switch state {
         case .idle: Color(white: 0.5)
-        case .queueing: mode?.color ?? .white
+        case .queueing, .playing: mode?.color ?? .white
         case .found: .green
         }
     }
+
+    var inMatch: Bool { state == .found || state == .playing }
 
     var waited: TimeInterval? {
         guard let startedAt, let foundAt else { return nil }

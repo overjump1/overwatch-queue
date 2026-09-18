@@ -33,6 +33,8 @@
 	<string>1</string>
 	<key>FirebaseAppDelegateProxyEnabled</key>
 	<false/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSCameraUsageDescription</key>
 	<string>Scans the pairing code shown on your PC.</string>
 	<key>NSSupportsLiveActivities</key>

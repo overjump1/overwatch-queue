@@ -45,6 +45,7 @@ targets:
         NSCameraUsageDescription: Scans the pairing code shown on your PC.
         UIBackgroundModes: [remote-notification]
         FirebaseAppDelegateProxyEnabled: false
+        ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
           - CFBundleURLName: com.tomerady.OverwatchQueue.pair
             CFBundleURLSchemes: [owq]
@@ -97,6 +98,7 @@ targets:
         WKSupportsLiveActivityLaunchAttributeTypes: [QueueActivityAttributes]
         UIBackgroundModes: [remote-notification]
         FirebaseAppDelegateProxyEnabled: false
+        ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: ios/Watch/Watch.entitlements
       properties:

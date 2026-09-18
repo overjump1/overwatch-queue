@@ -20,6 +20,14 @@ class DetectorTests(unittest.TestCase):
         self.assertEqual(self.d.state, FOUND)
         self.assertEqual(self.d.elapsed(200), 89)
 
+    def test_since_found_counts_from_the_match(self):
+        self.d.step(1, p.QUEUEING, "quickPlay")
+        self.assertEqual(self.d.since_found(50), 0)
+        self.d.step(90, p.IN_GAME, "quickPlay")
+        self.assertEqual(self.d.since_found(150), 60)
+        self.d.step(160, p.MENUS, None)
+        self.assertEqual(self.d.since_found(170), 0)
+
     def test_role_select_holds_until_it_closes(self):
         self.assertTrue(self.d.wants_role_check(p.QUEUEING, "competitive"))
         self.d.step(1, p.QUEUEING, "competitive", role_select=True)
@@ -65,7 +73,27 @@ class DetectorTests(unittest.TestCase):
         self.d.step(5, p.MENUS, None)
         self.assertEqual((self.d.state, self.d.mode), (IDLE, None))
 
-    def test_match_over(self):
+    def test_leaving_queue_for_another_game(self):
+        self.d.step(1, p.QUEUEING, "quickPlay")
+        self.d.step(5, p.ELSEWHERE, None)
+        self.assertEqual(self.d.state, IDLE)
+
+    def test_requeue_after_cancel_restarts_the_timer(self):
+        self.d.step(1, p.QUEUEING, "arcade")
+        self.d.step(50, p.MENUS, None)
+        self.assertEqual(self.d.elapsed(55), 0)
+        self.d.step(60, p.QUEUEING, "arcade")
+        self.assertEqual(self.d.state, QUEUEING)
+        self.assertEqual(self.d.elapsed(70), 10)
+
+    def test_cancelled_queue_is_never_a_match(self):
+        self.d.step(1, p.QUEUEING, "quickPlay")
+        self.d.step(5, p.MENUS, None)
+        self.d.step(9, p.IN_GAME, "quickPlay")
+        self.assertEqual(self.d.state, IDLE)
+        self.assertEqual(self.d.since_found(20), 0)
+
+
         self.d.step(1, p.QUEUEING, "quickPlay")
         self.d.step(5, p.IN_GAME, "quickPlay")
         self.d.step(600, p.GAME_ENDING, "quickPlay")
@@ -84,6 +112,16 @@ class DetectorTests(unittest.TestCase):
         self.assertIsNone(d.state)
         d.step(61, p.UNKNOWN, None)
         self.assertEqual(d.state, IDLE)
+
+
+class RelayReportTests(unittest.TestCase):
+    def test_times_are_aged_to_when_the_report_is_sent(self):
+        import relay
+        now = relay.time.monotonic()
+        found = relay._report({"state": "found", "mode": "arcade", "elapsed": 90.0, "sinceFound": 5.0, "at": now - 40})
+        self.assertEqual((found["elapsed"], found["sinceFound"]), (90, 45))
+        queued = relay._report({"state": "queueing", "mode": None, "elapsed": 10.0, "sinceFound": 0.0, "at": now - 20})
+        self.assertEqual((queued["elapsed"], queued["sinceFound"]), (30, 0))
 
 
 class ParseTests(unittest.TestCase):

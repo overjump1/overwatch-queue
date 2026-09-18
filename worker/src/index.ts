@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { alertMessage, FcmResult, liveActivityMessage, parseServiceAccount, send } from "./fcm";
 import {
-  activityPayload, foundBody, IDLE, nextStatus, parseReport, Push, pushesFor, Status,
+  activityPayload, advance, foundBody, IDLE, nextStatus, parseReport, PLAYING_AFTER_SECONDS, Push, pushesFor, Status,
 } from "./logic";
 
 export interface Env {
@@ -22,7 +22,6 @@ interface Watch {
 
 type Reply = { status: number; body: unknown };
 
-const FOUND_LINGER_SECONDS = 180;
 const PC_SILENT_SECONDS = 180;
 const START_RETRY_SECONDS = 6;
 const START_RETRIES = 2;
@@ -120,27 +119,31 @@ export class Pair extends DurableObject<Env> {
       const now = Date.now() / 1000;
       const status = await this.status();
       const reportedAt = (await this.ctx.storage.get<number>("reportedAt")) ?? now;
-      const lingered = status.state === "found" && status.foundAt !== null && now >= status.foundAt + FOUND_LINGER_SECONDS;
-      const pcSilent = status.state !== "idle" && now >= reportedAt + PC_SILENT_SECONDS;
-      if (lingered || pcSilent) {
+      if (status.state !== "idle" && now >= reportedAt + PC_SILENT_SECONDS) {
         await this.ctx.storage.put("status", IDLE);
         await this.deliver({ kind: "end" }, IDLE, now);
         return;
       }
+      const advanced = advance(status, now);
+      if (advanced !== status) {
+        await this.ctx.storage.put("status", advanced);
+        for (const push of pushesFor(status, advanced)) await this.deliver(push, advanced, now);
+      }
       const phone = await this.phone();
       const retries = (await this.ctx.storage.get<number>("retries")) ?? 0;
-      if (status.state === "queueing" && !phone.updateToken && retries < START_RETRIES) {
+      if (advanced.state === "queueing" && !phone.updateToken && retries < START_RETRIES) {
+        // Quiet: if the first push-to-start did arrive, a second alert would be a duplicate.
         await this.ctx.storage.put("retries", retries + 1);
-        await this.deliver({ kind: "start", alert: "queue" }, status, now);
+        await this.deliver({ kind: "start" }, advanced, now);
       }
-      await this.schedule(status);
+      await this.schedule(advanced);
     });
   }
 
   private async schedule(status: Status): Promise<void> {
     const now = Date.now();
     const times: number[] = [];
-    if (status.state === "found" && status.foundAt !== null) times.push((status.foundAt + FOUND_LINGER_SECONDS) * 1000);
+    if (status.state === "found" && status.foundAt !== null) times.push((status.foundAt + PLAYING_AFTER_SECONDS) * 1000);
     if (status.state !== "idle") {
       const reportedAt = (await this.ctx.storage.get<number>("reportedAt")) ?? now / 1000;
       times.push((reportedAt + PC_SILENT_SECONDS) * 1000);
@@ -187,8 +190,10 @@ export class Pair extends DurableObject<Env> {
       if (push.kind === "start" && !phone.startToken) return;
 
       const activityToken = push.kind === "start" ? phone.startToken! : phone.updateToken!;
-      const alert = push.kind === "start" ? push.alert : push.kind === "update" ? push.alert : undefined;
-      const result = await this.fcm(liveActivityMessage(phone.fcm, activityToken, activityPayload(push.kind, status, now, alert)));
+      const alert = push.kind === "start" || push.kind === "update" ? push.alert : undefined;
+      const linger = push.kind === "end" ? push.linger ?? 0 : 0;
+      const payload = activityPayload(push.kind, status, now, alert, linger);
+      const result = await this.fcm(liveActivityMessage(phone.fcm, activityToken, payload));
 
       if (push.kind === "end" || push.kind === "start") delete phone.updateToken;
       const tokenDead = result !== null && dead(result);

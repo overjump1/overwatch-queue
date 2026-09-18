@@ -24,15 +24,15 @@ struct WatchView: View {
                     .font(.system(size: 18, weight: .bold, design: .rounded))
                     .foregroundStyle(status.state == .idle ? .white : status.accent)
                 if status.state != .idle {
-                    Text(status.mode?.name ?? "Overwatch")
+                    Text(status.subtitle)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                }
-                if status.state != .idle {
+                        .minimumScaleFactor(0.8)
+                        .lineLimit(1)
                     ElapsedText(status: status)
                         .font(.system(size: 34, weight: .semibold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(status.state == .queueing ? .white : .secondary)
+                        .foregroundStyle(status.state == .found ? .secondary : .primary)
                 }
                 if !model.reachable {
                     Image(systemName: "wifi.exclamationmark")
