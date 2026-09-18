@@ -4,10 +4,6 @@ __pycache__/
 worker/node_modules/
 worker/.wrangler/
 worker/.dev.vars
-ios/OverwatchQueue.xcodeproj/
-ios/iOS/Info.plist
-ios/Widgets/Info.plist
-ios/Watch/Info.plist
 ios/**/GoogleService-Info.plist
 xcuserdata/
 DerivedData/

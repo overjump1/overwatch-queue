@@ -21,8 +21,8 @@ targets:
     type: application
     platform: iOS
     sources:
-      - iOS
-      - Shared
+      - ios/iOS
+      - ios/Shared
     dependencies:
       - target: QueueWidgets
       - target: OverwatchQueue Watch App
@@ -34,7 +34,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
-      path: iOS/Info.plist
+      path: ios/iOS/Info.plist
       properties:
         CFBundleDisplayName: OW Queue
         UILaunchScreen: {}
@@ -49,7 +49,7 @@ targets:
           - CFBundleURLName: com.tomerady.OverwatchQueue.pair
             CFBundleURLSchemes: [owq]
     entitlements:
-      path: iOS/OverwatchQueue.entitlements
+      path: ios/iOS/OverwatchQueue.entitlements
       properties:
         aps-environment: development
         com.apple.developer.usernotifications.time-sensitive: true
@@ -58,15 +58,15 @@ targets:
     type: app-extension
     platform: iOS
     sources:
-      - Widgets
-      - path: Shared
+      - ios/Widgets
+      - path: ios/Shared
         excludes: ["*.caf"]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tomerady.OverwatchQueue.QueueWidgets
         TARGETED_DEVICE_FAMILY: "1"
     info:
-      path: Widgets/Info.plist
+      path: ios/Widgets/Info.plist
       properties:
         CFBundleDisplayName: OW Queue
         NSExtension:
@@ -76,8 +76,8 @@ targets:
     type: application
     platform: watchOS
     sources:
-      - Watch
-      - Shared
+      - ios/Watch
+      - ios/Shared
     dependencies:
       - package: Firebase
         product: FirebaseMessaging
@@ -88,7 +88,7 @@ targets:
         SKIP_INSTALL: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
-      path: Watch/Info.plist
+      path: ios/Watch/Info.plist
       properties:
         CFBundleDisplayName: OW Queue
         WKApplication: true
@@ -98,7 +98,7 @@ targets:
         UIBackgroundModes: [remote-notification]
         FirebaseAppDelegateProxyEnabled: false
     entitlements:
-      path: Watch/Watch.entitlements
+      path: ios/Watch/Watch.entitlements
       properties:
         aps-environment: development
         com.apple.developer.usernotifications.time-sensitive: true

@@ -36,11 +36,11 @@ npm test
 
 1. Put `GoogleService-Info.plist` in `ios/iOS/`.
 2. In Firebase, add a second Apple app with the bundle ID `com.tomerady.OverwatchQueue.watchkitapp`, and put its plist in `ios/Watch/`. The Watch app works without it, but then it won't get its own "Match found" alert.
-3. Generate the project and open it:
+3. Open `OverwatchQueue.xcodeproj`. It's generated from `project.yml`: after adding or removing files, run `xcodegen` in the repo root and commit the result.
 
-```
-cd ios && xcodegen && open OverwatchQueue.xcodeproj
-```
+### TestFlight (Xcode Cloud)
+
+Pushes to `main` build and upload to TestFlight. `ci_scripts/ci_post_clone.sh` writes `GoogleService-Info.plist` from the workflow's secret environment variable `GOOGLE_SERVICE_INFO_PLIST`, which holds the output of `base64 -i ios/iOS/GoogleService-Info.plist`.
 
 To test in the Simulator against a local worker (`npx wrangler dev`), run a Debug build with the launch argument `-workerURL http://127.0.0.1:8787`, then pair:
 
