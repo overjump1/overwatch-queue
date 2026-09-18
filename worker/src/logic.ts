@@ -1,7 +1,10 @@
-export const STATES = ["idle", "queueing", "found"] as const;
+export const STATES = ["idle", "queueing", "found", "playing"] as const;
+/** What the PC can report. "playing" is only ever derived here, from how long ago the match was found. */
+export const REPORTED_STATES = ["idle", "queueing", "found"] as const;
 export const MODES = ["quickPlay", "competitive", "arcade", "stadium", "mysteryHeroes", "custom"] as const;
 
 export type QueueState = (typeof STATES)[number];
+export type ReportedState = (typeof REPORTED_STATES)[number];
 export type Mode = (typeof MODES)[number];
 
 /** Exactly the Live Activity's ContentState on the phone. Times are unix seconds. */
@@ -13,18 +16,38 @@ export interface Status {
 }
 
 export interface Report {
-  state: QueueState;
+  state: ReportedState;
   mode: Mode | null;
+  /** Seconds queued; once found, the final wait. */
   elapsed: number;
+  /** Seconds since the match was found. Older PC apps don't send it, which reads as 0. */
+  sinceFound: number;
 }
 
 export type Push =
-  | { kind: "start"; alert: "queue" | "found" }
+  | { kind: "start"; alert?: "queue" | "found" }
   | { kind: "update"; alert?: "found" }
-  | { kind: "end" }
+  /** `linger`: seconds the ended activity stays on the lock screen showing "Not in queue". */
+  | { kind: "end"; linger?: number }
   | { kind: "matchAlert" };
 
 export const IDLE: Status = { state: "idle", mode: null, startedAt: null, foundAt: null };
+
+/** "Match found!" turns into "In a match" (good luck, have fun) this long after the match is found. */
+export const PLAYING_AFTER_SECONDS = 60;
+/** How long the "Not in queue" Live Activity stays on the lock screen after a match... */
+export const AFTER_MATCH_LINGER_SECONDS = 10 * 60;
+/** ...and after the queue was cancelled, just long enough to confirm it. */
+export const AFTER_CANCEL_LINGER_SECONDS = 60;
+const MAX_SECONDS = 6 * 3600;
+
+export function inMatch(status: Status): boolean {
+  return status.state === "found" || status.state === "playing";
+}
+
+function matchState(foundAt: number, now: number): "found" | "playing" {
+  return now >= foundAt + PLAYING_AFTER_SECONDS ? "playing" : "found";
+}
 
 const MODE_NAMES: Record<Mode, string> = {
   quickPlay: "Quick Play",
@@ -41,46 +64,71 @@ export function modeName(mode: Mode | null): string {
 
 export function parseReport(body: unknown): Report | null {
   if (typeof body !== "object" || body === null) return null;
-  const { state, mode, elapsed } = body as Record<string, unknown>;
-  if (!STATES.includes(state as QueueState)) return null;
+  const { state, mode, elapsed, sinceFound } = body as Record<string, unknown>;
+  if (!REPORTED_STATES.includes(state as ReportedState)) return null;
   if (mode !== null && mode !== undefined && !MODES.includes(mode as Mode)) return null;
-  const seconds = typeof elapsed === "number" && Number.isFinite(elapsed) ? elapsed : 0;
   return {
-    state: state as QueueState,
+    state: state as ReportedState,
     mode: (mode as Mode | undefined) ?? null,
-    elapsed: Math.min(Math.max(seconds, 0), 6 * 3600),
+    elapsed: seconds(elapsed),
+    sinceFound: seconds(sinceFound),
   };
+}
+
+function seconds(value: unknown): number {
+  const number = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return Math.min(Math.max(number, 0), MAX_SECONDS);
 }
 
 export function nextStatus(prev: Status, report: Report, now: number): Status {
   if (report.state === "idle") return IDLE;
-  const wasActive = prev.state !== "idle" && prev.startedAt !== null;
-  const startedAt = wasActive && !(prev.state === "found" && report.state === "queueing")
-    ? prev.startedAt
-    : Math.round(now - report.elapsed);
   if (report.state === "queueing") {
-    return { state: "queueing", mode: report.mode ?? (prev.state === "queueing" ? prev.mode : null), startedAt, foundAt: null };
+    const continuing = prev.state === "queueing" && prev.startedAt !== null;
+    return {
+      state: "queueing",
+      mode: report.mode ?? (continuing ? prev.mode : null),
+      startedAt: continuing ? prev.startedAt : Math.round(now - report.elapsed),
+      foundAt: null,
+    };
   }
-  return {
-    state: "found",
-    mode: report.mode ?? prev.mode,
-    startedAt,
-    foundAt: prev.state === "found" && prev.foundAt !== null ? prev.foundAt : Math.round(now),
-  };
+  // The same match keeps its found time however often the PC repeats itself, so it's
+  // only ever announced once.
+  if (inMatch(prev) && prev.foundAt !== null) {
+    return { ...prev, state: matchState(prev.foundAt, now), mode: report.mode ?? prev.mode };
+  }
+  const foundAt = Math.round(now - report.sinceFound);
+  const startedAt = prev.state === "queueing" && prev.startedAt !== null
+    ? prev.startedAt
+    : Math.round(foundAt - report.elapsed);
+  return { state: matchState(foundAt, now), mode: report.mode ?? prev.mode, startedAt, foundAt };
 }
 
+/** Advances a found match to "playing" once enough time has passed; anything else is returned as is. */
+export function advance(status: Status, now: number): Status {
+  if (!inMatch(status) || status.foundAt === null) return status;
+  const state = matchState(status.foundAt, now);
+  return state === status.state ? status : { ...status, state };
+}
+
+/** Only a queue starting and a match being found make a sound. Everything else is a quiet update. */
 export function pushesFor(prev: Status, next: Status): Push[] {
   if (prev.state === next.state && prev.mode === next.mode) return [];
   switch (next.state) {
     case "idle":
-      return [{ kind: "end" }];
+      if (inMatch(prev)) return [{ kind: "end", linger: AFTER_MATCH_LINGER_SECONDS }];
+      return [{ kind: "end", linger: AFTER_CANCEL_LINGER_SECONDS }];
     case "queueing":
       if (prev.state === "queueing") return [{ kind: "update" }];
-      if (prev.state === "found") return [{ kind: "end" }, { kind: "start", alert: "queue" }];
+      if (inMatch(prev)) return [{ kind: "end" }, { kind: "start", alert: "queue" }];
       return [{ kind: "start", alert: "queue" }];
     case "found":
       if (prev.state === "found") return [{ kind: "update" }];
       return [{ kind: "update", alert: "found" }, { kind: "matchAlert" }];
+    case "playing":
+      // A match the worker only heard about late (the PC was offline when it was found)
+      // shows up quietly instead of alerting minutes into the game.
+      if (prev.state === "idle") return [{ kind: "start" }];
+      return [{ kind: "update" }];
   }
 }
 
@@ -101,6 +149,7 @@ export function activityPayload(
   status: Status,
   now: number,
   alert?: "queue" | "found",
+  linger = 0,
 ): Record<string, unknown> {
   const aps: Record<string, unknown> = {
     timestamp: Math.floor(now),
@@ -111,7 +160,7 @@ export function activityPayload(
     aps["attributes-type"] = "QueueActivityAttributes";
     aps["attributes"] = {};
   }
-  if (event === "end") aps["dismissal-date"] = Math.floor(now);
+  if (event === "end") aps["dismissal-date"] = Math.floor(now) + linger;
   if (alert === "queue") {
     aps["alert"] = { title: "In queue", body: modeName(status.mode) };
   } else if (alert === "found") {

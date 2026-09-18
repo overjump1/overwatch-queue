@@ -14,7 +14,6 @@ USER_AGENT = "OWQueue/2.0"
 TIMEOUT_SECONDS = 10
 UNPAIRED_CHECK_SECONDS = 5
 PAIRED_CHECK_SECONDS = 60
-HEARTBEAT_SECONDS = 60
 MAX_BACKOFF_SECONDS = 30
 
 
@@ -27,6 +26,19 @@ def _request(method, path, body=None):
             return response.status, json.loads(response.read() or b"{}")
     except urllib.error.HTTPError as error:
         return error.code, None
+
+
+def _report(pending):
+    """The body for `pending`, with its times aged to now: a report can sit in the queue
+    (retries, a pairing reset) and the worker dates the queue and the match from them."""
+    age = max(0.0, time.monotonic() - pending["at"])
+    elapsed, since_found = pending["elapsed"], pending["sinceFound"]
+    if pending["state"] == "queueing":
+        elapsed += age
+    elif pending["state"] == "found":
+        since_found += age
+    return {"state": pending["state"], "mode": pending["mode"],
+            "elapsed": round(elapsed), "sinceFound": round(since_found)}
 
 
 class Relay:
@@ -42,9 +54,10 @@ class Relay:
         self._lock = threading.Lock()
         self._wake = threading.Event()
 
-    def publish(self, state, mode, elapsed):
+    def publish(self, state, mode, elapsed, since_found=0.0):
         with self._lock:
-            self._pending = {"state": state, "mode": mode, "elapsed": round(elapsed)}
+            self._pending = {"state": state, "mode": mode, "elapsed": elapsed,
+                             "sinceFound": since_found, "at": time.monotonic()}
         self._wake.set()
 
     def change_pair(self, pair_id):
@@ -58,18 +71,12 @@ class Relay:
         self._wake.set()
 
     def run(self, stop):
-        """Delivers the latest state, re-sends it as a heartbeat so the worker can tell the PC
-        is still there, and checks whether a phone is paired."""
+        """Delivers the latest state and checks whether a phone is paired. The watcher
+        re-publishes the state every minute so the worker can tell the PC is still there."""
         backoff = 1
-        next_heartbeat = time.monotonic() + HEARTBEAT_SECONDS
         while not stop.is_set():
             try:
                 self._delete_stale()
-                if time.monotonic() >= next_heartbeat:
-                    next_heartbeat = time.monotonic() + HEARTBEAT_SECONDS
-                    with self._lock:
-                        if self._pending is None:
-                            self._pending = self._last_sent
                 if not self._send_pending():
                     raise ConnectionError("state not delivered")
                 if time.monotonic() >= self._next_check:
@@ -93,7 +100,7 @@ class Relay:
         if pending is None:
             return True
         try:
-            status, _ = _request("POST", "/v1/pair/%s/state" % pair_id, pending)
+            status, _ = _request("POST", "/v1/pair/%s/state" % pair_id, _report(pending))
         except Exception as problem:  # noqa: BLE001
             self.log("Sending state failed: %s" % problem)
             return False

@@ -23,6 +23,8 @@ final class AppModel: ObservableObject {
     private var pollTask: Task<Void, Never>?
     private var observedActivities = Set<String>()
     private var localActivityQueueStart: Double?
+    /// The match we already alerted for, so the same match never alerts twice.
+    private var alertedFoundAt: Double?
     private let watch = WatchBridge()
     private let alerts = MatchAlert()
 
@@ -128,15 +130,18 @@ final class AppModel: ObservableObject {
     // MARK: - State
 
     private func apply(_ new: QueueStatus) {
-        if new.state == .idle, !Activity<QueueActivityAttributes>.activities.isEmpty {
-            endAllActivities()
-        }
         let old = status
+        if new.state == .idle {
+            // Usually the worker's end push got here first; this covers it not arriving.
+            endActivities(showingIdleFor: old.inMatch ? 10 * 60 : old.state == .queueing ? 60 : 0)
+        }
         guard new != old else { return }
         status = new
-        if new.state == .found, old.state != .found, new.isFreshMatch, active {
+        if new.state == .found, new.isFreshMatch, active, alertedFoundAt != new.foundAt {
+            alertedFoundAt = new.foundAt
             matchAlerts += 1
-            alerts.play()
+            // A running Live Activity already plays the match sound from its push.
+            alerts.play(sound: !hasRunningActivity)
             watch.sendMatchFound()
         }
         startActivityIfMissing(for: new)
@@ -167,7 +172,7 @@ final class AppModel: ObservableObject {
     private func startActivityIfMissing(for status: QueueStatus) {
         guard active, status.state == .queueing, let startedAt = status.startedAt,
               localActivityQueueStart != startedAt,
-              Activity<QueueActivityAttributes>.activities.isEmpty,
+              !hasRunningActivity,
               ActivityAuthorizationInfo().areActivitiesEnabled
         else { return }
         localActivityQueueStart = startedAt
@@ -175,6 +180,19 @@ final class AppModel: ObservableObject {
                                                 content: .init(state: status, staleDate: nil),
                                                 pushType: .token) {
             observe(activity)
+        }
+    }
+
+    private var hasRunningActivity: Bool {
+        Activity<QueueActivityAttributes>.activities.contains { $0.activityState == .active }
+    }
+
+    /// Ends the running activity quietly, leaving "Not in queue" on the lock screen for `seconds`.
+    private func endActivities(showingIdleFor seconds: TimeInterval) {
+        let content = ActivityContent(state: QueueStatus.idle, staleDate: nil)
+        let policy: ActivityUIDismissalPolicy = seconds > 0 ? .after(.now.addingTimeInterval(seconds)) : .immediate
+        for activity in Activity<QueueActivityAttributes>.activities where activity.activityState == .active {
+            Task { await activity.end(content, dismissalPolicy: policy) }
         }
     }
 
@@ -190,9 +208,9 @@ final class MatchAlert {
     private var engine: CHHapticEngine?
     private var player: AVAudioPlayer?
 
-    func play() {
+    func play(sound: Bool) {
         playHaptics()
-        playSound()
+        if sound { playSound() }
     }
 
     private func playHaptics() {

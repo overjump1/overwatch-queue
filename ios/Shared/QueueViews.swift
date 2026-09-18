@@ -16,23 +16,36 @@ struct ModeBadge: View {
         ZStack {
             Circle().fill(status.accent.opacity(status.state == .idle ? 0.18 : 0.25))
             Circle().strokeBorder(status.accent, lineWidth: max(1.5, size / 28))
-            Image(systemName: symbol)
+            Image(systemName: status.symbol)
                 .font(.system(size: size * 0.42, weight: .bold))
                 .foregroundStyle(status.accent)
         }
         .frame(width: size, height: size)
     }
+}
 
-    private var symbol: String {
-        switch status.state {
+extension QueueStatus {
+    var symbol: String {
+        switch state {
         case .found: "checkmark"
-        case .queueing: status.mode?.symbol ?? "hourglass"
+        case .queueing: mode?.symbol ?? "hourglass"
+        case .playing: "flag.checkered"
         case .idle: "moon.zzz.fill"
+        }
+    }
+
+    /// The word under the timer.
+    var timerCaption: String {
+        switch state {
+        case .queueing: "in queue"
+        case .found: "waited"
+        case .playing: "in match"
+        case .idle: ""
         }
     }
 }
 
-/// Counts up while queueing; shows the final wait once a match is found.
+/// Counts up while queueing; shows the final wait once a match is found; counts the match once it's on.
 struct ElapsedText: View {
     let status: QueueStatus
 
@@ -46,6 +59,12 @@ struct ElapsedText: View {
             }
         case .found:
             Text(clockString(status.waited ?? 0))
+        case .playing:
+            if let found = status.foundDate {
+                Text(timerInterval: found...Date.distantFuture, countsDown: false)
+            } else {
+                Text("–:––")
+            }
         case .idle:
             Text("–:––")
         }

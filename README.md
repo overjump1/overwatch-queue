@@ -12,6 +12,14 @@ PC app (Windows)  ──state──▶  Cloudflare worker  ──FCM──▶  L
 - **worker/** keeps the latest state for each pairing and sends the Live Activity pushes.
 - **ios/** holds the iPhone app, the Live Activity, and the Watch app.
 
+### What you get notified about
+
+Only two things make a sound: a queue starting ("In queue") and a match being found ("Match found!"), each once. Everything after that updates the Live Activity quietly:
+
+- A minute after the match is found it turns into **In a match** (good luck, have fun) and counts the match time.
+- When the match ends it shows **Not in queue** for 10 minutes, then goes away.
+- If you cancel the queue it shows **Not in queue** for a minute, then goes away.
+
 ## Windows app
 
 ```

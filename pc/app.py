@@ -1,7 +1,6 @@
 """OW Queue for Windows: watches your Overwatch queue and pushes it to your iPhone and Apple Watch."""
 from __future__ import annotations
 
-import ctypes
 import json
 import logging
 import logging.handlers
@@ -10,10 +9,11 @@ import secrets
 import sys
 import threading
 import time
-import tkinter as tk
-from tkinter import messagebox
 
 import qrcode
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QColor, QFont, QPainter, QPixmap
+from PyQt6.QtWidgets import QApplication, QFrame, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from detector import FOUND, QUEUEING, Detector
 from presence import Presence
@@ -22,6 +22,11 @@ from roleselect import RoleSelect
 
 POLL_SECONDS = 1.0
 GUI_REFRESH_MS = 500
+HEARTBEAT_SECONDS = 60
+# Matches the worker: "Match found!" becomes "In a match" this long after the match is found.
+PLAYING_AFTER_SECONDS = 60
+QR_SIZE = 232
+WINDOW_WIDTH = 360
 
 BG = "#0f1115"
 CARD = "#181b22"
@@ -106,6 +111,7 @@ class Watcher:
         self.detector = Detector(time.monotonic())
         self.lock = threading.Lock()
         self._sent = None
+        self._sent_at = 0.0
 
     def run(self, stop):
         while not stop.is_set():
@@ -125,58 +131,80 @@ class Watcher:
             self.detector.step(now, reading, mode, role_select)
             after = (self.detector.state, self.detector.mode, self.detector.holding_for_role_select)
             elapsed = self.detector.elapsed(now)
+            since_found = self.detector.since_found(now)
         if before != after:
             log.info("Presence %s/%s, role select %s -> %s", reading, mode, role_select, after)
         key = after[:2]
-        if key[0] is not None and key != self._sent:
-            self._sent = key
-            self.relay.publish(key[0], key[1], elapsed)
+        # Re-sent every minute, with fresh times, so the worker knows the PC is still there.
+        if key[0] is not None and (key != self._sent or now - self._sent_at >= HEARTBEAT_SECONDS):
+            self._sent, self._sent_at = key, now
+            self.relay.publish(key[0], key[1], elapsed, since_found)
 
     def snapshot(self):
         with self.lock:
             d = self.detector
-            return d.state, d.mode, d.elapsed(time.monotonic()), d.holding_for_role_select, self.presence.connected
+            now = time.monotonic()
+            return (d.state, d.mode, d.elapsed(now), d.since_found(now), d.holding_for_role_select,
+                    self.presence.connected)
 
 
-class App:
-    def __init__(self, root, pair_id, relay, watcher):
-        self.root = root
+def _font(size, weight=QFont.Weight.Normal):
+    font = QFont("Segoe UI", size)
+    font.setWeight(weight)
+    return font
+
+
+class App(QWidget):
+    def __init__(self, pair_id, relay, watcher):
+        super().__init__()
         self.pair_id = pair_id
         self.relay = relay
         self.watcher = watcher
         self._qr_for = None
 
-        root.title("OW Queue")
-        root.configure(bg=BG)
-        root.resizable(False, False)
+        self.setWindowTitle("OW Queue")
+        self.setStyleSheet(
+            "QWidget { background: %s; color: %s; }"
+            "QFrame#card { background: %s; border-radius: 12px; }"
+            "QFrame#card QLabel { background: transparent; }"
+            "QPushButton { background: %s; color: %s; border: none; border-radius: 8px; padding: 8px 16px; }"
+            "QPushButton:hover { background: #262a33; }" % (BG, TEXT, CARD, CARD, TEXT))
 
-        frame = tk.Frame(root, bg=BG, padx=24, pady=20)
-        frame.pack()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 20)
+        layout.setSpacing(4)
 
-        card = tk.Frame(frame, bg=CARD, padx=20, pady=16)
-        card.pack(fill="x")
-        self.state_label = tk.Label(card, font=("Segoe UI Semibold", 20), bg=CARD, fg=TEXT, width=18, anchor="w")
-        self.state_label.pack(anchor="w")
-        self.mode_label = tk.Label(card, font=("Segoe UI", 12), bg=CARD, fg=MUTED, anchor="w")
-        self.mode_label.pack(anchor="w")
-        self.timer_label = tk.Label(card, font=("Segoe UI Light", 36), bg=CARD, fg=TEXT, anchor="w")
-        self.timer_label.pack(anchor="w")
+        card = QFrame(objectName="card")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(20, 16, 20, 16)
+        card_layout.setSpacing(2)
+        self.state_label = QLabel(font=_font(20, QFont.Weight.DemiBold))
+        self.mode_label = QLabel(font=_font(12))
+        self.timer_label = QLabel(font=_font(36, QFont.Weight.Light))
+        for label in (self.state_label, self.mode_label, self.timer_label):
+            card_layout.addWidget(label)
+        layout.addWidget(card)
+        layout.addSpacing(10)
 
-        self.bnet_label = tk.Label(frame, font=("Segoe UI", 10), bg=BG, anchor="w", justify="left", wraplength=300)
-        self.bnet_label.pack(fill="x", pady=(14, 0))
-        self.phone_label = tk.Label(frame, font=("Segoe UI", 10), bg=BG, anchor="w", justify="left", wraplength=300)
-        self.phone_label.pack(fill="x", pady=(4, 0))
-        self.server_label = tk.Label(frame, font=("Segoe UI", 10), bg=BG, fg=WARN, anchor="w")
-        self.server_label.pack(fill="x", pady=(4, 0))
+        self.bnet_label = QLabel(font=_font(10), wordWrap=True)
+        self.phone_label = QLabel(font=_font(10), wordWrap=True)
+        self.server_label = QLabel(font=_font(10), wordWrap=True)
+        for label in (self.bnet_label, self.phone_label, self.server_label):
+            layout.addWidget(label)
 
-        self.qr = tk.Canvas(frame, width=232, height=232, bg="white", highlightthickness=0)
-        self.qr.pack(pady=(14, 0))
+        self.qr = QLabel(alignment=Qt.AlignmentFlag.AlignCenter)
+        self.qr.setFixedSize(QR_SIZE, QR_SIZE)
+        layout.addSpacing(10)
+        layout.addWidget(self.qr, alignment=Qt.AlignmentFlag.AlignHCenter)
 
-        self.button = tk.Button(frame, text="Reset QR code", command=self.reset, font=("Segoe UI", 10),
-                  bg=CARD, fg=TEXT, activebackground="#262a33", activeforeground=TEXT,
-                  relief="flat", padx=12, pady=6, cursor="hand2")
-        self.button.pack(pady=(14, 0))
+        self.button = QPushButton("Reset QR code", font=_font(10))
+        self.button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.button.clicked.connect(self.reset)
+        layout.addSpacing(10)
+        layout.addWidget(self.button, alignment=Qt.AlignmentFlag.AlignHCenter)
 
+        self.timer = QTimer(self, interval=GUI_REFRESH_MS, timeout=self.refresh)
+        self.timer.start()
         self.refresh()
 
     def refresh(self):
@@ -184,77 +212,93 @@ class App:
             self._render()
         except Exception:  # noqa: BLE001
             log.exception("GUI refresh failed")
-        self.root.after(GUI_REFRESH_MS, self.refresh)
+        # Fixed width so the window doesn't jump around as the text changes; the height follows.
+        self.setFixedSize(WINDOW_WIDTH, self.layout().totalHeightForWidth(WINDOW_WIDTH))
+
+    @staticmethod
+    def _set(label, text, color):
+        label.setText(text)
+        label.setStyleSheet("color: %s;" % color)
 
     def _render(self):
-        state, mode, elapsed, holding, connected = self.watcher.snapshot()
+        state, mode, elapsed, since_found, holding, connected = self.watcher.snapshot()
         color = MODE_COLORS.get(mode, TEXT)
+        mode_name = MODE_NAMES.get(mode, "Overwatch")
         if state == QUEUEING:
-            self.state_label.config(text="In queue", fg=color)
-            self.timer_label.config(text=clock(elapsed), fg=TEXT)
+            self._set(self.state_label, "In queue", color)
+            self._set(self.mode_label, mode_name, MUTED)
+            self._set(self.timer_label, clock(elapsed), TEXT)
+        elif state == FOUND and since_found >= PLAYING_AFTER_SECONDS:
+            self._set(self.state_label, "In a match", color)
+            self._set(self.mode_label, "%s · good luck, have fun!" % mode_name, MUTED)
+            self._set(self.timer_label, clock(since_found), TEXT)
         elif state == FOUND:
-            self.state_label.config(text="Match found!", fg=GOOD)
-            self.timer_label.config(text=clock(elapsed), fg=MUTED)
+            self._set(self.state_label, "Match found!", GOOD)
+            self._set(self.mode_label, "%s · waited" % mode_name, MUTED)
+            self._set(self.timer_label, clock(elapsed), MUTED)
         elif holding:
-            self.state_label.config(text="Picking roles…", fg=color)
-            self.timer_label.config(text="–:––", fg=MUTED)
+            self._set(self.state_label, "Picking roles…", color)
+            self._set(self.mode_label, mode_name, MUTED)
+            self._set(self.timer_label, "–:––", MUTED)
         else:
-            self.state_label.config(text="Not in queue", fg=TEXT)
-            self.timer_label.config(text="–:––", fg=MUTED)
-        self.mode_label.config(text=MODE_NAMES.get(mode, "Overwatch") if state in (QUEUEING, FOUND) or holding else " ")
+            self._set(self.state_label, "Not in queue", TEXT)
+            self._set(self.mode_label, " ", MUTED)
+            self._set(self.timer_label, "–:––", MUTED)
 
         if connected:
-            self.bnet_label.config(text="● Battle.net connected", fg=GOOD)
+            self._set(self.bnet_label, "● Battle.net connected", GOOD)
         else:
-            self.bnet_label.config(text="● Battle.net not found — open it and log in", fg=WARN)
+            self._set(self.bnet_label, "● Battle.net not found — open it and log in", WARN)
 
         if self.relay.phone_paired:
-            self.phone_label.config(text="● iPhone paired", fg=GOOD)
-            self.qr.pack_forget()
+            self._set(self.phone_label, "● iPhone paired", GOOD)
+            self.qr.hide()
         else:
-            self.phone_label.config(text="Scan this code with the OW Queue app on your iPhone", fg=MUTED)
-            if not self.qr.winfo_ismapped():
-                self.qr.pack(pady=(14, 0), before=self.button)
+            self._set(self.phone_label, "Scan this code with the OW Queue app on your iPhone", MUTED)
             if self._qr_for != self.pair_id:
                 self._draw_qr()
+            self.qr.show()
 
-        self.server_label.config(text="" if self.relay.reachable else "Can't reach the notification server — retrying")
+        self._set(self.server_label, "Can't reach the notification server — retrying", WARN)
+        self.server_label.setVisible(not self.relay.reachable)
 
     def _draw_qr(self):
         code = qrcode.QRCode(border=2, error_correction=qrcode.constants.ERROR_CORRECT_M)
         code.add_data("owq://pair?id=%s" % self.pair_id)
         code.make(fit=True)
         matrix = code.get_matrix()
-        cell = 232 // len(matrix)
-        offset = (232 - cell * len(matrix)) // 2
-        self.qr.delete("all")
+        ratio = self.devicePixelRatioF()
+        pixmap = QPixmap(round(QR_SIZE * ratio), round(QR_SIZE * ratio))
+        pixmap.setDevicePixelRatio(ratio)
+        pixmap.fill(QColor("white"))
+        cell = QR_SIZE // len(matrix)
+        offset = (QR_SIZE - cell * len(matrix)) // 2
+        painter = QPainter(pixmap)
         for y, row in enumerate(matrix):
             for x, dark in enumerate(row):
                 if dark:
-                    x0, y0 = offset + x * cell, offset + y * cell
-                    self.qr.create_rectangle(x0, y0, x0 + cell, y0 + cell, fill="black", width=0)
+                    painter.fillRect(offset + x * cell, offset + y * cell, cell, cell, QColor("black"))
+        painter.end()
+        self.qr.setPixmap(pixmap)
         self._qr_for = self.pair_id
 
     def reset(self):
-        if not messagebox.askyesno("Reset QR code", "Make a new pairing code?\n\n"
-                                   "Your iPhone will stop getting updates until it scans the new code."):
+        answer = QMessageBox.question(self, "Reset QR code", "Make a new pairing code?\n\n"
+                                      "Your iPhone will stop getting updates until it scans the new code.")
+        if answer != QMessageBox.StandardButton.Yes:
             return
         try:
             self.pair_id = new_pair_id()
         except OSError as problem:
-            messagebox.showerror("Reset QR code", "Couldn't save the new code: %s" % problem)
+            QMessageBox.critical(self, "Reset QR code", "Couldn't save the new code: %s" % problem)
             return
         log.info("Pairing reset")
         self.relay.change_pair(self.pair_id)
+        self.refresh()
 
 
 def main():
     setup_logging()
-    if os.name == "nt":
-        try:
-            ctypes.windll.shcore.SetProcessDpiAwareness(2)
-        except Exception:  # noqa: BLE001
-            pass
     pair_id = load_pair_id()
     relay = Relay(pair_id, log=log.info)
     watcher = Watcher(relay)
@@ -263,15 +307,11 @@ def main():
     threading.Thread(target=watcher.run, args=(stop,), daemon=True).start()
     threading.Thread(target=watcher.role_select.prefetch, daemon=True).start()
 
-    root = tk.Tk()
-    App(root, pair_id, relay, watcher)
-
-    def close():
-        stop.set()
-        root.destroy()
-
-    root.protocol("WM_DELETE_WINDOW", close)
-    root.mainloop()
+    app = QApplication(sys.argv)
+    app.aboutToQuit.connect(stop.set)
+    window = App(pair_id, relay, watcher)
+    window.show()
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":

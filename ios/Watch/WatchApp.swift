@@ -66,6 +66,7 @@ final class WatchModel: NSObject, ObservableObject, WCSessionDelegate {
     private var active = false
     private var launched = false
     private var pollTask: Task<Void, Never>?
+    private var alertedFoundAt: Double?
 
     func launch() {
         guard !launched, WCSession.isSupported() else { return }
@@ -127,9 +128,9 @@ final class WatchModel: NSObject, ObservableObject, WCSessionDelegate {
     }
 
     private func apply(_ new: QueueStatus) {
-        let old = status
         status = new
-        if new.state == .found, old.state != .found, new.isFreshMatch, active {
+        if new.state == .found, new.isFreshMatch, active, alertedFoundAt != new.foundAt {
+            alertedFoundAt = new.foundAt
             buzz()
         }
     }

@@ -34,6 +34,12 @@ class Detector:
         end = self.found_at if self.state == FOUND and self.found_at is not None else now
         return max(0.0, end - self.started_at)
 
+    def since_found(self, now):
+        """Seconds since the match was found, 0 when there isn't one."""
+        if self.state != FOUND or self.found_at is None:
+            return 0.0
+        return max(0.0, now - self.found_at)
+
     def step(self, now, reading, mode, role_select=None):
         """Feeds one presence reading. `role_select` is the vision result if it was checked:
         True (role screen showing), False (not showing) or None (not checked / couldn't look)."""

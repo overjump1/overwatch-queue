@@ -1,6 +1,9 @@
-import { activityPayload, IDLE, nextStatus, pushesFor, Status } from "../src/logic";
+import { activityPayload, advance, IDLE, nextStatus, parseReport, pushesFor, Report, Status } from "../src/logic";
 
-const queueing = (mode: Status["mode"] = "competitive"): Status => nextStatus(IDLE, { state: "queueing", mode, elapsed: 5 }, 1000);
+const report = (state: Report["state"], elapsed = 0, sinceFound = 0, mode: Report["mode"] = "competitive"): Report =>
+  ({ state, mode, elapsed, sinceFound });
+const queueing = (mode: Status["mode"] = "competitive"): Status => nextStatus(IDLE, report("queueing", 5, 0, mode), 1000);
+const found = (): Status => nextStatus(queueing(), report("found", 300), 1300);
 
 describe("transitions", () => {
   it("starts the activity when a queue begins", () => {
@@ -11,49 +14,115 @@ describe("transitions", () => {
 
   it("sends nothing for a repeated report and keeps the start time", () => {
     const first = queueing();
-    const again = nextStatus(first, { state: "queueing", mode: "competitive", elapsed: 0 }, 1100);
+    const again = nextStatus(first, report("queueing"), 1100);
     expect(again.startedAt).toBe(995);
     expect(pushesFor(first, again)).toEqual([]);
   });
 
   it("alerts on match found and keeps the queue start", () => {
     const first = queueing();
-    const found = nextStatus(first, { state: "found", mode: "competitive", elapsed: 300 }, 1300);
-    expect(found).toEqual({ state: "found", mode: "competitive", startedAt: 995, foundAt: 1300 });
-    expect(pushesFor(first, found)).toEqual([{ kind: "update", alert: "found" }, { kind: "matchAlert" }]);
+    const next = found();
+    expect(next).toEqual({ state: "found", mode: "competitive", startedAt: 995, foundAt: 1300 });
+    expect(pushesFor(first, next)).toEqual([{ kind: "update", alert: "found" }, { kind: "matchAlert" }]);
   });
 
-  it("ends the activity when the queue is left", () => {
+  it("turns into a quiet 'in a match' a minute after the match is found", () => {
+    const match = found();
+    expect(advance(match, 1359)).toBe(match);
+    const playing = advance(match, 1360);
+    expect(playing).toEqual({ ...match, state: "playing" });
+    expect(pushesFor(match, playing)).toEqual([{ kind: "update" }]);
+  });
+
+  it("never announces the same match twice, however long it lasts", () => {
+    let status = found();
+    for (let now = 1360; now < 1300 + 3600; now += 60) {
+      const next = nextStatus(status, report("found", 300, now - 1300), now);
+      expect(next.foundAt).toBe(1300);
+      expect(pushesFor(status, next).filter((push) => "alert" in push && push.alert)).toEqual([]);
+      status = next;
+    }
+    expect(status.state).toBe("playing");
+  });
+
+  it("picks up a match it heard about late without alerting", () => {
+    const late = nextStatus(IDLE, report("found", 120, 600), 5000);
+    expect(late).toEqual({ state: "playing", mode: "competitive", startedAt: 4280, foundAt: 4400 });
+    expect(pushesFor(IDLE, late)).toEqual([{ kind: "start" }]);
+  });
+
+  it("quietly confirms a cancelled queue for a minute", () => {
     const first = queueing();
-    expect(pushesFor(first, nextStatus(first, { state: "idle", mode: null, elapsed: 0 }, 1010))).toEqual([{ kind: "end" }]);
+    const cancelled = nextStatus(first, report("idle"), 1010);
+    expect(cancelled).toEqual(IDLE);
+    expect(pushesFor(first, cancelled)).toEqual([{ kind: "end", linger: 60 }]);
+  });
+
+  it("starts a fresh queue after a cancel", () => {
+    const cancelled = nextStatus(queueing(), report("idle"), 1010);
+    const again = nextStatus(cancelled, report("queueing", 2), 1100);
+    expect(again.startedAt).toBe(1098);
+    expect(pushesFor(cancelled, again)).toEqual([{ kind: "start", alert: "queue" }]);
+  });
+
+  it("leaves 'Not in queue' up for a while when a match ends", () => {
+    const playing = advance(found(), 2000);
+    expect(pushesFor(playing, nextStatus(playing, report("idle"), 2500))).toEqual([{ kind: "end", linger: 600 }]);
+  });
+
+  it("leaves 'Not in queue' up when a match ends within its first minute", () => {
+    const match = found();
+    expect(pushesFor(match, nextStatus(match, report("idle"), 1320))).toEqual([{ kind: "end", linger: 600 }]);
   });
 
   it("restarts after a found match goes back to queue", () => {
-    const found = nextStatus(queueing(), { state: "found", mode: "competitive", elapsed: 0 }, 1300);
-    const again = nextStatus(found, { state: "queueing", mode: "competitive", elapsed: 0 }, 1400);
+    const again = nextStatus(found(), report("queueing"), 1400);
     expect(again.startedAt).toBe(1400);
-    expect(pushesFor(found, again)).toEqual([{ kind: "end" }, { kind: "start", alert: "queue" }]);
+    expect(pushesFor(found(), again)).toEqual([{ kind: "end" }, { kind: "start", alert: "queue" }]);
   });
 
   it("updates quietly on a mode change", () => {
     const first = queueing("quickPlay");
-    const next = nextStatus(first, { state: "queueing", mode: "competitive", elapsed: 0 }, 1010);
+    const next = nextStatus(first, report("queueing"), 1010);
     expect(pushesFor(first, next)).toEqual([{ kind: "update" }]);
+  });
+});
+
+describe("reports", () => {
+  it("rejects 'playing', which only the worker decides", () => {
+    expect(parseReport({ state: "playing", mode: null, elapsed: 0 })).toBeNull();
+  });
+
+  it("treats a missing sinceFound as a match found just now", () => {
+    expect(parseReport({ state: "found", mode: "arcade", elapsed: 12 })).toEqual(
+      { state: "found", mode: "arcade", elapsed: 12, sinceFound: 0 });
   });
 });
 
 describe("payload", () => {
   it("builds a found alert with sound", () => {
-    const found: Status = { state: "found", mode: "quickPlay", startedAt: 1000, foundAt: 1125 };
-    const aps = activityPayload("update", found, 1125, "found");
+    const match: Status = { state: "found", mode: "quickPlay", startedAt: 1000, foundAt: 1125 };
+    const aps = activityPayload("update", match, 1125, "found");
     expect(aps.alert).toEqual({ title: "Match found!", body: "Quick Play · waited 2:05", sound: "match_found.caf" });
     expect(aps["interruption-level"]).toBe("time-sensitive");
-    expect(aps["content-state"]).toEqual(found);
+    expect(aps["content-state"]).toEqual(match);
+  });
+
+  it("sends quiet updates without an alert", () => {
+    const aps = activityPayload("update", advance(found(), 2000), 2000);
+    expect(aps.alert).toBeUndefined();
+    expect(aps["interruption-level"]).toBeUndefined();
   });
 
   it("names the attributes type on start", () => {
     const aps = activityPayload("start", queueing(), 1000, "queue");
     expect(aps["attributes-type"]).toBe("QueueActivityAttributes");
     expect(aps.attributes).toEqual({});
+  });
+
+  it("keeps an ended activity on screen for its linger time", () => {
+    expect(activityPayload("end", IDLE, 2000)["dismissal-date"]).toBe(2000);
+    expect(activityPayload("end", IDLE, 2000, undefined, 600)["dismissal-date"]).toBe(2600);
+    expect(activityPayload("end", IDLE, 2000)["content-state"]).toEqual(IDLE);
   });
 });
