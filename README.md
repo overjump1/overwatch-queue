@@ -22,6 +22,10 @@ Only two things make a sound: a queue starting ("In queue") and a match being fo
 
 ## Windows app
 
+Download `OWQueue-Setup-<version>.exe` from [Releases](https://github.com/overjump1/overwatch-queue/releases) and run it. It installs for your user only (no admin prompt) and can start the app when you sign in.
+
+To run from source:
+
 ```
 pip install -r pc/requirements.txt
 python pc/app.py
@@ -30,6 +34,22 @@ python pc/app.py
 Scan the QR code with the iPhone app. **Reset QR code** makes a new code; the old one stops working right away. Logs are in `%APPDATA%\OWQueue\owqueue.log`.
 
 If Battle.net runs as administrator, the app has to run as administrator as well, or it can't read Battle.net's memory.
+
+### Releasing
+
+The `Windows app` workflow builds the app with PyInstaller (`pc/owqueue.spec`) and packs it into a setup exe with Inno Setup (`pc/installer.iss`). Pull requests and pushes to `main` upload the installer as a workflow artifact. To publish a release, push a version tag:
+
+```
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+To build locally, install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then from the repo root:
+
+```
+pip install -r pc/requirements.txt pyinstaller
+pyinstaller --noconfirm pc/owqueue.spec
+iscc /DAppVersion=1.0.0 pc\installer.iss
+```
 
 ## Worker
 
