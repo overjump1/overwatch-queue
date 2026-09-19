@@ -117,6 +117,19 @@ export function alertMessage(token: string, title: string, body: string): object
   };
 }
 
+/** A silent push that wakes the app in the background so it re-registers its current tokens. */
+export function wakeMessage(token: string): object {
+  return {
+    message: {
+      token,
+      apns: {
+        headers: { "apns-priority": "5", "apns-push-type": "background" },
+        payload: { aps: { "content-available": 1 } },
+      },
+    },
+  };
+}
+
 export async function send(account: ServiceAccount, message: object): Promise<FcmResult> {
   const token = await accessToken(account);
   const response = await fetch(`https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`, {

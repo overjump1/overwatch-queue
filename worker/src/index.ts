@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { alertMessage, FcmResult, liveActivityMessage, parseServiceAccount, send } from "./fcm";
+import { alertMessage, FcmResult, liveActivityMessage, parseServiceAccount, send, wakeMessage } from "./fcm";
 import {
   activityPayload, advance, foundBody, IDLE, nextStatus, parseReport, PLAYING_AFTER_SECONDS, Push, pushesFor, Status,
 } from "./logic";
@@ -23,8 +23,6 @@ interface Watch {
 type Reply = { status: number; body: unknown };
 
 const PC_SILENT_SECONDS = 180;
-const START_RETRY_SECONDS = 6;
-const START_RETRIES = 2;
 
 const PAIR_ID = /^[0-9a-f]{32}$/;
 const FCM_TOKEN = /^[A-Za-z0-9_:-]{20,4096}$/;
@@ -58,7 +56,6 @@ export class Pair extends DurableObject<Env> {
       await this.ctx.storage.put("status", next);
       await this.ctx.storage.put("reportedAt", now);
       const pushes = pushesFor(prev, next);
-      if (pushes.length) await this.ctx.storage.put("retries", 0);
       for (const push of pushes) await this.deliver(push, next, now);
       await this.schedule(next);
       return { status: 200, body: { status: next } };
@@ -81,14 +78,24 @@ export class Pair extends DurableObject<Env> {
       const fcm = token(input.fcm, FCM_TOKEN);
       const startToken = token(input.startToken, ACTIVITY_TOKEN);
       const updateToken = token(input.updateToken, ACTIVITY_TOKEN);
+      const newStartToken = startToken !== undefined && startToken !== phone.startToken;
       if (fcm) phone.fcm = fcm;
       if (startToken) phone.startToken = startToken;
       if (updateToken) phone.updateToken = updateToken;
       if (typeof input.activitiesEnabled === "boolean") phone.activitiesEnabled = input.activitiesEnabled;
       await this.ctx.storage.put("phone", phone);
+      console.log(`register fcm=${tail(fcm)} start=${tail(startToken)}${newStartToken ? " (new)" : ""}`
+        + ` update=${tail(updateToken)} running=${String(input.activityRunning)}`);
 
       const status = await this.status();
-      if (updateToken && status.state !== "idle") await this.deliver({ kind: "update" }, status, Date.now() / 1000);
+      const now = Date.now() / 1000;
+      if (updateToken && status.state !== "idle") {
+        await this.deliver({ kind: "update" }, status, now);
+      } else if (newStartToken && status.state !== "idle" && !phone.updateToken && input.activityRunning === false) {
+        // The start we sent went to a push-to-start token iOS had already replaced, so it
+        // showed as a plain banner at most. Now that we have the current one, start it for real.
+        await this.deliver({ kind: "start", alert: startAlert(status) }, status, now);
+      }
       return { status: 200, body: {} };
     });
   }
@@ -129,14 +136,6 @@ export class Pair extends DurableObject<Env> {
         await this.ctx.storage.put("status", advanced);
         for (const push of pushesFor(status, advanced)) await this.deliver(push, advanced, now);
       }
-      const phone = await this.phone();
-      const retries = (await this.ctx.storage.get<number>("retries")) ?? 0;
-      if (advanced.state === "queueing" && !phone.updateToken && retries < START_RETRIES) {
-        // Needs its alert: iOS drops a push-to-start without one. The "In queue" alert is
-        // silent, so if the first start did arrive this is at worst a second quiet banner.
-        await this.ctx.storage.put("retries", retries + 1);
-        await this.deliver({ kind: "start", alert: "queue" }, advanced, now);
-      }
       await this.schedule(advanced);
     });
   }
@@ -148,11 +147,6 @@ export class Pair extends DurableObject<Env> {
     if (status.state !== "idle") {
       const reportedAt = (await this.ctx.storage.get<number>("reportedAt")) ?? now / 1000;
       times.push((reportedAt + PC_SILENT_SECONDS) * 1000);
-    }
-    const phone = await this.phone();
-    const retries = (await this.ctx.storage.get<number>("retries")) ?? 0;
-    if (status.state === "queueing" && phone.startToken && !phone.updateToken && retries < START_RETRIES) {
-      times.push(now + START_RETRY_SECONDS * 1000);
     }
     if (times.length) await this.ctx.storage.setAlarm(Math.max(Math.min(...times), now + 1000));
     else await this.ctx.storage.deleteAlarm();
@@ -195,8 +189,15 @@ export class Pair extends DurableObject<Env> {
       const linger = push.kind === "end" ? push.linger ?? 0 : 0;
       const payload = activityPayload(push.kind, status, now, alert, linger);
       const result = await this.fcm(liveActivityMessage(phone.fcm, activityToken, payload));
+      console.log(`push ${push.kind}${alert ? ` (${alert})` : ""} -> ${tail(activityToken)}: `
+        + (result ? `${result.status}${result.error ? ` ${result.error}` : ""}` : "unreachable"));
 
-      if (push.kind === "end" || push.kind === "start") delete phone.updateToken;
+      if (push.kind === "end" || push.kind === "start") {
+        delete phone.updateToken;
+        // iOS can swap the push-to-start token once it has used it, and a new activity has a new
+        // update token. Wake the app so it reports both instead of waiting until it's next opened.
+        await this.fcm(wakeMessage(phone.fcm));
+      }
       const tokenDead = result !== null && dead(result);
       if (tokenDead) {
         if (push.kind === "start") delete phone.startToken;
@@ -220,6 +221,15 @@ export class Pair extends DurableObject<Env> {
       return null;
     }
   }
+}
+
+function startAlert(status: Status): "queue" | "found" | "playing" {
+  return status.state === "queueing" ? "queue" : status.state === "found" ? "found" : "playing";
+}
+
+/** The end of a token, enough to tell tokens apart in the logs. */
+function tail(value: string | undefined): string {
+  return value ? `…${value.slice(-8)}` : "-";
 }
 
 function dead(result: FcmResult): boolean {

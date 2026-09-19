@@ -18,6 +18,8 @@ final class AppModel: ObservableObject {
     private var fcmToken: String?
     private var startToken: String?
     private var updateToken: String?
+    /// The activity `updateToken` belongs to, so the token is dropped once that activity ends.
+    private var updateTokenActivityID: String?
     private var active = false
     private var launched = false
     private var pollTask: Task<Void, Never>?
@@ -48,6 +50,12 @@ final class AppModel: ObservableObject {
         if let newest = Activity<QueueActivityAttributes>.activities.last {
             observe(newest)
         }
+    }
+
+    /// A silent push from the worker woke the app: report the current tokens.
+    func refreshTokens() async {
+        launch()
+        await register()
     }
 
     func setActive(_ isActive: Bool) {
@@ -109,9 +117,16 @@ final class AppModel: ObservableObject {
 
     private func register() async {
         guard let id = pairID else { return }
+        // Often called while iOS has only briefly woken the app; don't get suspended mid-request.
+        let task = UIApplication.shared.beginBackgroundTask(withName: "register")
+        defer { UIApplication.shared.endBackgroundTask(task) }
+        if let current = Activity<QueueActivityAttributes>.pushToStartToken {
+            startToken = current.hex
+        }
         var body: [String: Any] = [
             "kind": "phone",
             "activitiesEnabled": ActivityAuthorizationInfo().areActivitiesEnabled,
+            "activityRunning": hasRunningActivity,
         ]
         if let fcmToken { body["fcm"] = fcmToken }
         if let startToken { body["startToken"] = startToken }
@@ -158,7 +173,16 @@ final class AppModel: ObservableObject {
         Task {
             for await data in activity.pushTokenUpdates {
                 updateToken = data.hex
+                updateTokenActivityID = activity.id
                 await register()
+            }
+        }
+        Task {
+            for await state in activity.activityStateUpdates where state == .ended || state == .dismissed {
+                if updateTokenActivityID == activity.id {
+                    updateToken = nil
+                    updateTokenActivityID = nil
+                }
             }
         }
         Task {
