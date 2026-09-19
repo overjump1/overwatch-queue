@@ -1,6 +1,8 @@
 package com.tomerady.overwatchqueue
 
 import android.content.Context
+import android.util.Log
+import androidx.core.app.NotificationManagerCompat
 import com.google.firebase.messaging.FirebaseMessaging
 import com.tomerady.overwatchqueue.shared.MatchAlert
 import com.tomerady.overwatchqueue.shared.Pairing
@@ -16,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
@@ -30,7 +33,17 @@ class QueueRepository private constructor(context: Context) {
         val pairingWasReset: Boolean = false,
         /** Goes up by one for each match found while the app is open, to flash the screen. */
         val matchAlerts: Int = 0,
+        /** Why notifications won't arrive, if they won't. Shown on the queue screen. */
+        val notificationProblem: NotificationProblem? = null,
     )
+
+    enum class NotificationProblem {
+        /** The user turned the app's notifications off. */
+        DISABLED,
+
+        /** The worker doesn't have this phone's push token yet, so it can't send it anything. */
+        NOT_REGISTERED,
+    }
 
     private val context = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -39,14 +52,26 @@ class QueueRepository private constructor(context: Context) {
     val state: StateFlow<UiState> = _state.asStateFlow()
 
     @Volatile private var fcmToken: String? = null
+    /** The pairing and token the worker last accepted; anything else still needs registering. */
+    @Volatile private var registeredAs: Pair<String, String>? = null
+    private var registerJob: Job? = null
     private var active = false
     private var lastPushAt = 0L
     /** The match the screen already flashed for, so the same match never flashes twice. */
     private var flashedFoundAt: Double? = null
 
     fun start() {
-        runCatching {
-            FirebaseMessaging.getInstance().token.addOnSuccessListener { setFcmToken(it) }
+        requestFcmToken()
+    }
+
+    private fun requestFcmToken() {
+        try {
+            FirebaseMessaging.getInstance().token
+                .addOnSuccessListener { setFcmToken(it) }
+                .addOnFailureListener { Log.w(TAG, "No FCM token", it) }
+        } catch (e: IllegalStateException) {
+            // Firebase isn't configured in this build (no google-services.json).
+            Log.w(TAG, "Firebase isn't set up", e)
         }
     }
 
@@ -54,9 +79,11 @@ class QueueRepository private constructor(context: Context) {
     suspend fun poll() {
         active = true
         try {
-            register()
             while (true) {
+                // Retried on every tick until it sticks: a phone the worker doesn't know gets no pushes.
+                if (fcmToken == null) requestFcmToken() else if (!isRegistered()) register()
                 refresh()
+                updateNotificationProblem()
                 delay(2_000)
             }
         } finally {
@@ -67,7 +94,7 @@ class QueueRepository private constructor(context: Context) {
     fun setFcmToken(token: String) {
         if (token == fcmToken) return
         fcmToken = token
-        scope.launch { register() }
+        registerSoon()
     }
 
     /** Returns false if [text] isn't a pairing code. */
@@ -75,14 +102,14 @@ class QueueRepository private constructor(context: Context) {
         val id = Pairing.parse(text) ?: return false
         Pairing.save(context, id)
         _state.update { it.copy(pairId = id, pairingWasReset = false, status = QueueStatus.Idle) }
-        scope.launch {
-            register()
-            refresh()
-        }
+        registerSoon()
+        scope.launch { refresh() }
         return true
     }
 
     fun unpair() {
+        registerJob?.cancel()
+        registeredAs = null
         Pairing.save(context, null)
         _state.update { it.copy(pairId = null, status = QueueStatus.Idle) }
         QueueNotifier.cancel(context)
@@ -114,18 +141,65 @@ class QueueRepository private constructor(context: Context) {
                 if (status != null && id == _state.value.pairId) apply(status, fromPush = false)
             }
             Worker.Result.Reset -> handleReset(id)
-            Worker.Result.Failed -> _state.update { it.copy(reachable = false) }
+            is Worker.Result.Failed -> _state.update { it.copy(reachable = false) }
         }
     }
 
-    private suspend fun register() {
-        val id = _state.value.pairId ?: return
-        val token = fcmToken ?: return
+    private fun isRegistered(): Boolean {
+        val id = _state.value.pairId ?: return true
+        val token = fcmToken ?: return false
+        return registeredAs == id to token
+    }
+
+    /**
+     * Registers now, and keeps retrying with a growing wait until the worker accepts it. Also runs
+     * with the app closed (a new FCM token arrives in the background), when nothing polls.
+     */
+    @Synchronized
+    private fun registerSoon() {
+        registerJob?.cancel()
+        registerJob = scope.launch {
+            var wait = 5_000L
+            while (!register()) {
+                delay(wait)
+                wait = (wait * 2).coerceAtMost(5 * 60_000L)
+            }
+        }
+    }
+
+    /** Returns true once the worker has this phone's token, or there's nothing to register. */
+    private suspend fun register(): Boolean {
+        val id = _state.value.pairId ?: return true
+        val token = fcmToken ?: return true
+        if (registeredAs == id to token) return true
         val body = buildJsonObject {
             put("kind", "android")
             put("fcm", token)
         }
-        if (Worker.register(id, body) == Worker.Result.Reset) handleReset(id)
+        return when (val result = Worker.register(id, body)) {
+            is Worker.Result.Ok -> {
+                registeredAs = id to token
+                updateNotificationProblem()
+                true
+            }
+            Worker.Result.Reset -> {
+                handleReset(id)
+                true
+            }
+            is Worker.Result.Failed -> {
+                Log.w(TAG, "Registering with the worker failed: ${result.reason}")
+                false
+            }
+        }
+    }
+
+    private fun updateNotificationProblem() {
+        val problem = when {
+            !NotificationManagerCompat.from(context).areNotificationsEnabled() -> NotificationProblem.DISABLED
+            _state.value.pairId != null && !isRegistered() -> NotificationProblem.NOT_REGISTERED
+            else -> null
+        }
+        _state.update { it.copy(notificationProblem = problem) }
     }
 
     private fun handleReset(id: String) {
@@ -164,6 +238,8 @@ class QueueRepository private constructor(context: Context) {
     }
 
     companion object {
+        private const val TAG = "OWQueue"
+
         @Volatile private var instance: QueueRepository? = null
 
         fun get(context: Context): QueueRepository =

@@ -251,11 +251,11 @@ class App(QWidget):
         else:
             self._set(self.bnet_label, "● Battle.net not found — open it and log in", WARN)
 
-        if self.relay.phone_paired:
-            self._set(self.phone_label, "● iPhone paired", GOOD)
+        if self.relay.paired:
+            self._set(self.phone_label, "● %s paired" % " and ".join(self.relay.paired), GOOD)
             self.qr.hide()
         else:
-            self._set(self.phone_label, "Scan this code with the OW Queue app on your iPhone", MUTED)
+            self._set(self.phone_label, "Scan this code with the OW Queue app on your phone", MUTED)
             if self._qr_for != self.pair_id:
                 self._draw_qr()
             self.qr.show()
@@ -285,7 +285,7 @@ class App(QWidget):
 
     def reset(self):
         answer = QMessageBox.question(self, "Reset QR code", "Make a new pairing code?\n\n"
-                                      "Your iPhone will stop getting updates until it scans the new code.")
+                                      "Your phone will stop getting updates until it scans the new code.")
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:

@@ -44,7 +44,7 @@ def _report(pending):
 class Relay:
     def __init__(self, pair_id, log=print):
         self.log = log
-        self.phone_paired = False
+        self.paired = []  # names of the phones that registered with this pairing, e.g. ["iPhone"]
         self.reachable = True
         self._pair_id = pair_id
         self._pending = None
@@ -66,12 +66,12 @@ class Relay:
             self._pair_id = pair_id
             if self._pending is None:
                 self._pending = self._last_sent
-            self.phone_paired = False
+            self.paired = []
             self._next_check = 0.0
         self._wake.set()
 
     def run(self, stop):
-        """Delivers the latest state and checks whether a phone is paired. The watcher
+        """Delivers the latest state and checks which phones are paired. The watcher
         re-publishes the state every minute so the worker can tell the PC is still there."""
         backoff = 1
         while not stop.is_set():
@@ -82,7 +82,7 @@ class Relay:
                 if time.monotonic() >= self._next_check:
                     self._check_paired()
                     with self._lock:
-                        wait = PAIRED_CHECK_SECONDS if self.phone_paired else UNPAIRED_CHECK_SECONDS
+                        wait = PAIRED_CHECK_SECONDS if self.paired else UNPAIRED_CHECK_SECONDS
                         self._next_check = time.monotonic() + wait
                 self.reachable = True
                 backoff = 1
@@ -118,9 +118,11 @@ class Relay:
         with self._lock:
             pair_id = self._pair_id
         status, body = _request("GET", "/v1/pair/%s/state" % pair_id)
+        body = body if status == 200 and isinstance(body, dict) else {}
+        paired = [name for name, key in (("iPhone", "phonePaired"), ("Android", "androidPaired")) if body.get(key)]
         with self._lock:
             if pair_id == self._pair_id:
-                self.phone_paired = status == 200 and bool(body and body.get("phonePaired"))
+                self.paired = paired
 
     def _delete_stale(self):
         with self._lock:

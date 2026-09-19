@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material.icons.filled.Settings
@@ -141,6 +142,16 @@ fun QueueScreen(state: QueueRepository.UiState, onScan: () -> Unit, onUnpair: ()
                 Icon(Icons.Filled.WifiOff, contentDescription = null, tint = Orange, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Can't reach the server — retrying", fontSize = 13.sp, color = Orange)
+            }
+        } else if (state.notificationProblem != null) {
+            val text = when (state.notificationProblem) {
+                QueueRepository.NotificationProblem.DISABLED -> "Notifications are off — turn them on in Settings"
+                QueueRepository.NotificationProblem.NOT_REGISTERED -> "Signing up for notifications — retrying"
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.NotificationsOff, contentDescription = null, tint = Orange, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(text, fontSize = 13.sp, color = Orange)
             }
         }
     }

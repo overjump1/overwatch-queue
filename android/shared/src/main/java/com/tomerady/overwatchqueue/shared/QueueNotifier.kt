@@ -106,6 +106,7 @@ object QueueNotifier {
                 .timer(status.foundAt)
             QueueState.IDLE -> Unit
         }
+        if (channel == MATCH_CHANNEL) cancel(context)
         post(context, builder)
     }
 

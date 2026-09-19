@@ -1,10 +1,10 @@
 package com.tomerady.overwatchqueue.shared
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -22,7 +22,8 @@ object Worker {
         /** The PC made a new pairing code; this one no longer works. */
         data object Reset : Result
 
-        data object Failed : Result
+        /** [reason] says why, for the log: an HTTP status or the network error. */
+        data class Failed(val reason: String) : Result
     }
 
     suspend fun fetchStatus(pairId: String): Result =
@@ -58,13 +59,19 @@ object Worker {
                         val text = connection.inputStream.bufferedReader().use { it.readText() }
                         Result.Ok(runCatching { decode(text) }.getOrNull())
                     }
-                    else -> Result.Failed
+                    else -> {
+                        val text = runCatching { connection.errorStream?.bufferedReader()?.use { it.readText() } }.getOrNull()
+                        Result.Failed("HTTP ${connection.responseCode} ${text.orEmpty()}".trim())
+                    }
                 }
             } finally {
                 connection.disconnect()
             }
-        } catch (e: IOException) {
-            Result.Failed
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // IOException for the network; anything else (a malformed URL, a bad reply) is a failure too.
+            Result.Failed(e.toString())
         }
     }
 }
