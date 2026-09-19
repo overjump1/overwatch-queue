@@ -45,10 +45,10 @@ describe("transitions", () => {
     expect(status.state).toBe("playing");
   });
 
-  it("picks up a match it heard about late without alerting", () => {
+  it("picks up a match it heard about late with a silent banner", () => {
     const late = nextStatus(IDLE, report("found", 120, 600), 5000);
     expect(late).toEqual({ state: "playing", mode: "competitive", startedAt: 4280, foundAt: 4400 });
-    expect(pushesFor(IDLE, late)).toEqual([{ kind: "start" }]);
+    expect(pushesFor(IDLE, late)).toEqual([{ kind: "start", alert: "playing" }]);
   });
 
   it("quietly confirms a cancelled queue for a minute", () => {
@@ -106,6 +106,12 @@ describe("payload", () => {
     expect(aps.alert).toEqual({ title: "Match found!", body: "Quick Play · waited 2:05", sound: "match_found.caf" });
     expect(aps["interruption-level"]).toBe("time-sensitive");
     expect(aps["content-state"]).toEqual(match);
+  });
+
+  it("builds a silent banner for a match picked up late", () => {
+    const aps = activityPayload("start", advance(found(), 2000), 2000, "playing");
+    expect(aps.alert).toEqual({ title: "In a match", body: "Competitive" });
+    expect(aps["interruption-level"]).toBeUndefined();
   });
 
   it("sends quiet updates without an alert", () => {
