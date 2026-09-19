@@ -1,0 +1,102 @@
+name: iOS app
+
+# Pull requests build an unsigned IPA as a workflow artifact. Releases come from release.yml.
+# TestFlight builds still come from Xcode Cloud; this IPA is for sideloading (AltStore, Sideloadly),
+# which signs it with your own Apple ID.
+on:
+  pull_request:
+    paths:
+      - "ios/**"
+      - "project.yml"
+      - "OverwatchQueue.xcodeproj/**"
+      - ".github/workflows/ios-app.yml"
+  # The Release workflow calls this when the app changed since the last release.
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      build-number:
+        type: number
+        required: false
+        default: 1
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Firebase config
+        env:
+          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
+          WATCH_GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.WATCH_GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          write_config() {
+            if [ -n "$1" ]; then
+              printf '%s' "$1" | base64 --decode > "$2"
+            else
+              # Lets the build compile. That app can't get pushes.
+              echo "::warning::$3 secret isn't set; $2 is a placeholder and the app won't get pushes."
+              cat > "$2" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>API_KEY</key><string>placeholder</string>
+            <key>GCM_SENDER_ID</key><string>000000000000</string>
+            <key>BUNDLE_ID</key><string>$4</string>
+            <key>PROJECT_ID</key><string>owqueue-placeholder</string>
+            <key>GOOGLE_APP_ID</key><string>1:000000000000:ios:0000000000000000</string>
+          </dict></plist>
+          EOF
+            fi
+          }
+          write_config "$GOOGLE_SERVICE_INFO_PLIST" ios/iOS/GoogleService-Info.plist \
+            GOOGLE_SERVICE_INFO_PLIST com.tomerady.OverwatchQueue
+          write_config "$WATCH_GOOGLE_SERVICE_INFO_PLIST" ios/Watch/GoogleService-Info.plist \
+            WATCH_GOOGLE_SERVICE_INFO_PLIST com.tomerady.OverwatchQueue.watchkitapp
+
+      - name: Version
+        id: version
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        run: >
+          xcodebuild build
+          -project OverwatchQueue.xcodeproj
+          -scheme OverwatchQueue
+          -configuration Release
+          -destination generic/platform=iOS
+          -derivedDataPath build
+          -skipPackagePluginValidation
+          -skipMacroValidation
+          MARKETING_VERSION=${{ steps.version.outputs.version }}
+          CURRENT_PROJECT_VERSION=${{ inputs.build-number || github.run_number }}
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          CODE_SIGN_IDENTITY=""
+
+      - name: Package IPA
+        run: |
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/OverwatchQueue.app Payload/
+          zip -qry "OWQueue-${{ steps.version.outputs.version }}.ipa" Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OWQueue-${{ steps.version.outputs.version }}-ios
+          path: OWQueue-*.ipa
+          if-no-files-found: error

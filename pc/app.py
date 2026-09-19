@@ -13,7 +13,8 @@ import time
 import qrcode
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QFont, QPainter, QPixmap
-from PyQt6.QtWidgets import QApplication, QFrame, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton,
+                             QVBoxLayout, QWidget)
 
 from detector import FOUND, QUEUEING, Detector
 from presence import Presence
@@ -162,6 +163,7 @@ class App(QWidget):
         self.relay = relay
         self.watcher = watcher
         self._qr_for = None
+        self._qr_requested_with = None  # the phones paired when "Show QR code" was pressed, None when not pressed
 
         self.setWindowTitle("OW Queue")
         self.setStyleSheet(
@@ -198,11 +200,20 @@ class App(QWidget):
         layout.addSpacing(10)
         layout.addWidget(self.qr, alignment=Qt.AlignmentFlag.AlignHCenter)
 
+        self.show_button = QPushButton("Show QR code", font=_font(10))
+        self.show_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.show_button.clicked.connect(self.toggle_qr)
         self.button = QPushButton("Reset QR code", font=_font(10))
         self.button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.button.clicked.connect(self.reset)
+        buttons = QHBoxLayout()
+        buttons.setSpacing(8)
+        buttons.addStretch()
+        buttons.addWidget(self.show_button)
+        buttons.addWidget(self.button)
+        buttons.addStretch()
         layout.addSpacing(10)
-        layout.addWidget(self.button, alignment=Qt.AlignmentFlag.AlignHCenter)
+        layout.addLayout(buttons)
 
         self.timer = QTimer(self, interval=GUI_REFRESH_MS, timeout=self.refresh)
         self.timer.start()
@@ -251,14 +262,23 @@ class App(QWidget):
         else:
             self._set(self.bnet_label, "● Battle.net not found — open it and log in", WARN)
 
-        if self.relay.paired:
-            self._set(self.phone_label, "● %s paired" % " and ".join(self.relay.paired), GOOD)
-            self.qr.hide()
+        paired = list(self.relay.paired)
+        if self._qr_requested_with is not None and not set(paired) <= set(self._qr_requested_with):
+            self._qr_requested_with = None  # another phone just paired, so the code has done its job
+        show_qr = not paired or self._qr_requested_with is not None
+        if paired and show_qr:
+            self._set(self.phone_label, "● %s paired — scan this code with another phone to add it"
+                      % " and ".join(paired), GOOD)
+        elif paired:
+            self._set(self.phone_label, "● %s paired" % " and ".join(paired), GOOD)
         else:
             self._set(self.phone_label, "Scan this code with the OW Queue app on your phone", MUTED)
-            if self._qr_for != self.pair_id:
-                self._draw_qr()
-            self.qr.show()
+        if show_qr and self._qr_for != self.pair_id:
+            self._draw_qr()
+        self.qr.setVisible(show_qr)
+        self.show_button.setText("Hide QR code" if show_qr else "Show QR code")
+        self.show_button.setVisible(bool(paired))
+        self.relay.expect_phone(show_qr)
 
         self._set(self.server_label, "Can't reach the notification server — retrying", WARN)
         self.server_label.setVisible(not self.relay.reachable)
@@ -283,6 +303,10 @@ class App(QWidget):
         self.qr.setPixmap(pixmap)
         self._qr_for = self.pair_id
 
+    def toggle_qr(self):
+        self._qr_requested_with = None if self._qr_requested_with is not None else list(self.relay.paired)
+        self.refresh()
+
     def reset(self):
         answer = QMessageBox.question(self, "Reset QR code", "Make a new pairing code?\n\n"
                                       "Your phone will stop getting updates until it scans the new code.")
@@ -294,6 +318,7 @@ class App(QWidget):
             QMessageBox.critical(self, "Reset QR code", "Couldn't save the new code: %s" % problem)
             return
         log.info("Pairing reset")
+        self._qr_requested_with = None
         self.relay.change_pair(self.pair_id)
         self.refresh()
 
