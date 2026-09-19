@@ -51,6 +51,7 @@ class Relay:
         self._last_sent = None
         self._stale_ids = []
         self._next_check = 0.0
+        self._expecting_phone = False
         self._lock = threading.Lock()
         self._wake = threading.Event()
 
@@ -70,6 +71,14 @@ class Relay:
             self._next_check = 0.0
         self._wake.set()
 
+    def expect_phone(self, expecting):
+        """While the QR code is on screen, check often so a newly scanned phone shows up quickly."""
+        with self._lock:
+            if expecting and not self._expecting_phone:
+                self._next_check = 0.0
+            self._expecting_phone = expecting
+        self._wake.set()
+
     def run(self, stop):
         """Delivers the latest state and checks which phones are paired. The watcher
         re-publishes the state every minute so the worker can tell the PC is still there."""
@@ -82,7 +91,8 @@ class Relay:
                 if time.monotonic() >= self._next_check:
                     self._check_paired()
                     with self._lock:
-                        wait = PAIRED_CHECK_SECONDS if self.paired else UNPAIRED_CHECK_SECONDS
+                        quick = self._expecting_phone or not self.paired
+                        wait = UNPAIRED_CHECK_SECONDS if quick else PAIRED_CHECK_SECONDS
                         self._next_check = time.monotonic() + wait
                 self.reachable = True
                 backoff = 1

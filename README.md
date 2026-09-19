@@ -34,17 +34,15 @@ pip install -r pc/requirements.txt
 python pc/app.py
 ```
 
-Scan the QR code with the iPhone app. **Reset QR code** makes a new code; the old one stops working right away. Logs are in `%APPDATA%\OWQueue\owqueue.log`.
+Scan the QR code with the iPhone or Android app. Once a phone is paired the code is hidden; **Show QR code** brings it back so you can pair another phone (it hides again once that phone pairs). **Reset QR code** makes a new code; the old one stops working right away and every paired phone has to scan again. Logs are in `%APPDATA%\OWQueue\owqueue.log`.
 
 If Battle.net runs as administrator, the app has to run as administrator as well, or it can't read Battle.net's memory.
 
 ### Releasing
 
-The `Windows app` workflow builds the app with PyInstaller (`pc/owqueue.spec`) and packs it into a setup exe with Inno Setup (`pc/installer.iss`). Pull requests and pushes to `main` upload the installer as a workflow artifact. To publish a release, push a version tag:
+Every push to `main` that changes an app publishes a [release](https://github.com/overjump1/overwatch-queue/releases) (`v2.0.<run>`) with the Android APK, the Windows installer and the iPhone IPA. The `Release` workflow only rebuilds the apps whose files changed since the last release (`android/`, `pc/`, or `ios/` + `project.yml` + the Xcode project, plus each app's workflow) and copies the others from that release unchanged. Pushes that don't touch an app (the worker, the README) don't make a release. To rebuild everything, run the `Release` workflow by hand with **Rebuild every app** ticked.
 
-```
-git tag v1.0.0 && git push origin v1.0.0
-```
+The `Windows app` workflow builds the app with PyInstaller (`pc/owqueue.spec`) and packs it into a setup exe with Inno Setup (`pc/installer.iss`). Pull requests upload the installer as a workflow artifact.
 
 To build locally, install [Inno Setup 6](https://jrsoftware.org/isinfo.php), then from the repo root:
 
@@ -79,6 +77,10 @@ To test in the Simulator against a local worker (`npx wrangler dev`), run a Debu
 xcrun simctl openurl booted "owq://pair?id=<id from the PC app>"
 ```
 
+### IPA (GitHub releases)
+
+The `iOS app` workflow builds an unsigned IPA for the GitHub release, for sideloading with AltStore or Sideloadly (they sign it with your Apple ID). TestFlight is still the normal way to install. For the IPA to get pushes, add the same two Firebase configs as GitHub repository secrets `GOOGLE_SERVICE_INFO_PLIST` and `WATCH_GOOGLE_SERVICE_INFO_PLIST`; without them it builds with placeholders.
+
 ## Android app
 
 The Android app is a phone app with the same screens as the iPhone app. The Live Activity becomes an ongoing notification with a running timer; on Android 16 it's shown as a Live Update. The notification uses three channels you can tune in the system settings: *Queue status* (quiet updates), *Queue started* and *Match found* (plays the match sound). A paired Wear OS watch gets these notifications too.
@@ -94,7 +96,9 @@ An iPhone and an Android phone can both be paired to the same PC.
 
 ### Building
 
-The `Android app` workflow runs the unit tests and builds a debug APK. Pull requests and pushes to `main` upload it as a workflow artifact, and `v*` tags attach it to the GitHub release. Install it by opening the APK on your phone (allow installs from unknown sources when asked).
+The `Android app` workflow runs the unit tests and builds a debug APK. Pull requests upload it as a workflow artifact, and the `Release` workflow attaches it to the GitHub release. Install it by opening the APK on your phone (allow installs from unknown sources when asked).
+
+For a new APK to install over the old one, every build has to be signed with the same key. Add your debug keystore as the repository secret `ANDROID_DEBUG_KEYSTORE`, holding `base64 -w0 ~/.android/debug.keystore` (Android Studio creates that file; its password is `android`). Without it, each CI build is signed with a new key and has to be uninstalled before the next one installs.
 
 To build locally, open `android/` in Android Studio, or with JDK 17, the Android SDK and Gradle 8.11:
 
