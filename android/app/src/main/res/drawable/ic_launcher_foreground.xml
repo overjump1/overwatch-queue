@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The iPhone app icon (ios/iOS/Assets.xcassets/AppIcon.appiconset) redrawn inside the adaptive icon's safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Grey track: 9 o'clock to 12 -->
+    <path
+        android:pathData="M28.2,54 A25.8,25.8 0 0,1 54,28.2"
+        android:strokeWidth="6.4"
+        android:strokeColor="#3A3D4A"
+        android:strokeLineCap="round" />
+    <!-- Orange progress: 12 o'clock round to 9 -->
+    <path
+        android:pathData="M54,28.2 A25.8,25.8 0 1,1 28.2,54"
+        android:strokeWidth="6.4"
+        android:strokeColor="#FF9F0A"
+        android:strokeLineCap="round" />
+    <!-- Hands -->
+    <path
+        android:fillColor="#F2F3F5"
+        android:pathData="M52.1,41.1h3.8v12.9h-3.8z M36.9,52.1h17.1v3.8h-17.1z" />
+    <!-- Hub -->
+    <path
+        android:fillColor="#FF9F0A"
+        android:pathData="M54,50.2 A3.8,3.8 0 1,1 54,57.8 A3.8,3.8 0 1,1 54,50.2z" />
+</vector>

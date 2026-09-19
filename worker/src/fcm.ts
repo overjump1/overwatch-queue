@@ -130,6 +130,16 @@ export function wakeMessage(token: string): object {
   };
 }
 
+/**
+ * A high-priority data message for the Android app, which shows the notification itself.
+ * An alert is pointless once it's late, but a quiet update or end still has to land, or the
+ * phone keeps showing a queue that's over. The app drops pushes older than the last one it got.
+ */
+export function androidMessage(token: string, data: Record<string, string>): object {
+  const ttl = data.alert ? "60s" : "3600s";
+  return { message: { token, android: { priority: "HIGH", ttl }, data } };
+}
+
 export async function send(account: ServiceAccount, message: object): Promise<FcmResult> {
   const token = await accessToken(account);
   const response = await fetch(`https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`, {

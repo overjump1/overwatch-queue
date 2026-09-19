@@ -73,5 +73,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/OWQueue-Setup-*.exe \
-            --title "OW Queue $GITHUB_REF_NAME" --generate-notes
+          # The Android workflow may have created the release already.
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --title "OW Queue $GITHUB_REF_NAME" --generate-notes \
+            || true
+          gh release upload "$GITHUB_REF_NAME" dist/OWQueue-Setup-*.exe --clobber
