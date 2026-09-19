@@ -1,4 +1,4 @@
-import { activityPayload, advance, IDLE, nextStatus, parseReport, pushesFor, Report, Status } from "../src/logic";
+import { activityPayload, advance, androidPayload, IDLE, nextStatus, parseReport, pushesFor, Report, Status } from "../src/logic";
 
 const report = (state: Report["state"], elapsed = 0, sinceFound = 0, mode: Report["mode"] = "competitive"): Report =>
   ({ state, mode, elapsed, sinceFound });
@@ -124,5 +124,32 @@ describe("payload", () => {
     expect(activityPayload("end", IDLE, 2000)["dismissal-date"]).toBe(2000);
     expect(activityPayload("end", IDLE, 2000, undefined, 600)["dismissal-date"]).toBe(2600);
     expect(activityPayload("end", IDLE, 2000)["content-state"]).toEqual(IDLE);
+  });
+});
+
+describe("android payload", () => {
+  it("carries the status as JSON and the queue alert on start", () => {
+    const status = queueing();
+    expect(androidPayload({ kind: "start", alert: "queue" }, status, 1000.7)).toEqual(
+      { event: "start", status: JSON.stringify(status), sentAt: "1000", alert: "queue" });
+  });
+
+  it("carries the found alert on the match update", () => {
+    const data = androidPayload({ kind: "update", alert: "found" }, found(), 1300);
+    expect(data?.alert).toBe("found");
+    expect(JSON.parse(data!.status)).toEqual(found());
+  });
+
+  it("sends quiet updates without an alert", () => {
+    expect(androidPayload({ kind: "update" }, found(), 1300)).not.toHaveProperty("alert");
+  });
+
+  it("passes the linger time on end", () => {
+    expect(androidPayload({ kind: "end", linger: 600 }, IDLE, 2000)).toMatchObject({ event: "end", linger: "600" });
+    expect(androidPayload({ kind: "end" }, IDLE, 2000)?.linger).toBe("0");
+  });
+
+  it("skips the watch-only match alert, which the found update already covers", () => {
+    expect(androidPayload({ kind: "matchAlert" }, found(), 1300)).toBeNull();
   });
 });

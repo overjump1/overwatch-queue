@@ -117,6 +117,11 @@ export function alertMessage(token: string, title: string, body: string): object
   };
 }
 
+/** A high-priority data message for the Android app, which shows the notification itself. */
+export function androidMessage(token: string, data: Record<string, string>): object {
+  return { message: { token, android: { priority: "HIGH", ttl: "60s" }, data } };
+}
+
 export async function send(account: ServiceAccount, message: object): Promise<FcmResult> {
   const token = await accessToken(account);
   const response = await fetch(`https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`, {

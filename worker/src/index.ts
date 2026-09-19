@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
-import { alertMessage, FcmResult, liveActivityMessage, parseServiceAccount, send } from "./fcm";
+import { alertMessage, androidMessage, FcmResult, liveActivityMessage, parseServiceAccount, send } from "./fcm";
 import {
-  activityPayload, advance, foundBody, IDLE, nextStatus, parseReport, PLAYING_AFTER_SECONDS, Push, pushesFor, Status,
+  activityPayload, advance, androidPayload, foundBody, IDLE, nextStatus, parseReport, PLAYING_AFTER_SECONDS, Push, pushesFor, Status,
 } from "./logic";
 
 export interface Env {
@@ -18,6 +18,17 @@ interface Phone {
 
 interface Watch {
   fcm?: string;
+}
+
+/**
+ * Android devices, each stored under `device:<kind>` with its FCM token. They all get every state
+ * push as a data message. A Wear OS app would register as a new kind added here.
+ */
+const ANDROID_KINDS = ["android"] as const;
+type AndroidKind = (typeof ANDROID_KINDS)[number];
+
+interface AndroidDevice {
+  fcm: string;
 }
 
 type Reply = { status: number; body: unknown };
@@ -70,6 +81,12 @@ export class Pair extends DurableObject<Env> {
       if (await this.ctx.storage.get("deleted")) return { status: 410, body: { error: "reset" } };
       if (typeof body !== "object" || body === null) return { status: 400, body: { error: "bad_body" } };
       const input = body as Record<string, unknown>;
+      if (ANDROID_KINDS.includes(input.kind as AndroidKind)) {
+        const fcm = token(input.fcm, FCM_TOKEN);
+        if (!fcm) return { status: 400, body: { error: "bad_token" } };
+        await this.ctx.storage.put(`device:${input.kind}`, { fcm } satisfies AndroidDevice);
+        return { status: 200, body: {} };
+      }
       if (input.kind === "watch") {
         const fcm = token(input.fcm, FCM_TOKEN);
         if (!fcm) return { status: 400, body: { error: "bad_token" } };
@@ -88,7 +105,7 @@ export class Pair extends DurableObject<Env> {
       await this.ctx.storage.put("phone", phone);
 
       const status = await this.status();
-      if (updateToken && status.state !== "idle") await this.deliver({ kind: "update" }, status, Date.now() / 1000);
+      if (updateToken && status.state !== "idle") await this.deliverApple({ kind: "update" }, status, Date.now() / 1000);
       return { status: 200, body: {} };
     });
   }
@@ -97,9 +114,15 @@ export class Pair extends DurableObject<Env> {
     if (await this.ctx.storage.get("deleted")) return { status: 410, body: { error: "reset" } };
     const phone = await this.phone();
     const watch = await this.ctx.storage.get<Watch>("watch");
+    const android = await this.ctx.storage.get<AndroidDevice>("device:android");
     return {
       status: 200,
-      body: { status: await this.status(), phonePaired: Boolean(phone.fcm), watchPaired: Boolean(watch?.fcm) },
+      body: {
+        status: await this.status(),
+        phonePaired: Boolean(phone.fcm),
+        watchPaired: Boolean(watch?.fcm),
+        androidPaired: Boolean(android?.fcm),
+      },
     };
   }
 
@@ -134,7 +157,7 @@ export class Pair extends DurableObject<Env> {
       if (advanced.state === "queueing" && !phone.updateToken && retries < START_RETRIES) {
         // Quiet: if the first push-to-start did arrive, a second alert would be a duplicate.
         await this.ctx.storage.put("retries", retries + 1);
-        await this.deliver({ kind: "start" }, advanced, now);
+        await this.deliverApple({ kind: "start" }, advanced, now);
       }
       await this.schedule(advanced);
     });
@@ -165,7 +188,29 @@ export class Pair extends DurableObject<Env> {
     return (await this.ctx.storage.get<Phone>("phone")) ?? {};
   }
 
+  /** Sends a push to every paired device. */
   private async deliver(push: Push, status: Status, now: number): Promise<void> {
+    await this.deliverAndroid(push, status, now);
+    await this.deliverApple(push, status, now);
+  }
+
+  private async deliverAndroid(push: Push, status: Status, now: number): Promise<void> {
+    const data = androidPayload(push, status, now);
+    if (!data) return;
+    for (const kind of ANDROID_KINDS) {
+      try {
+        const device = await this.ctx.storage.get<AndroidDevice>(`device:${kind}`);
+        if (!device) continue;
+        const result = await this.fcm(androidMessage(device.fcm, data));
+        if (result && dead(result)) await this.ctx.storage.delete(`device:${kind}`);
+      } catch (error) {
+        console.log(`deliver ${push.kind} to ${kind} failed: ${String(error)}`);
+      }
+    }
+  }
+
+  /** The iPhone's Live Activity and alerts, and the Watch's alert. */
+  private async deliverApple(push: Push, status: Status, now: number): Promise<void> {
     const phone = await this.phone();
     try {
       if (push.kind === "matchAlert") {
@@ -183,7 +228,7 @@ export class Pair extends DurableObject<Env> {
       if (!phone.fcm) return;
 
       if (push.kind === "update" && !phone.updateToken) {
-        if (push.alert === "found") await this.deliver({ kind: "start", alert: "found" }, status, now);
+        if (push.alert === "found") await this.deliverApple({ kind: "start", alert: "found" }, status, now);
         return;
       }
       if (push.kind === "end" && !phone.updateToken) return;
@@ -203,7 +248,7 @@ export class Pair extends DurableObject<Env> {
       }
       await this.ctx.storage.put("phone", phone);
       if (tokenDead && push.kind === "update" && push.alert === "found") {
-        if (phone.startToken) await this.deliver({ kind: "start", alert: "found" }, status, now);
+        if (phone.startToken) await this.deliverApple({ kind: "start", alert: "found" }, status, now);
         else await this.fcm(alertMessage(phone.fcm, "Match found!", foundBody(status)));
       }
     } catch (error) {
