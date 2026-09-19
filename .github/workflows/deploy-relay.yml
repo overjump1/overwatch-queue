@@ -12,6 +12,9 @@ on:
       - ".github/workflows/deploy-relay.yml"
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: worker
@@ -24,7 +27,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: worker/package-lock.json
 
@@ -46,7 +49,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: worker/package-lock.json
 

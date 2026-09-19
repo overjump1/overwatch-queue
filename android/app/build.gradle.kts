@@ -2,7 +2,14 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.google.services)
+}
+
+// google-services.json is gitignored (CI writes it from a secret). Without it the build still
+// compiles, e.g. for CodeQL's autobuild, but that APK can't get pushes.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+} else {
+    logger.warn("android/app/google-services.json is missing; this build won't get pushes.")
 }
 
 android {
