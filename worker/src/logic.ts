@@ -25,7 +25,8 @@ export interface Report {
 }
 
 export type Push =
-  | { kind: "start"; alert?: "queue" | "found" }
+  /** iOS drops a push-to-start that has no alert, so a start always carries one. */
+  | { kind: "start"; alert: "queue" | "found" | "playing" }
   | { kind: "update"; alert?: "found" }
   /** `linger`: seconds the ended activity stays on the lock screen showing "Not in queue". */
   | { kind: "end"; linger?: number }
@@ -110,7 +111,7 @@ export function advance(status: Status, now: number): Status {
   return state === status.state ? status : { ...status, state };
 }
 
-/** Only a queue starting and a match being found make a sound. Everything else is a quiet update. */
+/** Only a match being found makes a sound. Everything else is silent. */
 export function pushesFor(prev: Status, next: Status): Push[] {
   if (prev.state === next.state && prev.mode === next.mode) return [];
   switch (next.state) {
@@ -126,8 +127,8 @@ export function pushesFor(prev: Status, next: Status): Push[] {
       return [{ kind: "update", alert: "found" }, { kind: "matchAlert" }];
     case "playing":
       // A match the worker only heard about late (the PC was offline when it was found)
-      // shows up quietly instead of alerting minutes into the game.
-      if (prev.state === "idle") return [{ kind: "start" }];
+      // shows up with a silent banner instead of "Match found!" minutes into the game.
+      if (prev.state === "idle") return [{ kind: "start", alert: "playing" }];
       return [{ kind: "update" }];
   }
 }
@@ -148,7 +149,7 @@ export function activityPayload(
   event: "start" | "update" | "end",
   status: Status,
   now: number,
-  alert?: "queue" | "found",
+  alert?: "queue" | "found" | "playing",
   linger = 0,
 ): Record<string, unknown> {
   const aps: Record<string, unknown> = {
@@ -163,6 +164,8 @@ export function activityPayload(
   if (event === "end") aps["dismissal-date"] = Math.floor(now) + linger;
   if (alert === "queue") {
     aps["alert"] = { title: "In queue", body: modeName(status.mode) };
+  } else if (alert === "playing") {
+    aps["alert"] = { title: "In a match", body: modeName(status.mode) };
   } else if (alert === "found") {
     aps["alert"] = { title: "Match found!", body: foundBody(status), sound: "match_found.caf" };
     aps["interruption-level"] = "time-sensitive";

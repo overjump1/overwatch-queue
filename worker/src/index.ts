@@ -132,9 +132,10 @@ export class Pair extends DurableObject<Env> {
       const phone = await this.phone();
       const retries = (await this.ctx.storage.get<number>("retries")) ?? 0;
       if (advanced.state === "queueing" && !phone.updateToken && retries < START_RETRIES) {
-        // Quiet: if the first push-to-start did arrive, a second alert would be a duplicate.
+        // Needs its alert: iOS drops a push-to-start without one. The "In queue" alert is
+        // silent, so if the first start did arrive this is at worst a second quiet banner.
         await this.ctx.storage.put("retries", retries + 1);
-        await this.deliver({ kind: "start" }, advanced, now);
+        await this.deliver({ kind: "start", alert: "queue" }, advanced, now);
       }
       await this.schedule(advanced);
     });
