@@ -133,6 +133,13 @@ export async function send(account: ServiceAccount, message: object): Promise<Fc
   } catch {
     error = undefined;
   }
-  console.log(`fcm ${response.status} ${text.slice(0, 300)}`);
+  // Compacted, not cut short: APNs' own reason (e.g. BadDeviceToken) is at the end.
+  let compact = text;
+  try {
+    compact = JSON.stringify(JSON.parse(text));
+  } catch {
+    // not JSON, log it as is
+  }
+  console.log(`fcm ${response.status} ${compact.slice(0, 2000)}`);
   return { ok: false, status: response.status, error };
 }
