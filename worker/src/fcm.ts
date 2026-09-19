@@ -117,9 +117,14 @@ export function alertMessage(token: string, title: string, body: string): object
   };
 }
 
-/** A high-priority data message for the Android app, which shows the notification itself. */
+/**
+ * A high-priority data message for the Android app, which shows the notification itself.
+ * An alert is pointless once it's late, but a quiet update or end still has to land, or the
+ * phone keeps showing a queue that's over. The app drops pushes older than the last one it got.
+ */
 export function androidMessage(token: string, data: Record<string, string>): object {
-  return { message: { token, android: { priority: "HIGH", ttl: "60s" }, data } };
+  const ttl = data.alert ? "60s" : "3600s";
+  return { message: { token, android: { priority: "HIGH", ttl }, data } };
 }
 
 export async function send(account: ServiceAccount, message: object): Promise<FcmResult> {

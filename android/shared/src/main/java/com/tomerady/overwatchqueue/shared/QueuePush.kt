@@ -7,7 +7,7 @@ data class QueuePush(
     val alert: Alert?,
     /** For `END`: seconds "Not in queue" stays up. */
     val linger: Long,
-    /** Unix seconds, to drop pushes that arrive out of order. */
+    /** Unix milliseconds, to drop pushes that arrive out of order. */
     val sentAt: Long,
 ) {
     enum class Event { START, UPDATE, END }

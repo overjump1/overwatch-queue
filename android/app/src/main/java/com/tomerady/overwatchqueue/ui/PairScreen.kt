@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -80,6 +81,11 @@ fun PairScreen(resetNotice: Boolean, onCode: (String) -> Unit, onClose: (() -> U
     }
     LaunchedEffect(Unit) {
         if (!cameraAllowed && !asked) permission.launch(Manifest.permission.CAMERA)
+    }
+    // Picks up access granted in the system settings.
+    LifecycleResumeEffect(Unit) {
+        cameraAllowed = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+        onPauseOrDispose {}
     }
 
     Column(

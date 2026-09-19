@@ -180,7 +180,8 @@ export function androidPayload(push: Push, status: Status, now: number): Record<
   const data: Record<string, string> = {
     event: push.kind,
     status: JSON.stringify(status),
-    sentAt: String(Math.floor(now)),
+    // Milliseconds, so pushes sent back to back (end then start) still order on the phone.
+    sentAt: String(Math.floor(now * 1000)),
   };
   if (push.kind === "end") data.linger = String(push.linger ?? 0);
   else if (push.alert) data.alert = push.alert;

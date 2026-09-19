@@ -131,7 +131,7 @@ describe("android payload", () => {
   it("carries the status as JSON and the queue alert on start", () => {
     const status = queueing();
     expect(androidPayload({ kind: "start", alert: "queue" }, status, 1000.7)).toEqual(
-      { event: "start", status: JSON.stringify(status), sentAt: "1000", alert: "queue" });
+      { event: "start", status: JSON.stringify(status), sentAt: "1000700", alert: "queue" });
   });
 
   it("carries the found alert on the match update", () => {

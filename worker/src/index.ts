@@ -51,6 +51,8 @@ function token(value: unknown, pattern: RegExp): string | undefined {
 
 export class Pair extends DurableObject<Env> {
   private chain: Promise<unknown> = Promise.resolve();
+  /** Milliseconds; the last Android push's sentAt. */
+  private androidSentAt = 0;
 
   private serial<T>(work: () => Promise<T>): Promise<T> {
     const run = this.chain.then(work, work);
@@ -195,7 +197,10 @@ export class Pair extends DurableObject<Env> {
   }
 
   private async deliverAndroid(push: Push, status: Status, now: number): Promise<void> {
-    const data = androidPayload(push, status, now);
+    // Strictly increasing, so the phone can tell which of two pushes sent back to back (end, then
+    // start) is newer. Workers' clock only moves on I/O, so Date.now() alone can repeat.
+    this.androidSentAt = Math.max(now * 1000, Date.now(), this.androidSentAt + 1);
+    const data = androidPayload(push, status, this.androidSentAt / 1000);
     if (!data) return;
     for (const kind of ANDROID_KINDS) {
       try {

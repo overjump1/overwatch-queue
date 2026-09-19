@@ -41,9 +41,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -81,8 +83,11 @@ fun QueueScreen(state: QueueRepository.UiState, onScan: () -> Unit, onUnpair: ()
         label = "glow",
     )
     val flash = remember { Animatable(0f) }
+    // Saved, so a recreated activity (rotation, theme change) doesn't flash for a match it already showed.
+    var flashedAlerts by rememberSaveable { mutableIntStateOf(state.matchAlerts) }
     LaunchedEffect(state.matchAlerts) {
-        if (state.matchAlerts == 0) return@LaunchedEffect
+        if (state.matchAlerts == flashedAlerts) return@LaunchedEffect
+        flashedAlerts = state.matchAlerts
         flash.animateTo(0.45f, tween(150))
         delay(250)
         flash.animateTo(0f, tween(900))
