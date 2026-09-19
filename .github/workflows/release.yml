@@ -96,7 +96,7 @@ jobs:
     secrets: inherit
     with:
       version: ${{ needs.changes.outputs.version }}
-      build-number: ${{ github.run_number }}
+      build-number: ${{ fromJSON(github.run_number) }}
 
   release:
     needs: [changes, android, windows, ios]
