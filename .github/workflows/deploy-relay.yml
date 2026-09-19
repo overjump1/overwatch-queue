@@ -24,7 +24,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: worker/package-lock.json
 
@@ -46,7 +46,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: worker/package-lock.json
 
@@ -58,7 +58,7 @@ jobs:
         env:
           FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
         run: |
-          # Checked here, not with a step-level `if:` — GitHub Actions doesn't allow the
+          # Checked here, not with a step-level `if:` â€” GitHub Actions doesn't allow the
           # `secrets` context in a step's `if:` condition at all.
           if [ -z "$FCM_SERVICE_ACCOUNT" ]; then
             echo "::error::The FCM_SERVICE_ACCOUNT repository secret isn't set. See README.md."
