@@ -22,7 +22,15 @@ dist/
 xcuserdata/
 DerivedData/
 
+# Android / Gradle
+.gradle/
+.kotlin/
+local.properties
+android/.idea/
+*.iml
+
 # Secrets: Firebase configs and keys are added by CI, never committed
 ios/**/GoogleService-Info.plist
+android/**/google-services.json
 *-service-account.json
 *.p8

@@ -1,20 +1,23 @@
 # OW Queue
 
-See how long you've been in an Overwatch queue on your iPhone and Apple Watch. When a match is found, both of them notify you.
+See how long you've been in an Overwatch queue on your iPhone, Apple Watch or Android phone. When a match is found, they notify you.
 
 ```
 PC app (Windows)  ──state──▶  Cloudflare worker  ──FCM──▶  Live Activity (iPhone lock screen, Dynamic Island, Watch Smart Stack)
-                                     ▲                     + a "Match found" alert to the Watch
-                    iPhone and Watch apps read the state here while they're open
+                                     │  ▲                  + a "Match found" alert to the Watch
+                                     │  │
+                                     │  └── iPhone, Watch and Android apps read the state here while they're open
+                                     └──FCM──▶  Android: ongoing notification with a timer
 ```
 
 - **pc/** reads your Battle.net presence ("Competitive: In Queue") straight out of Battle.net's memory. It only uses screen vision in one case: Battle.net says "In Queue" but the queue hasn't been confirmed yet, which is the role-select screen. The queue counts as started once that screen closes. The match counts as found when Battle.net says you're in game.
-- **worker/** keeps the latest state for each pairing and sends the Live Activity pushes.
+- **worker/** keeps the latest state for each pairing and sends the Live Activity and Android pushes.
 - **ios/** holds the iPhone app, the Live Activity, and the Watch app.
+- **android/** holds the Android app (Kotlin, Jetpack Compose).
 
 ### What you get notified about
 
-Only two things make a sound: a queue starting ("In queue") and a match being found ("Match found!"), each once. Everything after that updates the Live Activity quietly:
+Only two things make a sound: a queue starting ("In queue") and a match being found ("Match found!"), each once. Everything after that updates the Live Activity (on Android, the ongoing notification) quietly:
 
 - A minute after the match is found it turns into **In a match** (good luck, have fun) and counts the match time.
 - When the match ends it shows **Not in queue** for 10 minutes, then goes away.
@@ -75,3 +78,38 @@ To test in the Simulator against a local worker (`npx wrangler dev`), run a Debu
 ```
 xcrun simctl openurl booted "owq://pair?id=<id from the PC app>"
 ```
+
+## Android app
+
+The Android app is a phone app with the same screens as the iPhone app. The Live Activity becomes an ongoing notification with a running timer; on Android 16 it's shown as a Live Update. The notification uses three channels you can tune in the system settings: *Queue status* (quiet updates), *Queue started* and *Match found* (plays the match sound). A paired Wear OS watch gets these notifications too.
+
+An iPhone and an Android phone can both be paired to the same PC.
+
+### Setup
+
+1. In the Firebase console, add an Android app with package name `com.tomerady.overwatchqueue` to the same Firebase project the worker uses. Download its `google-services.json`.
+2. For local builds, put it in `android/app/`. It's git-ignored.
+3. For CI, add it as the repository secret `GOOGLE_SERVICES_JSON`, holding `base64 -w0 google-services.json`. Without it, CI builds the APK with a placeholder config that can't get pushes.
+4. Deploy the worker (`npx wrangler deploy`) so it knows how to push to Android.
+
+### Building
+
+The `Android app` workflow runs the unit tests and builds a debug APK. Pull requests and pushes to `main` upload it as a workflow artifact, and `v*` tags attach it to the GitHub release. Install it by opening the APK on your phone (allow installs from unknown sources when asked).
+
+To build locally, open `android/` in Android Studio, or with JDK 17, the Android SDK and Gradle 8.11:
+
+```
+cd android
+gradle wrapper         # one time: creates ./gradlew
+./gradlew :shared:testDebugUnitTest :app:assembleDebug
+```
+
+To test against a local worker (`npx wrangler dev`) from the emulator, build with `-PworkerUrl=http://10.0.2.2:8787`, then pair:
+
+```
+adb shell am start -a android.intent.action.VIEW -d "owq://pair?id=<id from the PC app>"
+```
+
+### Adding a Wear OS app later
+
+Everything that isn't phone UI lives in the `:shared` module: the queue model, the worker client, pairing, the notification and the match alert. A Wear OS app would be a new `:wear` module next to `:app` that depends on `:shared` and registers with `kind: "wearos"`. On the worker, add `"wearos"` to `ANDROID_KINDS` in `worker/src/index.ts`, and it gets the same pushes. Watch out for doubled alerts, because the phone's notifications are already bridged to the watch.

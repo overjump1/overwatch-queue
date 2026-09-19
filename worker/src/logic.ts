@@ -172,3 +172,21 @@ export function activityPayload(
   }
   return aps;
 }
+
+/**
+ * The FCM data message an Android device gets for a push. Android has no Live Activity, so the app
+ * draws its own ongoing notification from `status`. FCM data values have to be strings.
+ * Returns null for a push Android doesn't need: the found `update` already carries the match alert.
+ */
+export function androidPayload(push: Push, status: Status, now: number): Record<string, string> | null {
+  if (push.kind === "matchAlert") return null;
+  const data: Record<string, string> = {
+    event: push.kind,
+    status: JSON.stringify(status),
+    // Milliseconds, so pushes sent back to back (end then start) still order on the phone.
+    sentAt: String(Math.floor(now * 1000)),
+  };
+  if (push.kind === "end") data.linger = String(push.linger ?? 0);
+  else if (push.alert) data.alert = push.alert;
+  return data;
+}

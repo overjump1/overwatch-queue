@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
-import { alertMessage, FcmResult, liveActivityMessage, parseServiceAccount, send } from "./fcm";
+import { alertMessage, androidMessage, FcmResult, liveActivityMessage, parseServiceAccount, send, wakeMessage } from "./fcm";
 import {
-  activityPayload, advance, foundBody, IDLE, nextStatus, parseReport, PLAYING_AFTER_SECONDS, Push, pushesFor, Status,
+  activityPayload, advance, androidPayload, foundBody, IDLE, nextStatus, parseReport, PLAYING_AFTER_SECONDS, Push, pushesFor, Status,
 } from "./logic";
 
 export interface Env {
@@ -20,11 +20,20 @@ interface Watch {
   fcm?: string;
 }
 
+/**
+ * Android devices, each stored under `device:<kind>` with its FCM token. They all get every state
+ * push as a data message. A Wear OS app would register as a new kind added here.
+ */
+const ANDROID_KINDS = ["android"] as const;
+type AndroidKind = (typeof ANDROID_KINDS)[number];
+
+interface AndroidDevice {
+  fcm: string;
+}
+
 type Reply = { status: number; body: unknown };
 
 const PC_SILENT_SECONDS = 180;
-const START_RETRY_SECONDS = 6;
-const START_RETRIES = 2;
 
 const PAIR_ID = /^[0-9a-f]{32}$/;
 const FCM_TOKEN = /^[A-Za-z0-9_:-]{20,4096}$/;
@@ -40,6 +49,8 @@ function token(value: unknown, pattern: RegExp): string | undefined {
 
 export class Pair extends DurableObject<Env> {
   private chain: Promise<unknown> = Promise.resolve();
+  /** Milliseconds; the last Android push's sentAt. */
+  private androidSentAt = 0;
 
   private serial<T>(work: () => Promise<T>): Promise<T> {
     const run = this.chain.then(work, work);
@@ -58,7 +69,6 @@ export class Pair extends DurableObject<Env> {
       await this.ctx.storage.put("status", next);
       await this.ctx.storage.put("reportedAt", now);
       const pushes = pushesFor(prev, next);
-      if (pushes.length) await this.ctx.storage.put("retries", 0);
       for (const push of pushes) await this.deliver(push, next, now);
       await this.schedule(next);
       return { status: 200, body: { status: next } };
@@ -70,6 +80,12 @@ export class Pair extends DurableObject<Env> {
       if (await this.ctx.storage.get("deleted")) return { status: 410, body: { error: "reset" } };
       if (typeof body !== "object" || body === null) return { status: 400, body: { error: "bad_body" } };
       const input = body as Record<string, unknown>;
+      if (ANDROID_KINDS.includes(input.kind as AndroidKind)) {
+        const fcm = token(input.fcm, FCM_TOKEN);
+        if (!fcm) return { status: 400, body: { error: "bad_token" } };
+        await this.ctx.storage.put(`device:${input.kind}`, { fcm } satisfies AndroidDevice);
+        return { status: 200, body: {} };
+      }
       if (input.kind === "watch") {
         const fcm = token(input.fcm, FCM_TOKEN);
         if (!fcm) return { status: 400, body: { error: "bad_token" } };
@@ -81,14 +97,24 @@ export class Pair extends DurableObject<Env> {
       const fcm = token(input.fcm, FCM_TOKEN);
       const startToken = token(input.startToken, ACTIVITY_TOKEN);
       const updateToken = token(input.updateToken, ACTIVITY_TOKEN);
+      const newStartToken = startToken !== undefined && startToken !== phone.startToken;
       if (fcm) phone.fcm = fcm;
       if (startToken) phone.startToken = startToken;
       if (updateToken) phone.updateToken = updateToken;
       if (typeof input.activitiesEnabled === "boolean") phone.activitiesEnabled = input.activitiesEnabled;
       await this.ctx.storage.put("phone", phone);
+      console.log(`register fcm=${tail(fcm)} start=${tail(startToken)}${newStartToken ? " (new)" : ""}`
+        + ` update=${tail(updateToken)} running=${String(input.activityRunning)}`);
 
       const status = await this.status();
-      if (updateToken && status.state !== "idle") await this.deliver({ kind: "update" }, status, Date.now() / 1000);
+      const now = Date.now() / 1000;
+      if (updateToken && status.state !== "idle") {
+        await this.deliverApple({ kind: "update" }, status, now);
+      } else if (newStartToken && status.state !== "idle" && !phone.updateToken && input.activityRunning === false) {
+        // The start we sent went to a push-to-start token iOS had already replaced, so it
+        // showed as a plain banner at most. Now that we have the current one, start it for real.
+        await this.deliverApple({ kind: "start", alert: startAlert(status) }, status, now);
+      }
       return { status: 200, body: {} };
     });
   }
@@ -97,9 +123,15 @@ export class Pair extends DurableObject<Env> {
     if (await this.ctx.storage.get("deleted")) return { status: 410, body: { error: "reset" } };
     const phone = await this.phone();
     const watch = await this.ctx.storage.get<Watch>("watch");
+    const android = await this.ctx.storage.get<AndroidDevice>("device:android");
     return {
       status: 200,
-      body: { status: await this.status(), phonePaired: Boolean(phone.fcm), watchPaired: Boolean(watch?.fcm) },
+      body: {
+        status: await this.status(),
+        phonePaired: Boolean(phone.fcm),
+        watchPaired: Boolean(watch?.fcm),
+        androidPaired: Boolean(android?.fcm),
+      },
     };
   }
 
@@ -129,14 +161,6 @@ export class Pair extends DurableObject<Env> {
         await this.ctx.storage.put("status", advanced);
         for (const push of pushesFor(status, advanced)) await this.deliver(push, advanced, now);
       }
-      const phone = await this.phone();
-      const retries = (await this.ctx.storage.get<number>("retries")) ?? 0;
-      if (advanced.state === "queueing" && !phone.updateToken && retries < START_RETRIES) {
-        // Needs its alert: iOS drops a push-to-start without one. The "In queue" alert is
-        // silent, so if the first start did arrive this is at worst a second quiet banner.
-        await this.ctx.storage.put("retries", retries + 1);
-        await this.deliver({ kind: "start", alert: "queue" }, advanced, now);
-      }
       await this.schedule(advanced);
     });
   }
@@ -148,11 +172,6 @@ export class Pair extends DurableObject<Env> {
     if (status.state !== "idle") {
       const reportedAt = (await this.ctx.storage.get<number>("reportedAt")) ?? now / 1000;
       times.push((reportedAt + PC_SILENT_SECONDS) * 1000);
-    }
-    const phone = await this.phone();
-    const retries = (await this.ctx.storage.get<number>("retries")) ?? 0;
-    if (status.state === "queueing" && phone.startToken && !phone.updateToken && retries < START_RETRIES) {
-      times.push(now + START_RETRY_SECONDS * 1000);
     }
     if (times.length) await this.ctx.storage.setAlarm(Math.max(Math.min(...times), now + 1000));
     else await this.ctx.storage.deleteAlarm();
@@ -166,7 +185,32 @@ export class Pair extends DurableObject<Env> {
     return (await this.ctx.storage.get<Phone>("phone")) ?? {};
   }
 
+  /** Sends a push to every paired device. */
   private async deliver(push: Push, status: Status, now: number): Promise<void> {
+    await this.deliverAndroid(push, status, now);
+    await this.deliverApple(push, status, now);
+  }
+
+  private async deliverAndroid(push: Push, status: Status, now: number): Promise<void> {
+    // Strictly increasing, so the phone can tell which of two pushes sent back to back (end, then
+    // start) is newer. Workers' clock only moves on I/O, so Date.now() alone can repeat.
+    this.androidSentAt = Math.max(now * 1000, Date.now(), this.androidSentAt + 1);
+    const data = androidPayload(push, status, this.androidSentAt / 1000);
+    if (!data) return;
+    for (const kind of ANDROID_KINDS) {
+      try {
+        const device = await this.ctx.storage.get<AndroidDevice>(`device:${kind}`);
+        if (!device) continue;
+        const result = await this.fcm(androidMessage(device.fcm, data));
+        if (result && dead(result)) await this.ctx.storage.delete(`device:${kind}`);
+      } catch (error) {
+        console.log(`deliver ${push.kind} to ${kind} failed: ${String(error)}`);
+      }
+    }
+  }
+
+  /** The iPhone's Live Activity and alerts, and the Watch's alert. */
+  private async deliverApple(push: Push, status: Status, now: number): Promise<void> {
     const phone = await this.phone();
     try {
       if (push.kind === "matchAlert") {
@@ -184,7 +228,7 @@ export class Pair extends DurableObject<Env> {
       if (!phone.fcm) return;
 
       if (push.kind === "update" && !phone.updateToken) {
-        if (push.alert === "found") await this.deliver({ kind: "start", alert: "found" }, status, now);
+        if (push.alert === "found") await this.deliverApple({ kind: "start", alert: "found" }, status, now);
         return;
       }
       if (push.kind === "end" && !phone.updateToken) return;
@@ -195,8 +239,15 @@ export class Pair extends DurableObject<Env> {
       const linger = push.kind === "end" ? push.linger ?? 0 : 0;
       const payload = activityPayload(push.kind, status, now, alert, linger);
       const result = await this.fcm(liveActivityMessage(phone.fcm, activityToken, payload));
+      console.log(`push ${push.kind}${alert ? ` (${alert})` : ""} -> ${tail(activityToken)}: `
+        + (result ? `${result.status}${result.error ? ` ${result.error}` : ""}` : "unreachable"));
 
-      if (push.kind === "end" || push.kind === "start") delete phone.updateToken;
+      if (push.kind === "end" || push.kind === "start") {
+        delete phone.updateToken;
+        // iOS can swap the push-to-start token once it has used it, and a new activity has a new
+        // update token. Wake the app so it reports both instead of waiting until it's next opened.
+        await this.fcm(wakeMessage(phone.fcm));
+      }
       const tokenDead = result !== null && dead(result);
       if (tokenDead) {
         if (push.kind === "start") delete phone.startToken;
@@ -204,7 +255,7 @@ export class Pair extends DurableObject<Env> {
       }
       await this.ctx.storage.put("phone", phone);
       if (tokenDead && push.kind === "update" && push.alert === "found") {
-        if (phone.startToken) await this.deliver({ kind: "start", alert: "found" }, status, now);
+        if (phone.startToken) await this.deliverApple({ kind: "start", alert: "found" }, status, now);
         else await this.fcm(alertMessage(phone.fcm, "Match found!", foundBody(status)));
       }
     } catch (error) {
@@ -220,6 +271,15 @@ export class Pair extends DurableObject<Env> {
       return null;
     }
   }
+}
+
+function startAlert(status: Status): "queue" | "found" | "playing" {
+  return status.state === "queueing" ? "queue" : status.state === "found" ? "found" : "playing";
+}
+
+/** The end of a token, enough to tell tokens apart in the logs. */
+function tail(value: string | undefined): string {
+  return value ? `…${value.slice(-8)}` : "-";
 }
 
 function dead(result: FcmResult): boolean {
