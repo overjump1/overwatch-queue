@@ -40,7 +40,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         guard FirebaseApp.app() != nil else { return }
-        Messaging.messaging().apnsToken = deviceToken
+        // Say which APNs environment the token is for instead of letting Firebase guess: a wrong
+        // guess sends Live Activity pushes to the other environment, where Apple answers BadDeviceToken.
+        #if DEBUG
+        Messaging.messaging().setAPNSToken(deviceToken, type: .sandbox)
+        #else
+        Messaging.messaging().setAPNSToken(deviceToken, type: .prod)
+        #endif
         Messaging.messaging().token { token, _ in
             guard let token else { return }
             Task { @MainActor in AppModel.shared.setFCMToken(token) }
