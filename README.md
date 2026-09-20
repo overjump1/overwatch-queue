@@ -34,7 +34,9 @@ pip install -r pc/requirements.txt
 python pc/app.py
 ```
 
-On startup it puts Battle.net into developer mode: Battle.net only answers about your presence if it was started with `--remote-debugging-port`, and it rewrites its own auto-start entry and Start Menu shortcut every time it runs, so no persistent setting can arrange for that. If Battle.net isn't running, the app starts it with the flag; if it's running without it, the app closes it and starts it again with it — but never while Overwatch is open, because closing Battle.net under a running game can end it. Whenever the port isn't there the app reads Battle.net's process memory instead, so it keeps working either way; the app's Battle.net line says which of the two it's using.
+On startup it puts Battle.net into developer mode: Battle.net only answers about your presence if it was started with `--remote-debugging-port`, and it rewrites its own auto-start entry and Start Menu shortcut every time it runs, so no persistent setting can arrange for that. If Battle.net isn't running, the app starts it with the flag; if it's running without it, the app closes it and starts it again with it. That happens with Overwatch open too — restarting Battle.net leaves a running game alone, and the app kills Battle.net by name rather than by process tree, so the game is never in the tree that goes. **Restart Battle.net** does the same thing on demand, for a Battle.net you restarted yourself since.
+
+Whenever the port isn't there the app reads Battle.net's process memory instead, so it keeps working either way; the app's Battle.net line says which of the two it's using.
 
 `--presence-source memory` leaves Battle.net alone entirely and only ever reads its memory. `--presence-source auto` uses a debug port if Battle.net already has one open, but never starts or restarts Battle.net. `--battlenet-port` changes the port (default 9222).
 

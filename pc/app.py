@@ -174,6 +174,7 @@ class App(QWidget):
         self.relay = relay
         self.watcher = watcher
         self._qr_for = None
+        self._restarting = False
         self._qr_requested_with = None  # the phones paired when "Show QR code" was pressed, None when not pressed
 
         self.setWindowTitle("OW Queue")
@@ -205,6 +206,16 @@ class App(QWidget):
         self.server_label = QLabel(font=_font(10), wordWrap=True)
         for label in (self.bnet_label, self.phone_label, self.server_label):
             layout.addWidget(label)
+
+        self.restart_button = QPushButton("Restart Battle.net", font=_font(10))
+        self.restart_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.restart_button.clicked.connect(self.restart_battlenet)
+        restart_row = QHBoxLayout()
+        restart_row.addStretch()
+        restart_row.addWidget(self.restart_button)
+        restart_row.addStretch()
+        layout.addSpacing(8)
+        layout.addLayout(restart_row)
 
         self.qr = QLabel(alignment=Qt.AlignmentFlag.AlignCenter)
         self.qr.setFixedSize(QR_SIZE, QR_SIZE)
@@ -273,6 +284,11 @@ class App(QWidget):
         else:
             self._set(self.bnet_label, "● Battle.net not found — open it and log in", WARN)
 
+        self.restart_button.setVisible(self.watcher.presence.mode != "memory")
+        self.restart_button.setEnabled(not self._restarting)
+        self.restart_button.setText("Restarting Battle.net…" if self._restarting
+                                    else "Restart Battle.net")
+
         paired = list(self.relay.paired)
         if self._qr_requested_with is not None and not set(paired) <= set(self._qr_requested_with):
             self._qr_requested_with = None  # another phone just paired, so the code has done its job
@@ -313,6 +329,25 @@ class App(QWidget):
         painter.end()
         self.qr.setPixmap(pixmap)
         self._qr_for = self.pair_id
+
+    def restart_battlenet(self):
+        """Closes Battle.net and reopens it with its debug port on. Off the GUI thread,
+        because it waits for Battle.net to go away and come back; the 500ms refresh picks
+        the button back up when it's done. No confirmation: the button says what it does,
+        and a Battle.net restart leaves a running game alone."""
+        if self._restarting:
+            return
+        self._restarting = True
+        self.refresh()
+        threading.Thread(target=self._restart, daemon=True, name="battlenet-restart").start()
+
+    def _restart(self):
+        try:
+            self.watcher.presence.restart()
+        except Exception:  # noqa: BLE001 - a button press must never take the app down
+            log.exception("Restarting Battle.net failed")
+        finally:
+            self._restarting = False
 
     def toggle_qr(self):
         self._qr_requested_with = None if self._qr_requested_with is not None else list(self.relay.paired)

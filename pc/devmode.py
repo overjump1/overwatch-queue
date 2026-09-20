@@ -9,9 +9,13 @@ Battle.net only opens that port if it was launched with the flag, and it rewrite
 arrange for one; a flagged launch alongside a running unflagged copy just hands off to that
 copy and exits. A flagged launch from a clean start is the one thing that works, so
 `ensure` starts Battle.net with the flag when it isn't running, and closes and reopens it
-when it is running without the port. That's skipped while Overwatch is open: nothing here
-is worth interrupting a game for, and `Reader` falls back to reading Battle.net's memory
-whenever the port isn't there, so the app keeps working either way.
+when it is running without the port -- with Overwatch open or not, which was measured to
+leave a running game alone. The kill is still by image name rather than `/T`, because
+Overwatch is Battle.net's own child and a tree kill would take the game with it.
+
+`Reader` falls back to reading Battle.net's memory whenever the port isn't there, so the
+app keeps working either way, and `Reader.restart` is the same restart on demand -- what
+the app's "Restart Battle.net" button calls.
 
 Read-only, like `presence`: the only thing written anywhere is Battle.net's own command
 line, and Overwatch is never touched.
@@ -254,18 +258,15 @@ def launch(port=DEBUG_PORT, log=print):
 
 
 def relaunch(port=DEBUG_PORT, log=print, stop=None):
-    """Closes a Battle.net running without its debug port and starts it again with one.
-    Refuses while Overwatch is open, because closing Battle.net under a running game can
-    end it, and a queue read the slower way beats a queue dropped.
+    """Closes Battle.net and starts it again with its debug port open. Runs with Overwatch
+    open too: a Battle.net restart was measured to leave a running game alone, and the kill
+    below is by image name rather than `/T` so the game is never in the tree that goes.
 
     `stop` is looked at once, before anything is closed. Past that the restart always runs
     to the end: a Battle.net this closed and never reopened is worse than a late one."""
-    if presence.pids_named("overwatch.exe"):
-        log("Battle.net is running without its debug port, but Overwatch is open — leaving it alone")
-        return False
     if stop is not None and stop.is_set():
         return False
-    log("Battle.net is running without its debug port — restarting it in developer mode")
+    log("Restarting Battle.net in developer mode")
     try:
         # By image name, never `/T`: Overwatch is Battle.net's own child, and killing the
         # tree would take the game with it. Every Battle.net helper is a Battle.net.exe.
@@ -343,6 +344,13 @@ class Reader:
         self.debug = DebugPort(port, log=log) if self.mode != "memory" else None
         self.connected = False
         self.source = "memory"
+
+    def restart(self):
+        """Closes Battle.net and starts it again in developer mode, now -- what the app's
+        button calls. Nothing holds this one back: someone asking for it has decided."""
+        if self.mode == "memory":
+            return False
+        return relaunch(self.port, self.log)
 
     def start(self, stop=None):
         """Puts Battle.net into developer mode, once. Blocks -- run it on a thread, and pass

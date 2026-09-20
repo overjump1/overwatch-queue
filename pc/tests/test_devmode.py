@@ -167,29 +167,68 @@ class EnsureTests(unittest.TestCase):
 
 class RelaunchTests(unittest.TestCase):
     """Nothing here may actually close anything: `subprocess.run` is stubbed for the whole
-    class, so a regression in the guard fails the assertion instead of killing the
-    developer's own Battle.net mid-game."""
+    class, so a test that gets further than it meant to fails instead of killing the
+    developer's own Battle.net."""
 
     def setUp(self):
-        self.saved = (devmode.presence.pids_named, devmode.subprocess.run)
-        self.killed = []
-        devmode.subprocess.run = lambda *args, **kwargs: self.killed.append(args) or self.fail(
-            "relaunch tried to close Battle.net for real")
-        self.lines = []
+        self.saved = (devmode.running, devmode.launch, devmode.subprocess.run)
+        self.killed, self.lines, self.launched = [], [], []
+        devmode.subprocess.run = lambda *args, **kwargs: self.killed.append(args[0]) or _Closing(0)
+        devmode.launch = lambda port=0, log=None: self.launched.append(port) or True
 
     def tearDown(self):
-        devmode.presence.pids_named, devmode.subprocess.run = self.saved
+        devmode.running, devmode.launch, devmode.subprocess.run = self.saved
 
-    def test_an_open_overwatch_is_never_interrupted(self):
-        devmode.presence.pids_named = lambda name: frozenset({42}) if name == "overwatch.exe" else frozenset()
-        self.assertFalse(devmode.relaunch(log=self.lines.append))
-        self.assertIn("Overwatch is open", self.lines[0])
-        self.assertEqual(self.killed, [])
+    def test_an_open_overwatch_does_not_hold_it_back(self):
+        """A Battle.net restart leaves a running game alone, so the restart doesn't wait
+        for one to finish -- otherwise anyone who starts the app mid-game never gets a
+        debug port at all."""
+        devmode.running = lambda: False
+        self.assertTrue(devmode.relaunch(9222, self.lines.append))
+        self.assertEqual(self.launched, [9222])
+
+    def test_it_kills_by_image_name_never_the_tree(self):
+        """`/T` would take Overwatch with it: the game is Battle.net's own child."""
+        devmode.running = lambda: False
+        devmode.relaunch(log=self.lines.append)
+        self.assertEqual(self.killed, [["taskkill", "/IM", "Battle.net.exe", "/F"]])
 
     def test_the_app_quitting_stops_it_before_anything_closes(self):
-        devmode.presence.pids_named = lambda name: frozenset()
         self.assertFalse(devmode.relaunch(log=self.lines.append, stop=_set_event()))
-        self.assertEqual((self.killed, self.lines), ([], []))
+        self.assertEqual((self.killed, self.launched, self.lines), ([], [], []))
+
+    def test_a_battlenet_that_will_not_close_is_left_alone(self):
+        devmode.running = lambda: True
+        devmode.CLOSE_TIMEOUT_SECONDS, saved = 0.0, devmode.CLOSE_TIMEOUT_SECONDS
+        try:
+            self.assertFalse(devmode.relaunch(log=self.lines.append))
+        finally:
+            devmode.CLOSE_TIMEOUT_SECONDS = saved
+        self.assertEqual(self.launched, [])
+        self.assertIn("wouldn't close", self.lines[-1])
+
+
+class RestartTests(unittest.TestCase):
+    """What the app's "Restart Battle.net" button calls."""
+
+    def setUp(self):
+        self.saved = devmode.relaunch
+        self.asked = []
+        devmode.relaunch = lambda port=0, log=None: self.asked.append(port) or True
+
+    def tearDown(self):
+        devmode.relaunch = self.saved
+
+    def test_it_restarts_battlenet_on_the_readers_port(self):
+        reader = devmode.Reader("devmode", 9876, log=lambda message: None)
+        reader.mode = "devmode"  # in case this machine has no websocket module
+        self.assertTrue(reader.restart())
+        self.assertEqual(self.asked, [9876])
+
+    def test_there_is_nothing_to_restart_for_a_memory_only_reader(self):
+        reader = devmode.Reader("memory", log=lambda message: None)
+        self.assertFalse(reader.restart())
+        self.assertEqual(self.asked, [])
 
 
 class WhyTests(unittest.TestCase):
