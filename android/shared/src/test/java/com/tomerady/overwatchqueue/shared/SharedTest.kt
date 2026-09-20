@@ -1,5 +1,6 @@
 package com.tomerady.overwatchqueue.shared
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -78,5 +79,59 @@ class QueuePushTest {
     @Test fun ignoresOtherMessages() {
         assertNull(QueuePush.parse(emptyMap()))
         assertNull(QueuePush.parse(mapOf("event" to "somethingElse", "status" to "{}")))
+    }
+}
+
+class UpdatesTest {
+    private fun release(vararg names: String) = names.joinToString(
+        prefix = """{"tag_name":"v2.0.42","assets":[""",
+        postfix = "]}",
+    ) { """{"name":"$it","browser_download_url":"https://example.test/$it","size":1234}""" }
+
+    @Test fun padsVersionsToThreeParts() {
+        assertArrayEquals(intArrayOf(2, 0, 0), Updates.parse("2.0"))
+        assertArrayEquals(intArrayOf(2, 0, 42), Updates.parse("v2.0.42"))
+    }
+
+    @Test fun stopsAtTheFirstNonNumber() {
+        assertArrayEquals(intArrayOf(0, 0, 0), Updates.parse("0.0.0-dev"))
+        assertArrayEquals(intArrayOf(2, 1, 0), Updates.parse("2.1-rc1"))
+    }
+
+    @Test fun rejectsWhatIsntAVersion() {
+        assertNull(Updates.parse(null))
+        assertNull(Updates.parse("dev"))
+    }
+
+    @Test fun comparesNumericallyNotAsText() {
+        assertTrue(Updates.isNewer("2.0.42", "2.0.9"))
+        assertFalse(Updates.isNewer("2.0.9", "2.0.42"))
+        assertFalse(Updates.isNewer("2.0", "2.0.0"))
+        assertFalse(Updates.isNewer("dev", "2.0.0"))
+    }
+
+    @Test fun buildsFromSourceDontCheck() {
+        assertFalse(Updates.checksForUpdates("0.0.0-dev"))
+        assertFalse(Updates.checksForUpdates(null))
+        assertTrue(Updates.checksForUpdates("2.0.42"))
+    }
+
+    @Test fun offersANewerApk() {
+        val found = Updates.findUpdate(release("OWQueue-Setup-2.0.42.exe", "OWQueue-2.0.42.apk"), "2.0.40")
+        assertEquals(Updates.Release("2.0.42", "https://example.test/OWQueue-2.0.42.apk", 1234), found)
+    }
+
+    @Test fun readsTheVersionFromTheAssetNotTheTag() {
+        // release.yml copies unchanged apps forward, so a newer tag can hold this build's APK.
+        assertNull(Updates.findUpdate(release("OWQueue-2.0.40.apk"), "2.0.40"))
+    }
+
+    @Test fun ignoresTheOtherPlatforms() {
+        assertNull(Updates.findUpdate(release("OWQueue-Setup-2.0.42.exe", "OWQueue-2.0.42.ipa"), "2.0.40"))
+    }
+
+    @Test fun survivesAReleaseWithNothingInIt() {
+        assertNull(Updates.findUpdate(release(), "2.0.40"))
+        assertNull(Updates.findUpdate("not json at all", "2.0.40"))
     }
 }

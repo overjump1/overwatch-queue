@@ -4,6 +4,10 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- Installing the APK the app downloads from its GitHub release. The user still has to allow
+         it for this app, and still confirms each install. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <application
         android:name=".OwqApp"
         android:allowBackup="true"
@@ -36,6 +40,11 @@
                 <action android:name="com.google.firebase.MESSAGING_EVENT" />
             </intent-filter>
         </service>
+
+        <!-- How the system installer reports back on an update (see UpdateInstallReceiver). -->
+        <receiver
+            android:name=".UpdateInstallReceiver"
+            android:exported="false" />
 
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"

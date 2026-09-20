@@ -40,6 +40,11 @@ struct ContentView: View {
                 HStack {
                     Spacer()
                     Menu {
+                        if Updates.checksForUpdates {
+                            Button("Check for updates", systemImage: "arrow.down.circle") {
+                                model.checkForUpdate(force: true)
+                            }
+                        }
                         Button("Scan new code", systemImage: "qrcode.viewfinder") { showScanner = true }
                         Button("Unpair", systemImage: "xmark.circle", role: .destructive) { model.unpair() }
                     } label: {
@@ -76,6 +81,7 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                updateLine
                 if !model.reachable {
                     Label("Can't reach the server — retrying", systemImage: "wifi.exclamationmark")
                         .font(.footnote)
@@ -87,6 +93,32 @@ struct ContentView: View {
         .onChange(of: model.matchAlerts) { _, _ in
             withAnimation(.easeOut(duration: 0.15)) { flash = true }
             withAnimation(.easeIn(duration: 0.9).delay(0.25)) { flash = false }
+        }
+    }
+
+    /// iOS can't install an app on itself, so this only says a newer build is out; the IPA still
+    /// goes on through AltStore or Sideloadly from the release page.
+    @ViewBuilder
+    private var updateLine: some View {
+        switch model.updateNotice {
+        case .available(let version):
+            Label("Update available · \(version)", systemImage: "arrow.down.circle")
+                .font(.footnote)
+                .foregroundStyle(.green)
+        case .checking:
+            Label("Checking for updates…", systemImage: "arrow.down.circle")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        case .upToDate:
+            Label("You're on the latest version", systemImage: "checkmark.circle")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        case .failed:
+            Label("Couldn't check for updates", systemImage: "exclamationmark.circle")
+                .font(.footnote)
+                .foregroundStyle(.orange)
+        case .quiet:
+            EmptyView()
         }
     }
 }

@@ -22,6 +22,7 @@
 		43388CFC7DB4C0E8A8F9530C /* QueueViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53D8452B54B85C5F6773307C /* QueueViews.swift */; };
 		4D0A20F51FF4E0975870E80D /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 13854591A8BBE967A5474E6F /* GoogleService-Info.plist */; };
 		742B6A6072AE5ADB4D3A0DAF /* OverwatchQueue Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 5CF4172B47D45767F0DC5792 /* OverwatchQueue Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		788583F9959C8DF5C7693C4D /* Updates.swift in Sources */ = {isa = PBXBuildFile; fileRef = B143E24BDDF20D1662331A2F /* Updates.swift */; };
 		909C40CD27E5CB513DDA1E0F /* QueueViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53D8452B54B85C5F6773307C /* QueueViews.swift */; };
 		B668E038F94433D0BD9F3612 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3B9910EFF63BA8C9C0FBAB9 /* ContentView.swift */; };
 		BD5EFEF644643719B8796693 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45118B133C188480BDE7CDCF /* App.swift */; };
@@ -96,6 +97,7 @@
 		8B0DBC86D46BB9FA775DED79 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9E72CEF42640090BE81BA831 /* QueueLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueLiveActivity.swift; sourceTree = "<group>"; };
 		A3756F43E5C290460B2422B1 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		B143E24BDDF20D1662331A2F /* Updates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updates.swift; sourceTree = "<group>"; };
 		B434A9892332FC8CB6A5E924 /* Worker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Worker.swift; sourceTree = "<group>"; };
 		CD7B8A949F39D71DD933025E /* OverwatchQueue.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OverwatchQueue.entitlements; sourceTree = "<group>"; };
 		DEA9355FDD5EBB241C46D253 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -166,6 +168,7 @@
 				01324174F0D29273802D32AC /* Info.plist */,
 				CD7B8A949F39D71DD933025E /* OverwatchQueue.entitlements */,
 				65D9297E497CB77FD3E1C383 /* PairView.swift */,
+				B143E24BDDF20D1662331A2F /* Updates.swift */,
 			);
 			path = iOS;
 			sourceTree = "<group>";
@@ -368,6 +371,7 @@
 				EBDD98DF31FAE1CB89C5BE0F /* PairView.swift in Sources */,
 				E005C36336FCAC82F45C6903 /* Queue.swift in Sources */,
 				254062C1BD7F94DD3C0125D6 /* QueueViews.swift in Sources */,
+				788583F9959C8DF5C7693C4D /* Updates.swift in Sources */,
 				063BC5686B2D14761D70E17A /* Worker.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

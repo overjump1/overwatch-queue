@@ -34,6 +34,7 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val repository by lazy { QueueRepository.get(this) }
+    private val updater by lazy { Updater.get(this) }
 
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
@@ -46,12 +47,16 @@ class MainActivity : ComponentActivity() {
         askForNotifications()
 
         lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) { repository.poll() }
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                // Checks at most every six hours; coming back to the app just gives it the chance.
+                updater.check(force = false)
+                repository.poll()
+            }
         }
 
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Color.White)) {
-                App(repository)
+                App(repository, updater)
             }
         }
     }
@@ -76,8 +81,9 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun App(repository: QueueRepository) {
+private fun App(repository: QueueRepository, updater: Updater) {
     val state by repository.state.collectAsStateWithLifecycle()
+    val update by updater.state.collectAsStateWithLifecycle()
     var scanning by rememberSaveable { mutableStateOf(false) }
 
     BackHandler(enabled = scanning) { scanning = false }
@@ -92,8 +98,12 @@ private fun App(repository: QueueRepository) {
             )
             else -> QueueScreen(
                 state = state,
+                update = update,
+                canUpdate = updater.enabled,
                 onScan = { scanning = true },
                 onUnpair = { repository.unpair() },
+                onCheckForUpdates = { updater.check(force = true) },
+                onUpdateTap = { updater.tap() },
             )
         }
     }

@@ -14,6 +14,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var reachable = true
     @Published private(set) var pairingWasReset = false
     @Published private(set) var matchAlerts = 0
+    /// A newer release, if there is one. iOS can't install it, so this only reports it.
+    @Published private(set) var updateNotice: UpdateNotice = .quiet
 
     private var fcmToken: String?
     private var startToken: String?
@@ -27,6 +29,8 @@ final class AppModel: ObservableObject {
     private var localActivityQueueStart: Double?
     /// The match we already alerted for, so the same match never alerts twice.
     private var alertedFoundAt: Double?
+    private var updateCheckedAt: Date?
+    private var updateTask: Task<Void, Never>?
     private let watch = WatchBridge()
     private let alerts = MatchAlert()
 
@@ -64,6 +68,8 @@ final class AppModel: ObservableObject {
         pollTask = nil
         guard isActive else { return }
         launch()
+        // Checks at most every six hours; coming back to the app just gives it the chance.
+        checkForUpdate(force: false)
         pollTask = Task {
             await register()
             while !Task.isCancelled {
@@ -98,6 +104,40 @@ final class AppModel: ObservableObject {
         status = .idle
         watch.send(pairID: nil)
         endAllActivities()
+    }
+
+    // MARK: - Updates
+
+    /// `force` is the menu item; otherwise this only looks again once six hours have passed.
+    func checkForUpdate(force: Bool) {
+        guard Updates.checksForUpdates, updateTask == nil else { return }
+        if !force, let last = updateCheckedAt, Date.now.timeIntervalSince(last) < 6 * 60 * 60 { return }
+        if force { updateNotice = .checking }
+        updateTask = Task {
+            let outcome = await Updates.check()
+            updateTask = nil
+            switch outcome {
+            case .newer(let version):
+                updateCheckedAt = .now
+                updateNotice = .available(version)
+            case .upToDate:
+                updateCheckedAt = .now
+                // "You're on the latest version" has been read by now; don't leave it sitting there.
+                updateNotice = force ? .upToDate : .quiet
+                await clear(.upToDate)
+            case .failed:
+                // Not counted as a check, so the next one isn't six hours away.
+                updateNotice = force ? .failed : .quiet
+                await clear(.failed)
+            }
+        }
+    }
+
+    /// Takes a passing notice back down, unless something newer has already replaced it.
+    private func clear(_ notice: UpdateNotice) async {
+        guard updateNotice == notice else { return }
+        try? await Task.sleep(for: .seconds(4))
+        if updateNotice == notice { updateNotice = .quiet }
     }
 
     // MARK: - Worker

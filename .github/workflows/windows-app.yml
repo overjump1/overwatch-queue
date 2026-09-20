@@ -47,6 +47,12 @@ jobs:
             echo "version=0.0.0-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           fi
 
+      # The app compares this against the latest release to decide whether to offer an update.
+      # Pull request builds stay on a 0.x version, which turns the check off.
+      - name: Stamp the version
+        shell: bash
+        run: sed -i 's/^VERSION = .*/VERSION = "${{ steps.version.outputs.version }}"/' pc/version.py
+
       - name: Build app
         run: pyinstaller --noconfirm pc/owqueue.spec
 

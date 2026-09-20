@@ -16,10 +16,13 @@ from PyQt6.QtGui import QColor, QFont, QPainter, QPixmap
 from PyQt6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton,
                              QVBoxLayout, QWidget)
 
+import updater as up
 from detector import FOUND, QUEUEING, Detector
 from presence import Presence
 from relay import Relay
 from roleselect import RoleSelect
+from updater import Updater
+from version import VERSION
 
 POLL_SECONDS = 1.0
 GUI_REFRESH_MS = 500
@@ -157,13 +160,16 @@ def _font(size, weight=QFont.Weight.Normal):
 
 
 class App(QWidget):
-    def __init__(self, pair_id, relay, watcher):
+    def __init__(self, pair_id, relay, watcher, updater):
         super().__init__()
         self.pair_id = pair_id
         self.relay = relay
         self.watcher = watcher
+        self.updater = updater
         self._qr_for = None
         self._qr_requested_with = None  # the phones paired when "Show QR code" was pressed, None when not pressed
+        self._checks_updates = up.checks_for_updates()
+        self._installing = False  # one click downloads and installs, so the install waits on the download
 
         self.setWindowTitle("OW Queue")
         self.setStyleSheet(
@@ -214,6 +220,20 @@ class App(QWidget):
         buttons.addStretch()
         layout.addSpacing(10)
         layout.addLayout(buttons)
+
+        self.version_label = QLabel("OW Queue %s" % VERSION, font=_font(9))
+        self.version_label.setStyleSheet("color: %s;" % MUTED)
+        self.update_button = QPushButton(font=_font(9))
+        self.update_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.update_button.clicked.connect(self.update_clicked)
+        # Builds from source never check, so there's nothing for the button to do.
+        self.update_button.setVisible(self._checks_updates)
+        footer = QHBoxLayout()
+        footer.addWidget(self.version_label)
+        footer.addStretch()
+        footer.addWidget(self.update_button)
+        layout.addSpacing(10)
+        layout.addLayout(footer)
 
         self.timer = QTimer(self, interval=GUI_REFRESH_MS, timeout=self.refresh)
         self.timer.start()
@@ -283,6 +303,44 @@ class App(QWidget):
         self._set(self.server_label, "Can't reach the notification server — retrying", WARN)
         self.server_label.setVisible(not self.relay.reachable)
 
+        self._render_update()
+
+    def _render_update(self):
+        if not self._checks_updates:
+            return
+        state, version, percent = self.updater.snapshot()
+        # One click does the whole update, so a finished download installs itself.
+        if self._installing and self.updater.ready():
+            self._installing = False
+            if self.updater.install():
+                QApplication.instance().quit()
+                return
+        text, color, enabled = {
+            up.CHECKING: ("Checking…", MUTED, False),
+            up.UP_TO_DATE: ("Up to date", MUTED, True),
+            up.AVAILABLE: ("Update to %s" % version, GOOD, True),
+            up.DOWNLOADING: ("Downloading… %d%%" % percent, MUTED, False),
+            up.INSTALLING: ("Installing…", MUTED, False),
+            up.FAILED: ("Update check failed — retry", WARN, True),
+        }.get(state, ("Check for updates", MUTED, True))
+        self.update_button.setEnabled(enabled)
+        if self.update_button.text() == text:
+            return
+        self.update_button.setText(text)
+        self.update_button.setStyleSheet(
+            "QPushButton { color: %s; background: transparent; border: none; padding: 2px 4px; }"
+            "QPushButton:hover { background: #262a33; }" % color)
+
+    def update_clicked(self):
+        state, _, _ = self.updater.snapshot()
+        if state == up.AVAILABLE:
+            # Downloads now and installs as soon as it lands; the installer restarts the app.
+            self._installing = True
+            self.updater.download()
+        else:
+            self.updater.check_now()
+        self.refresh()
+
     def _draw_qr(self):
         code = qrcode.QRCode(border=2, error_correction=qrcode.constants.ERROR_CORRECT_M)
         code.add_data("owq://pair?id=%s" % self.pair_id)
@@ -328,14 +386,16 @@ def main():
     pair_id = load_pair_id()
     relay = Relay(pair_id, log=log.info)
     watcher = Watcher(relay)
+    updater = Updater(DATA_DIR, log=log.info)
     stop = threading.Event()
     threading.Thread(target=relay.run, args=(stop,), daemon=True).start()
     threading.Thread(target=watcher.run, args=(stop,), daemon=True).start()
     threading.Thread(target=watcher.role_select.prefetch, daemon=True).start()
+    threading.Thread(target=updater.run, args=(stop,), daemon=True).start()
 
     app = QApplication(sys.argv)
     app.aboutToQuit.connect(stop.set)
-    window = App(pair_id, relay, watcher)
+    window = App(pair_id, relay, watcher, updater)
     window.show()
     sys.exit(app.exec())
 

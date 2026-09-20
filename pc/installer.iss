@@ -47,3 +47,11 @@ Name: "{userstartup}\OW Queue"; Filename: "{app}\OWQueue.exe"; Tasks: startup
 
 [Run]
 Filename: "{app}\OWQueue.exe"; Description: "{cm:LaunchProgram,OW Queue}"; Flags: nowait postinstall skipifsilent
+; The in-app updater installs with /SILENT, which skips the entry above; start the app again itself.
+Filename: "{app}\OWQueue.exe"; Flags: nowait runasoriginaluser; Check: SilentInstall
+
+[Code]
+function SilentInstall: Boolean;
+begin
+  Result := WizardSilent;
+end;
