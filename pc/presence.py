@@ -358,8 +358,8 @@ class _PROCESSENTRY32(ctypes.Structure):
     ]
 
 
-def _battlenet_pid_set():
-    """Every Battle.net.exe process id. Cheap enough to run every read."""
+def pids_named(name):
+    """Every process id running `name` (lower-case). Cheap enough to run every read."""
     k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     k32.CreateToolhelp32Snapshot.restype = ctypes.c_void_p
     k32.Process32FirstW.argtypes = [ctypes.c_void_p, ctypes.POINTER(_PROCESSENTRY32)]
@@ -374,7 +374,7 @@ def _battlenet_pid_set():
         entry.dwSize = ctypes.sizeof(entry)
         more = k32.Process32FirstW(snapshot, ctypes.byref(entry))
         while more:
-            if entry.szExeFile.lower() == "battle.net.exe":
+            if entry.szExeFile.lower() == name:
                 pids.add(entry.th32ProcessID)
             more = k32.Process32NextW(snapshot, ctypes.byref(entry))
     finally:
@@ -427,6 +427,12 @@ class Presence:
         self._roles_failed = False
         self._tracker = Tracker(log)
 
+    def rebaseline(self):
+        """Forgets the copy counts, keeping the reading. For a gap in the reads -- the app
+        was reading over Battle.net's debug port instead -- where the counts on the far side
+        of it say nothing about what arrived during it."""
+        self._tracker.rebaseline()
+
     def read(self):
         self._reached = False
         try:
@@ -446,7 +452,7 @@ class Presence:
                 self._identity = find_identity()
                 if self._identity is None:
                     return UNKNOWN, None
-            pid_set = _battlenet_pid_set()
+            pid_set = pids_named("battle.net.exe")
             if pid_set != self._known_pids or (pid_set and not self._pids):
                 self._resolve_pids(pid_set)
             if not self._pids:
