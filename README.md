@@ -10,7 +10,7 @@ PC app (Windows)  ──state──▶  Cloudflare worker  ──FCM──▶  L
                                      └──FCM──▶  Android: ongoing notification with a timer
 ```
 
-- **pc/** reads your Battle.net presence ("Competitive: In Queue") straight out of Battle.net's memory. It only uses screen vision in one case: Battle.net says "In Queue" but the queue hasn't been confirmed yet, which is the role-select screen. The queue counts as started once that screen closes. The match counts as found when Battle.net says you're in game.
+- **pc/** reads your Battle.net presence ("Competitive: In Queue") by asking Battle.net itself, over the debug port it opens in developer mode — and out of Battle.net's own memory whenever that port isn't there. It only uses screen vision in one case: Battle.net says "In Queue" but the queue hasn't been confirmed yet, which is the role-select screen. The queue counts as started once that screen closes. The match counts as found when Battle.net says you're in game.
 - **worker/** keeps the latest state for each pairing and sends the Live Activity and Android pushes.
 - **ios/** holds the iPhone app, the Live Activity, and the Watch app.
 - **android/** holds the Android app (Kotlin, Jetpack Compose).
@@ -34,9 +34,15 @@ pip install -r pc/requirements.txt
 python pc/app.py
 ```
 
+On startup it puts Battle.net into developer mode: Battle.net only answers about your presence if it was started with `--remote-debugging-port`, and it rewrites its own auto-start entry and Start Menu shortcut every time it runs, so no persistent setting can arrange for that. If Battle.net isn't running, the app starts it with the flag; if it's running without it, the app closes it and starts it again with it. That happens with Overwatch open too — restarting Battle.net leaves a running game alone, and the app kills Battle.net by name rather than by process tree, so the game is never in the tree that goes. **Restart Battle.net** does the same thing on demand, for a Battle.net you restarted yourself since.
+
+Whenever the port isn't there the app reads Battle.net's process memory instead, so it keeps working either way; the app's Battle.net line says which of the two it's using.
+
+`--presence-source memory` leaves Battle.net alone entirely and only ever reads its memory. `--presence-source auto` uses a debug port if Battle.net already has one open, but never starts or restarts Battle.net. `--battlenet-port` changes the port (default 9222).
+
 Scan the QR code with the iPhone or Android app. Once a phone is paired the code is hidden; **Show QR code** brings it back so you can pair another phone (it hides again once that phone pairs). **Reset QR code** makes a new code; the old one stops working right away and every paired phone has to scan again. Logs are in `%APPDATA%\OWQueue\owqueue.log`.
 
-If Battle.net runs as administrator, the app has to run as administrator as well, or it can't read Battle.net's memory.
+If Battle.net runs as administrator, the app has to run as administrator as well, or it can't read Battle.net's memory or restart it.
 
 ### Releasing
 
