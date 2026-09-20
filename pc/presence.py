@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import time
 from collections import Counter
 
 QUEUEING = "queueing"
@@ -77,44 +78,91 @@ def find_identity():
     return Identity(row[0], row[1])
 
 
+PEAK_SHRINK_POLLS = 5
+
+
 class Tracker:
     """Picks the current program/status by what newly arrived in memory.
 
-    Old copies are never erased, so a value whose copy count grew since the last read is
-    the current one. Before the first change, a value is only trusted if every copy in
-    memory reads as the same state."""
+    Old copies are never erased, so a value whose copy count grew past the most copies of it
+    ever seen is the current one. That high-water mark, rather than the previous read, is what
+    a scan is measured against: a scan that misses part of Battle.net's memory can then only
+    fail to reach a peak, never fake one. Before the first change, a value is only trusted if
+    every copy in memory reads as the same state."""
 
     KINDS = ("program", "status")
 
-    def __init__(self):
-        self._previous = None
+    def __init__(self, log=None):
+        self.log = log or (lambda message: None)
+        self._peak = None
+        self._low = 0
+        self._primed = False
         self._seen = set()
         self._values = {}
         self._order = {}
         self._clock = 0
 
-    def observe(self, observed):
-        if self._previous is not None:
-            grown = {key: count - self._previous.get(key, 0) for key, count in observed.items()
-                     if count > self._previous.get(key, 0)}
-            for kind in self.KINDS:
-                arrivals = {key: size for key, size in grown.items() if key[0] == kind}
-                if arrivals:
-                    current = self._values.get(kind)
-                    best = max(arrivals, key=lambda key: (bool(key[1]), key not in self._seen,
-                                                          arrivals[key], key[1] != current))
-                    self._clock += 1
-                    self._values[kind], self._order[kind] = best[1], self._clock
-        self._previous = observed
+    def rebaseline(self):
+        """Forgets the copy counts but keeps the reading. For when the set of Battle.net
+        processes changes, which makes the old counts meaningless without making the reading
+        wrong."""
+        self._peak, self._low, self._primed = None, 0, False
+
+    def observe(self, observed, complete=True):
+        """One scan of Battle.net's memory. `complete` says every process was read; a partial
+        scan is still safe to feed, it just can't lower the peaks. An empty scan is refused
+        outright, leaving the last reading standing -- bounded by the detector's presence-lost
+        grace, which is what eventually calls the queue off."""
+        if not observed:
+            return UNKNOWN, None
+        if self._peak is None:
+            return self._prime(observed, complete)
+        if not self._primed and complete:
+            # The baseline came off a scan that missed processes, so it reads low. Take this
+            # one instead, rather than mistaking the difference for a wave of arrivals.
+            return self._prime(observed, complete)
+        for kind in self.KINDS:
+            arrivals = {key: count - self._peak.get(key, 0) for key, count in observed.items()
+                        if key[0] == kind and count > self._peak.get(key, 0)}
+            if arrivals:
+                current = self._values.get(kind)
+                best = max(arrivals, key=lambda key: (bool(key[1]), key not in self._seen,
+                                                      arrivals[key], key[1] != current))
+                self._clock += 1
+                self._values[kind], self._order[kind] = best[1], self._clock
+        self._update_peaks(observed, complete)
         self._seen.update(observed)
         if not self._values:
-            if not observed:
-                return UNKNOWN, None
-            agreed = self._unambiguous(observed)
-            if agreed is None:
-                return UNKNOWN, None
-            self._values = agreed
-            self._order = {kind: 0 for kind in agreed}
+            self._adopt(self._unambiguous(observed))
+        return self._current()
+
+    def _prime(self, observed, complete):
+        """Takes a scan as the baseline, learning nothing from it: with nothing to compare
+        against, a count is just a count. A scan that missed processes can serve until a whole
+        one comes along, so a Battle.net that's never fully readable still tracks."""
+        self._peak, self._low, self._primed = dict(observed), 0, complete
+        self._seen.update(observed)
+        self._adopt(self._unambiguous(observed))
+        return self._current()
+
+    def _update_peaks(self, observed, complete):
+        """Peaks only rise, so an unreadable process can never fake an arrival. They come back
+        down only once a run of complete scans agrees Battle.net really did free the copies."""
+        shrunk = any(observed.get(key, 0) < count for key, count in self._peak.items())
+        self._low = self._low + 1 if complete and shrunk else 0
+        if self._low >= PEAK_SHRINK_POLLS:
+            self.log("Battle.net freed presence copies, re-baselining the counts")
+            self._peak, self._low = dict(observed), 0
+            return
+        for key, count in observed.items():
+            if count > self._peak.get(key, 0):
+                self._peak[key] = count
+
+    def _adopt(self, agreed):
+        if agreed is not None:
+            self._values, self._order = agreed, {kind: 0 for kind in agreed}
+
+    def _current(self):
         return self._reading(self._values.get("program", ""), self._values.get("status", ""),
                              self._order.get("status", 0) >= self._order.get("program", 0))
 
@@ -356,26 +404,39 @@ def _battlenet_roles():
     return main, renderers
 
 
+ROLE_RETRY_SECONDS = 5.0
+CONNECTED_GRACE_SECONDS = 3.0
+
+
 class Presence:
-    """`read()` returns `(state, mode)` and never raises. `connected` says whether Battle.net
-    was readable on the last read."""
+    """`read()` returns `(state, mode)` and never raises. `connected` says whether every
+    Battle.net process was readable on a recent read."""
 
     def __init__(self, log=print):
         self.log = log
         self.connected = False
         self._reached = False
+        self._reached_at = 0.0
+        self._opened = 0
+        self._blind = False
         self._identity = None
         self._known_pids = frozenset()
         self._main = None
         self._pids = []
-        self._tracker = Tracker()
+        self._roles_at = 0.0
+        self._roles_failed = False
+        self._tracker = Tracker(log)
 
     def read(self):
         self._reached = False
         try:
             return self._read()
         finally:
-            self.connected = self._reached
+            now = time.monotonic()
+            if self._reached:
+                self._reached_at = now
+            # A single missed process shouldn't flash "Battle.net not found" at the player.
+            self.connected = now - self._reached_at <= CONNECTED_GRACE_SECONDS
 
     def _read(self):
         if not AVAILABLE:
@@ -386,22 +447,76 @@ class Presence:
                 if self._identity is None:
                     return UNKNOWN, None
             pid_set = _battlenet_pid_set()
-            if pid_set != self._known_pids:
-                self._known_pids = pid_set
-                main, renderers = _battlenet_roles() if pid_set else ([], [])
-                new_main = main[0] if main else None
-                if new_main != self._main:
-                    self._main = new_main
-                    self._tracker = Tracker()
-                    self._identity = find_identity() or self._identity
-                self._pids = main + renderers
+            if pid_set != self._known_pids or (pid_set and not self._pids):
+                self._resolve_pids(pid_set)
             if not self._pids:
                 return UNKNOWN, None
-            return self._tracker.observe(collect(self._chunks(), self._identity))
+            self._opened = 0
+            observed = collect(self._chunks(), self._identity)
+            self._reached = self._opened == len(self._pids)
+            self._note_scan()
+            if not self._opened:
+                return UNKNOWN, None
+            return self._tracker.observe(observed, self._reached)
         except Exception as problem:  # noqa: BLE001
             self.log("Presence read failed: %s" % problem)
             self._known_pids = frozenset()
+            self._roles_at = 0.0
             return UNKNOWN, None
+
+    def _resolve_pids(self, pid_set):
+        """Works out which Battle.net processes to scan. A role lookup that fails or comes back
+        empty keeps the previous list and retries, rather than leaving the app with nothing to
+        read until Battle.net's processes happen to change again."""
+        if not pid_set:
+            self._known_pids, self._pids, self._main = pid_set, [], None
+            self._tracker.rebaseline()
+            return
+        # Only a lookup that came back empty is worth holding off on; a real change to
+        # Battle.net's processes has to be picked up at once.
+        if self._pids and self._roles_failed and time.monotonic() - self._roles_at < ROLE_RETRY_SECONDS:
+            return
+        try:
+            main, renderers = _battlenet_roles()
+        except Exception as problem:  # noqa: BLE001
+            self.log("Battle.net role lookup failed: %s" % problem)
+            main, renderers = [], []
+        finally:
+            # Timed from the end, so a lookup that sat on its 15s timeout doesn't retry at once.
+            self._roles_at = time.monotonic()
+        pids = main + renderers
+        self._roles_failed = not pids
+        if pids:
+            self._known_pids = pid_set
+        else:
+            # Helpers hold no presence, so scanning them only costs time -- which beats
+            # reading nothing at all. `_known_pids` stays put so the next read tries again.
+            self.log("Battle.net role lookup found nothing, scanning all %d processes" % len(pid_set))
+            pids = sorted(pid_set)
+        if set(pids) != set(self._pids):
+            self.log("Battle.net processes changed to %s" % ", ".join(str(pid) for pid in pids))
+            self._pids = pids
+            self._tracker.rebaseline()
+        if main and main[0] != self._main:
+            self._main = main[0]
+            identity = find_identity()
+            if identity is not None:
+                if self._identity is None or identity.account_id != self._identity.account_id:
+                    self.log("Battle.net account changed, starting over")
+                    self._tracker = Tracker(self.log)
+                self._identity = identity
+
+    def _note_scan(self):
+        """One line when the scan starts missing processes and one when it recovers, so a long
+        outage leaves a pair of lines in the log rather than one per second."""
+        if self._reached == (not self._blind):
+            return
+        self._blind = not self._reached
+        if self._blind:
+            self.log("Couldn't read all of Battle.net: %d of %d processes"
+                     % (self._opened, len(self._pids)))
+        else:
+            self.log("Battle.net readable again: %d processes" % len(self._pids))
 
     def _chunks(self):
         k32 = _kernel32()
@@ -409,8 +524,13 @@ class Presence:
             handle = k32.OpenProcess(_PROCESS_QUERY_INFORMATION | _PROCESS_VM_READ, False, pid)
             if not handle:
                 continue
-            self._reached = True
             try:
-                yield from _regions(k32, handle)
+                # A handle that opens but yields nothing readable isn't a process we reached.
+                read = False
+                for chunk in _regions(k32, handle):
+                    read = True
+                    yield chunk
+                if read:
+                    self._opened += 1
             finally:
                 k32.CloseHandle(handle)

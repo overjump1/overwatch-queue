@@ -135,7 +135,8 @@ class Watcher:
             elapsed = self.detector.elapsed(now)
             since_found = self.detector.since_found(now)
         if before != after:
-            log.info("Presence %s/%s, role select %s -> %s", reading, mode, role_select, after)
+            log.info("Presence %s/%s, role select %s -> %s at %ds", reading, mode, role_select,
+                     after, int(elapsed))
         key = after[:2]
         # Re-sent every minute, with fresh times, so the worker knows the PC is still there.
         if key[0] is not None and (key != self._sent or now - self._sent_at >= HEARTBEAT_SECONDS):
