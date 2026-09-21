@@ -3,8 +3,8 @@
 Battle.net is asked what you're doing over its own debug port, which means starting it in
 developer mode (`--remote-debugging-port`) -- see `devmode`. `--presence-source` picks
 something else: `auto` uses the port only if Battle.net already has one open and never
-touches Battle.net itself, and `memory` only ever reads Battle.net's process memory.
-Either way this app only reads, and Overwatch is never touched.
+starts or restarts Battle.net itself. Either way this app only reads, and Overwatch is
+never touched.
 """
 from __future__ import annotations
 
@@ -62,8 +62,6 @@ MODE_NAMES = {
     "mysteryHeroes": "Mystery Heroes",
     "custom": "Custom Game",
 }
-
-SOURCE_NAMES = {"devmode": "developer mode", "memory": "reading its memory"}
 
 DATA_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "OWQueue")
 PAIRING_FILE = os.path.join(DATA_DIR, "pairing.json")
@@ -161,7 +159,7 @@ class Watcher:
             d = self.detector
             now = time.monotonic()
             return (d.state, d.mode, d.elapsed(now), d.since_found(now), d.holding_for_role_select,
-                    self.presence.connected, self.presence.source)
+                    self.presence.connected)
 
 
 def _font(size, weight=QFont.Weight.Normal):
@@ -289,7 +287,7 @@ class App(QWidget):
         label.setStyleSheet("color: %s;" % color)
 
     def _render(self):
-        state, mode, elapsed, since_found, holding, connected, source = self.watcher.snapshot()
+        state, mode, elapsed, since_found, holding, connected = self.watcher.snapshot()
         color = MODE_COLORS.get(mode, TEXT)
         mode_name = MODE_NAMES.get(mode, "Overwatch")
         if state == QUEUEING:
@@ -314,11 +312,11 @@ class App(QWidget):
             self._set(self.timer_label, "–:––", MUTED)
 
         if connected:
-            self._set(self.bnet_label, "● Battle.net connected (%s)" % SOURCE_NAMES.get(source, source), GOOD)
+            self._set(self.bnet_label, "● Battle.net connected", GOOD)
         else:
             self._set(self.bnet_label, "● Battle.net not found — open it and log in", WARN)
 
-        self.restart_button.setVisible(self.watcher.presence.mode != "memory")
+        self.restart_button.setVisible(self.watcher.presence.debug is not None)
         self.restart_button.setEnabled(not self._restarting)
         self.restart_button.setText("Restarting Battle.net…" if self._restarting
                                     else "Restart Battle.net")
@@ -438,11 +436,10 @@ class _Parser(argparse.ArgumentParser):
 
 def parse_args(argv=None):
     parser = _Parser(prog="OWQueue", description=__doc__.splitlines()[0])
-    parser.add_argument("--presence-source", choices=("devmode", "auto", "memory"), default="devmode",
+    parser.add_argument("--presence-source", choices=("devmode", "auto"), default="devmode",
                         help="how to read Battle.net's presence (default: start Battle.net in "
-                             "developer mode and read over its debug port, falling back to reading "
-                             "its memory; 'auto' uses a debug port only if one is already open; "
-                             "'memory' never opens one)")
+                             "developer mode and read over its debug port; 'auto' uses a debug "
+                             "port only if one is already open)")
     parser.add_argument("--battlenet-port", type=int, default=devmode.DEBUG_PORT,
                         help="the --remote-debugging-port to start Battle.net with (default: %d)"
                              % devmode.DEBUG_PORT)

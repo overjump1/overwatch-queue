@@ -13,12 +13,11 @@ when it is running without the port -- with Overwatch open or not, which was mea
 leave a running game alone. The kill is still by image name rather than `/T`, because
 Overwatch is Battle.net's own child and a tree kill would take the game with it.
 
-`Reader` falls back to reading Battle.net's memory whenever the port isn't there, so the
-app keeps working either way, and `Reader.restart` is the same restart on demand -- what
-the app's "Restart Battle.net" button calls.
+`Reader.restart` is the same restart on demand -- what the app's "Restart Battle.net"
+button calls.
 
-Read-only, like `presence`: the only thing written anywhere is Battle.net's own command
-line, and Overwatch is never touched.
+Read-only: the only thing written anywhere is Battle.net's own command line, and Overwatch
+is never touched.
 """
 from __future__ import annotations
 
@@ -44,7 +43,7 @@ TIMEOUT_SECONDS = 2.0
 # refused would sit on the timeout above -- every read, on the thread the queue is read on.
 PROBE_SECONDS = 0.3
 # How long before a dropped connection is tried again. There's no point asking every
-# second: Battle.net takes a while to come back up, and memory is covering us meanwhile.
+# second: Battle.net takes a while to come back up.
 RECONNECT_SECONDS = 5.0
 # How long a running Battle.net gets for its port to start answering before it counts as
 # started without one. It opens a few seconds into startup, so an app opened right after
@@ -105,8 +104,8 @@ class DebugPort:
     rather than trusting a stale target.
 
     The record is our own account's by construction -- `subscribeSelfPresence` is the
-    logged-in account's own presence, not a lookup -- so unlike the memory reader there is
-    no friend's record to tell it apart from.
+    logged-in account's own presence, not a lookup -- so there is no friend's record to
+    tell it apart from.
     """
 
     def __init__(self, port=DEBUG_PORT, log=print):
@@ -128,7 +127,7 @@ class DebugPort:
             if not isinstance(record, dict) or not record:
                 # The port is there but there's no record to read: Battle.net is still
                 # signing in, its frontend hasn't finished loading, or what came back isn't
-                # a record at all. Not connected, so `Reader` goes back to reading memory.
+                # a record at all. Not connected.
                 self._note(False, "no presence record yet" if not record else
                            "unreadable presence record: %r" % (record,))
                 return presence.UNKNOWN, None
@@ -326,29 +325,25 @@ def _waited(stop, seconds):
 
 
 class Reader:
-    """Battle.net presence, over its debug port when that's open and out of its memory when
-    it isn't -- same `read()` and `connected` as `presence.Presence`, plus `source`, which
-    names whichever of the two the last read came from.
+    """Battle.net presence over its debug port -- `read()` returns `(state, mode)` and never
+    raises, `connected` says whether that read came off a real record.
 
-    The fallback isn't a nicety: the port is gone the moment someone restarts Battle.net
-    themselves, and reading memory needs nothing from Battle.net at all, however it was
-    started. Developer mode is what's aimed for; memory is what's always there.
+    `mode` is "devmode" (start Battle.net with the port, then read it) or "auto" (read the
+    port only if Battle.net already opened one, and never touch Battle.net itself).
     """
 
     def __init__(self, mode="devmode", port=DEBUG_PORT, log=print):
         self.log = log
         self.port = port
+        self.mode = mode
         # No websocket module, or not Windows: there's no port to read, whatever was asked.
-        self.mode = mode if AVAILABLE else "memory"
-        self.memory = presence.Presence(log=log)
-        self.debug = DebugPort(port, log=log) if self.mode != "memory" else None
+        self.debug = DebugPort(port, log=log) if AVAILABLE else None
         self.connected = False
-        self.source = "memory"
 
     def restart(self):
         """Closes Battle.net and starts it again in developer mode, now -- what the app's
         button calls. Nothing holds this one back: someone asking for it has decided."""
-        if self.mode == "memory":
+        if self.debug is None:
             return False
         return relaunch(self.port, self.log)
 
@@ -359,21 +354,8 @@ class Reader:
             ensure(self.port, self.log, stop=stop)
 
     def read(self):
-        if self.debug is not None:
-            state, mode = self.debug.read()
-            if self.debug.connected:
-                if self.source != "devmode":
-                    self.log("Reading presence over Battle.net's debug port")
-                    self.source = "devmode"
-                self.connected = True
-                return state, mode
-            if self.source == "devmode":
-                self.log("Reading presence out of Battle.net's memory instead")
-                self.source = "memory"
-                # The copy counts from before the gap say nothing about what arrived during
-                # it, so the memory reader starts its counting over rather than reading the
-                # catch-up as a wave of changes.
-                self.memory.rebaseline()
-        state, mode = self.memory.read()
-        self.connected = self.memory.connected
+        if self.debug is None:
+            return presence.UNKNOWN, None
+        state, mode = self.debug.read()
+        self.connected = self.debug.connected
         return state, mode
