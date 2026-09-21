@@ -51,6 +51,10 @@ struct QueueStatus: Codable, Hashable {
 
     static let idle = QueueStatus(state: .idle)
 
+    /// How long an activity goes without hearing from the worker before it says so rather than
+    /// keep counting. Matches STALE_AFTER_SECONDS in the worker.
+    static let staleAfter: TimeInterval = 420
+
     init(state: QueueState, mode: GameMode? = nil, startedAt: Double? = nil, foundAt: Double? = nil) {
         self.state = state
         self.mode = mode

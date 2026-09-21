@@ -40,6 +40,10 @@ export const PLAYING_AFTER_SECONDS = 60;
 export const AFTER_MATCH_LINGER_SECONDS = 10 * 60;
 /** ...and after the queue was cancelled, just long enough to confirm it. */
 export const AFTER_CANCEL_LINGER_SECONDS = 60;
+/** How often the worker repeats the current state, so the activity's stale date keeps moving. */
+export const KEEPALIVE_SECONDS = 150;
+/** An activity that has heard nothing for this long, about three missed keepalives, says so. */
+export const STALE_AFTER_SECONDS = 420;
 const MAX_SECONDS = 6 * 3600;
 
 export function inMatch(status: Status): boolean {
@@ -160,8 +164,13 @@ export function activityPayload(
   if (event === "start") {
     aps["attributes-type"] = "QueueActivityAttributes";
     aps["attributes"] = {};
+    // iOS 18 takes an explicit opt-in for how a pushed activity is updated: a token of its own, or
+    // a channel. Apple documents it as optional rather than required, but this activity's whole
+    // life depends on an update token coming back, so ask for one instead of trusting the default.
+    aps["input-push-token"] = 1;
   }
   if (event === "end") aps["dismissal-date"] = Math.floor(now) + linger;
+  else aps["stale-date"] = Math.floor(now) + STALE_AFTER_SECONDS;
   if (alert === "queue") {
     aps["alert"] = { title: "In queue", body: modeName(status.mode) };
   } else if (alert === "playing") {

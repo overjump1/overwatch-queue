@@ -1,7 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 import { alertMessage, androidMessage, FcmResult, liveActivityMessage, parseServiceAccount, send, wakeMessage } from "./fcm";
 import {
-  activityPayload, advance, androidPayload, foundBody, IDLE, nextStatus, parseReport, PLAYING_AFTER_SECONDS, Push, pushesFor, Status,
+  activityPayload, advance, androidPayload, foundBody, IDLE, KEEPALIVE_SECONDS, nextStatus, parseReport,
+  PLAYING_AFTER_SECONDS, Push, pushesFor, Status,
 } from "./logic";
 
 export interface Env {
@@ -160,6 +161,10 @@ export class Pair extends DurableObject<Env> {
       if (advanced !== status) {
         await this.ctx.storage.put("status", advanced);
         for (const push of pushesFor(status, advanced)) await this.deliver(push, advanced, now);
+      } else if (advanced.state !== "idle" && now >= (await this.pushedAt()) + KEEPALIVE_SECONDS) {
+        // Nothing has changed, but the Live Activity's stale date has to keep moving or it calls
+        // itself out of date. Apple only: Android's notification stays up until it's told otherwise.
+        await this.deliverApple({ kind: "update" }, advanced, now);
       }
       await this.schedule(advanced);
     });
@@ -172,6 +177,7 @@ export class Pair extends DurableObject<Env> {
     if (status.state !== "idle") {
       const reportedAt = (await this.ctx.storage.get<number>("reportedAt")) ?? now / 1000;
       times.push((reportedAt + PC_SILENT_SECONDS) * 1000);
+      times.push(((await this.pushedAt()) + KEEPALIVE_SECONDS) * 1000);
     }
     if (times.length) await this.ctx.storage.setAlarm(Math.max(Math.min(...times), now + 1000));
     else await this.ctx.storage.deleteAlarm();
@@ -183,6 +189,11 @@ export class Pair extends DurableObject<Env> {
 
   private async phone(): Promise<Phone> {
     return (await this.ctx.storage.get<Phone>("phone")) ?? {};
+  }
+
+  /** When the phone's Live Activity was last pushed at, whether or not the push landed. */
+  private async pushedAt(): Promise<number> {
+    return (await this.ctx.storage.get<number>("pushedAt")) ?? 0;
   }
 
   /** Sends a push to every paired device. */
@@ -225,27 +236,30 @@ export class Pair extends DurableObject<Env> {
         }
         return;
       }
+      // Before the phone check, not after: this is what paces the keepalive, and a pairing with no
+      // iPhone on it would otherwise leave it at 0 and re-arm the alarm every second.
+      await this.ctx.storage.put("pushedAt", now);
       if (!phone.fcm) return;
 
-      if (push.kind === "update" && !phone.updateToken) {
-        if (push.alert === "found") await this.deliverApple({ kind: "start", alert: "found" }, status, now);
-        return;
+      const activityToken = push.kind === "start" ? phone.startToken : phone.updateToken;
+      let result: FcmResult | null = null;
+      if (activityToken) {
+        const alert = push.kind === "start" || push.kind === "update" ? push.alert : undefined;
+        const linger = push.kind === "end" ? push.linger ?? 0 : 0;
+        const payload = activityPayload(push.kind, status, now, alert, linger);
+        result = await this.fcm(liveActivityMessage(phone.fcm, activityToken, payload));
+        console.log(`push ${push.kind}${alert ? ` (${alert})` : ""} -> ${tail(activityToken)}: `
+          + (result ? `${result.status}${result.error ? ` ${result.error}` : ""}` : "unreachable"));
+      } else {
+        console.log(`push ${push.kind} has no ${push.kind === "start" ? "start" : "update"} token`);
       }
-      if (push.kind === "end" && !phone.updateToken) return;
-      if (push.kind === "start" && !phone.startToken) return;
-
-      const activityToken = push.kind === "start" ? phone.startToken! : phone.updateToken!;
-      const alert = push.kind === "start" || push.kind === "update" ? push.alert : undefined;
-      const linger = push.kind === "end" ? push.linger ?? 0 : 0;
-      const payload = activityPayload(push.kind, status, now, alert, linger);
-      const result = await this.fcm(liveActivityMessage(phone.fcm, activityToken, payload));
-      console.log(`push ${push.kind}${alert ? ` (${alert})` : ""} -> ${tail(activityToken)}: `
-        + (result ? `${result.status}${result.error ? ` ${result.error}` : ""}` : "unreachable"));
 
       if (push.kind === "end" || push.kind === "start") {
         delete phone.updateToken;
         // iOS can swap the push-to-start token once it has used it, and a new activity has a new
         // update token. Wake the app so it reports both instead of waiting until it's next opened.
+        // This has to happen even when the push above never went: a token we don't have is exactly
+        // the one we need back, and skipping the wake is how the phone got stuck on stale tokens.
         await this.fcm(wakeMessage(phone.fcm));
       }
       const tokenDead = result !== null && dead(result);
@@ -254,9 +268,11 @@ export class Pair extends DurableObject<Env> {
         else delete phone.updateToken;
       }
       await this.ctx.storage.put("phone", phone);
-      if (tokenDead && push.kind === "update" && push.alert === "found") {
-        if (phone.startToken) await this.deliverApple({ kind: "start", alert: "found" }, status, now);
-        else await this.fcm(alertMessage(phone.fcm, "Match found!", foundBody(status)));
+      // A found match is the one thing that can't just be dropped. If the running activity couldn't
+      // take it, start a fresh one carrying the alert; if there's no start token either, the
+      // matchAlert push that follows this one sends the plain banner.
+      if (push.kind === "update" && push.alert === "found" && (!activityToken || tokenDead) && phone.startToken) {
+        await this.deliverApple({ kind: "start", alert: "found" }, status, now);
       }
     } catch (error) {
       console.log(`deliver ${push.kind} failed: ${String(error)}`);

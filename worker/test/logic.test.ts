@@ -1,4 +1,7 @@
-import { activityPayload, advance, androidPayload, IDLE, nextStatus, parseReport, pushesFor, Report, Status } from "../src/logic";
+import {
+  activityPayload, advance, androidPayload, IDLE, nextStatus, parseReport, pushesFor, Report,
+  STALE_AFTER_SECONDS, Status,
+} from "../src/logic";
 
 const report = (state: Report["state"], elapsed = 0, sinceFound = 0, mode: Report["mode"] = "competitive"): Report =>
   ({ state, mode, elapsed, sinceFound });
@@ -124,6 +127,21 @@ describe("payload", () => {
     const aps = activityPayload("start", queueing(), 1000, "queue");
     expect(aps["attributes-type"]).toBe("QueueActivityAttributes");
     expect(aps.attributes).toEqual({});
+  });
+
+  // iOS 18's opt-in for getting an update token back for the activity the push starts. Apple
+  // documents it as optional; we send it because everything after the start needs that token.
+  it("asks for an update token on start, and only on start", () => {
+    expect(activityPayload("start", queueing(), 1000, "queue")["input-push-token"]).toBe(1);
+    expect(activityPayload("update", found(), 1300)["input-push-token"]).toBeUndefined();
+    expect(activityPayload("end", IDLE, 2000)["input-push-token"]).toBeUndefined();
+  });
+
+  it("dates a live activity stale, so a phone the worker lost says so", () => {
+    expect(activityPayload("start", queueing(), 1000, "queue")["stale-date"]).toBe(1000 + STALE_AFTER_SECONDS);
+    expect(activityPayload("update", found(), 1300)["stale-date"]).toBe(1300 + STALE_AFTER_SECONDS);
+    // An ended activity has a dismissal date instead; going stale on the way out means nothing.
+    expect(activityPayload("end", IDLE, 2000, undefined, 600)["stale-date"]).toBeUndefined();
   });
 
   it("keeps an ended activity on screen for its linger time", () => {

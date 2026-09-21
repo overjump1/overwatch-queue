@@ -22,6 +22,7 @@ Only two things make a sound: a queue starting ("In queue") and a match being fo
 - A minute after the match is found it turns into **In a match** (good luck, have fun) and counts the match time.
 - When the match ends it shows **Not in queue** for 10 minutes, then goes away.
 - If you cancel the queue it shows **Not in queue** for a minute, then goes away.
+- If the phone stops hearing from the worker, the Live Activity greys out and says it lost contact rather than keep counting. The worker repeats the current state every couple of minutes, so that only happens when pushes genuinely aren't landing.
 
 ## Updating
 
