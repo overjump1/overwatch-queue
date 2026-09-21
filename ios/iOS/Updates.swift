@@ -51,21 +51,20 @@ enum Updates {
         return false
     }
 
-    /// Worked out once, since the view body reads it and it can't change while the app runs.
-    ///
-    /// Off where a check would be wrong or pointless: TestFlight and the App Store hand out their
-    /// own updates and their builds keep project.yml's `MARKETING_VERSION`, which is below every
-    /// release and would claim an update forever (a receipt on disk marks those builds); Debug
-    /// builds, for the same reason; and anything on a 0.x version, which is older than every release.
+    /// Written by ci_scripts/ci_post_clone.sh. TestFlight hands out its own updates, and these
+    /// builds are numbered from Xcode Cloud's counter rather than the one releases use.
+    static var isTestFlightBuild: Bool {
+        Bundle.main.object(forInfoDictionaryKey: "OWQTestFlightBuild") as? Bool ?? false
+    }
+
+    /// Worked out once, since the view body reads it and it can't change while the app runs. Off
+    /// for TestFlight, for Debug builds, and for the 0.0.0 a build nobody stamped keeps — below
+    /// every release, so it would claim an update forever.
     static let checksForUpdates: Bool = {
         #if DEBUG
         return false
         #else
-        if let receipt = Bundle.main.appStoreReceiptURL,
-           FileManager.default.fileExists(atPath: receipt.path) {
-            return false
-        }
-        return (parse(current)?.first ?? 0) > 0
+        return !isTestFlightBuild && (parse(current)?.first ?? 0) > 0
         #endif
     }()
 

@@ -10,7 +10,8 @@ settings:
     DEVELOPMENT_TEAM: 56N4LCCUN2
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "2.0"
+    # CI stamps every build that goes anywhere; 0.0.0 is one nobody stamped (ios/iOS/Updates.swift).
+    MARKETING_VERSION: "0.0.0"
     CURRENT_PROJECT_VERSION: "1"
 packages:
   Firebase:
