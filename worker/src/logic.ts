@@ -40,10 +40,12 @@ export const PLAYING_AFTER_SECONDS = 60;
 export const AFTER_MATCH_LINGER_SECONDS = 10 * 60;
 /** ...and after the queue was cancelled, just long enough to confirm it. */
 export const AFTER_CANCEL_LINGER_SECONDS = 60;
-/** How often the worker repeats the current state, so the activity's stale date keeps moving. */
-export const KEEPALIVE_SECONDS = 150;
-/** An activity that has heard nothing for this long, about three missed keepalives, says so. */
-export const STALE_AFTER_SECONDS = 420;
+/**
+ * An activity that has heard nothing for this long says it lost contact. Nothing repeats the state
+ * to hold that off, so it has to outlast the longest a healthy queue or match goes without news --
+ * the worker only ever speaks when something changes. A PC that stops talking greys out after it.
+ */
+export const STALE_AFTER_SECONDS = 30 * 60;
 const MAX_SECONDS = 6 * 3600;
 
 export function inMatch(status: Status): boolean {

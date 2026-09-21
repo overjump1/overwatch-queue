@@ -1,7 +1,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { alertMessage, androidMessage, FcmResult, liveActivityMessage, parseServiceAccount, send, wakeMessage } from "./fcm";
 import {
-  activityPayload, advance, androidPayload, foundBody, IDLE, KEEPALIVE_SECONDS, nextStatus, parseReport,
+  activityPayload, advance, androidPayload, foundBody, IDLE, nextStatus, parseReport,
   PLAYING_AFTER_SECONDS, Push, pushesFor, Status,
 } from "./logic";
 
@@ -34,7 +34,14 @@ interface AndroidDevice {
 
 type Reply = { status: number; body: unknown };
 
-const PC_SILENT_SECONDS = 180;
+/**
+ * A queue or a match the PC hasn't mentioned in this long is over as far as anyone here is
+ * concerned: the PC was closed, went to sleep, or lost its network mid-queue. Hours rather than
+ * minutes because the PC only speaks when something changes -- no real queue or match goes three
+ * hours without changing, so it needs no heartbeat to hold this off. The activity says it lost
+ * contact well before then, at STALE_AFTER_SECONDS.
+ */
+const ABANDONED_AFTER_SECONDS = 3 * 3600;
 
 const PAIR_ID = /^[0-9a-f]{32}$/;
 const FCM_TOKEN = /^[A-Za-z0-9_:-]{20,4096}$/;
@@ -152,7 +159,7 @@ export class Pair extends DurableObject<Env> {
       const now = Date.now() / 1000;
       const status = await this.status();
       const reportedAt = (await this.ctx.storage.get<number>("reportedAt")) ?? now;
-      if (status.state !== "idle" && now >= reportedAt + PC_SILENT_SECONDS) {
+      if (status.state !== "idle" && now >= reportedAt + ABANDONED_AFTER_SECONDS) {
         await this.ctx.storage.put("status", IDLE);
         await this.deliver({ kind: "end" }, IDLE, now);
         return;
@@ -161,10 +168,6 @@ export class Pair extends DurableObject<Env> {
       if (advanced !== status) {
         await this.ctx.storage.put("status", advanced);
         for (const push of pushesFor(status, advanced)) await this.deliver(push, advanced, now);
-      } else if (advanced.state !== "idle" && now >= (await this.pushedAt()) + KEEPALIVE_SECONDS) {
-        // Nothing has changed, but the Live Activity's stale date has to keep moving or it calls
-        // itself out of date. Apple only: Android's notification stays up until it's told otherwise.
-        await this.deliverApple({ kind: "update" }, advanced, now);
       }
       await this.schedule(advanced);
     });
@@ -176,8 +179,7 @@ export class Pair extends DurableObject<Env> {
     if (status.state === "found" && status.foundAt !== null) times.push((status.foundAt + PLAYING_AFTER_SECONDS) * 1000);
     if (status.state !== "idle") {
       const reportedAt = (await this.ctx.storage.get<number>("reportedAt")) ?? now / 1000;
-      times.push((reportedAt + PC_SILENT_SECONDS) * 1000);
-      times.push(((await this.pushedAt()) + KEEPALIVE_SECONDS) * 1000);
+      times.push((reportedAt + ABANDONED_AFTER_SECONDS) * 1000);
     }
     if (times.length) await this.ctx.storage.setAlarm(Math.max(Math.min(...times), now + 1000));
     else await this.ctx.storage.deleteAlarm();
@@ -189,11 +191,6 @@ export class Pair extends DurableObject<Env> {
 
   private async phone(): Promise<Phone> {
     return (await this.ctx.storage.get<Phone>("phone")) ?? {};
-  }
-
-  /** When the phone's Live Activity was last pushed at, whether or not the push landed. */
-  private async pushedAt(): Promise<number> {
-    return (await this.ctx.storage.get<number>("pushedAt")) ?? 0;
   }
 
   /** Sends a push to every paired device. */
@@ -236,9 +233,6 @@ export class Pair extends DurableObject<Env> {
         }
         return;
       }
-      // Before the phone check, not after: this is what paces the keepalive, and a pairing with no
-      // iPhone on it would otherwise leave it at 0 and re-arm the alarm every second.
-      await this.ctx.storage.put("pushedAt", now);
       if (!phone.fcm) return;
 
       const activityToken = push.kind === "start" ? phone.startToken : phone.updateToken;
