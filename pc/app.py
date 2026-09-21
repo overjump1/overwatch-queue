@@ -25,9 +25,12 @@ from PyQt6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QMessage
                              QVBoxLayout, QWidget)
 
 import devmode
+import updater as up
 from detector import FOUND, QUEUEING, Detector
 from relay import Relay
 from roleselect import RoleSelect
+from updater import Updater
+from version import VERSION
 
 POLL_SECONDS = 1.0
 GUI_REFRESH_MS = 500
@@ -167,15 +170,32 @@ def _font(size, weight=QFont.Weight.Normal):
     return font
 
 
+def _update_button(state, version, percent):
+    """The footer button's text, colour, and whether pressing it does anything."""
+    if state == up.CHECKING:
+        return "Checking…", MUTED, False
+    if state == up.UP_TO_DATE:
+        return "Up to date", MUTED, True
+    if state == up.AVAILABLE:
+        return "Update to %s" % version, GOOD, True
+    if state == up.DOWNLOADING:
+        return "Downloading… %d%%" % percent, MUTED, False
+    if state == up.FAILED:
+        return "Update failed — retry", WARN, True
+    return "Check for updates", MUTED, True
+
+
 class App(QWidget):
-    def __init__(self, pair_id, relay, watcher):
+    def __init__(self, pair_id, relay, watcher, updater):
         super().__init__()
         self.pair_id = pair_id
         self.relay = relay
         self.watcher = watcher
+        self.updater = updater
         self._qr_for = None
         self._restarting = False
         self._qr_requested_with = None  # the phones paired when "Show QR code" was pressed, None when not pressed
+        self._checks_updates = up.checks_for_updates()
 
         self.setWindowTitle("OW Queue")
         self.setStyleSheet(
@@ -236,6 +256,20 @@ class App(QWidget):
         buttons.addStretch()
         layout.addSpacing(10)
         layout.addLayout(buttons)
+
+        self.version_label = QLabel("OW Queue %s" % VERSION, font=_font(9))
+        self.version_label.setStyleSheet("color: %s;" % MUTED)
+        self.update_button = QPushButton(font=_font(9))
+        self.update_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.update_button.clicked.connect(self.updater.press)
+        # Builds from source never check, so there's nothing for the button to do.
+        self.update_button.setVisible(self._checks_updates)
+        footer = QHBoxLayout()
+        footer.addWidget(self.version_label)
+        footer.addStretch()
+        footer.addWidget(self.update_button)
+        layout.addSpacing(10)
+        layout.addLayout(footer)
 
         self.timer = QTimer(self, interval=GUI_REFRESH_MS, timeout=self.refresh)
         self.timer.start()
@@ -309,6 +343,23 @@ class App(QWidget):
 
         self._set(self.server_label, "Can't reach the notification server — retrying", WARN)
         self.server_label.setVisible(not self.relay.reachable)
+
+        self._render_update()
+
+    def _render_update(self):
+        if not self._checks_updates:
+            return
+        state, version, percent = self.updater.snapshot()
+        if state == up.INSTALLING:
+            return QApplication.instance().quit()  # the installer closes us and starts us again
+        text, color, enabled = _update_button(state, version, percent)
+        self.update_button.setEnabled(enabled)
+        if self.update_button.text() == text:
+            return
+        self.update_button.setText(text)
+        self.update_button.setStyleSheet(
+            "QPushButton { color: %s; background: transparent; border: none; padding: 2px 4px; }"
+            "QPushButton:hover { background: #262a33; }" % color)
 
     def _draw_qr(self):
         code = qrcode.QRCode(border=2, error_correction=qrcode.constants.ERROR_CORRECT_M)
@@ -409,16 +460,18 @@ def main():
     relay = Relay(pair_id, log=log.info)
     reader = devmode.Reader(args.presence_source, args.battlenet_port, log=log.info)
     watcher = Watcher(relay, reader)
+    updater = Updater(DATA_DIR, log=log.info)
     stop = threading.Event()
     threading.Thread(target=relay.run, args=(stop,), daemon=True).start()
     threading.Thread(target=watcher.run, args=(stop,), daemon=True).start()
     threading.Thread(target=watcher.role_select.prefetch, daemon=True).start()
+    threading.Thread(target=updater.run, args=(stop,), daemon=True).start()
     # Off the GUI thread: it waits out a Battle.net that's still starting, then a restart.
     threading.Thread(target=reader.start, args=(stop,), daemon=True, name="battlenet-devmode").start()
 
     app = QApplication(sys.argv)
     app.aboutToQuit.connect(stop.set)
-    window = App(pair_id, relay, watcher)
+    window = App(pair_id, relay, watcher, updater)
     window.show()
     sys.exit(app.exec())
 

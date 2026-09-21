@@ -14,6 +14,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var reachable = true
     @Published private(set) var pairingWasReset = false
     @Published private(set) var matchAlerts = 0
+    /// A newer release, if there is one. iOS can't install it, so this only reports it.
+    @Published private(set) var updateNotice: UpdateNotice = .quiet
 
     private var fcmToken: String?
     private var startToken: String?
@@ -27,6 +29,8 @@ final class AppModel: ObservableObject {
     private var localActivityQueueStart: Double?
     /// The match we already alerted for, so the same match never alerts twice.
     private var alertedFoundAt: Double?
+    private var updateCheckedAt: Date?
+    private var updateTask: Task<Void, Never>?
     private let watch = WatchBridge()
     private let alerts = MatchAlert()
 
@@ -64,6 +68,8 @@ final class AppModel: ObservableObject {
         pollTask = nil
         guard isActive else { return }
         launch()
+        // Checks at most every six hours; coming back to the app just gives it the chance.
+        checkForUpdate(force: false)
         pollTask = Task {
             await register()
             while !Task.isCancelled {
@@ -98,6 +104,31 @@ final class AppModel: ObservableObject {
         status = .idle
         watch.send(pairID: nil)
         endAllActivities()
+    }
+
+    // MARK: - Updates
+
+    /// `force` is the menu item; otherwise this only looks again once six hours have passed. An
+    /// update speaks up either way; everything else is only worth saying when the user asked, and
+    /// is taken back down once they've read it.
+    func checkForUpdate(force: Bool) {
+        guard Updates.checksForUpdates, updateTask == nil else { return }
+        if !force, let last = updateCheckedAt, Date.now.timeIntervalSince(last) < 6 * 60 * 60 { return }
+        if force { updateNotice = .checking }
+        updateTask = Task {
+            let notice = await Updates.check()
+            updateTask = nil
+            // A check that couldn't reach GitHub doesn't count, so the next one isn't six hours away.
+            if notice != .failed { updateCheckedAt = .now }
+            if case .available = notice {
+                updateNotice = notice
+                return
+            }
+            updateNotice = force ? notice : .quiet
+            guard force else { return }
+            try? await Task.sleep(for: .seconds(4))
+            if updateNotice == notice { updateNotice = .quiet }
+        }
     }
 
     // MARK: - Worker

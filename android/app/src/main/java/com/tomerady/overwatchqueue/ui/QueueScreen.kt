@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.NotificationsOff
@@ -63,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.sp
 import com.tomerady.overwatchqueue.QueueRepository
+import com.tomerady.overwatchqueue.Updater
 import com.tomerady.overwatchqueue.shared.GameMode
 import com.tomerady.overwatchqueue.shared.QueueState
 import com.tomerady.overwatchqueue.shared.QueueStatus
@@ -75,7 +78,15 @@ val Orange = Color(0xFFFF9F0A)
 private val FlashGreen = Color(QueueStatus.GREEN)
 
 @Composable
-fun QueueScreen(state: QueueRepository.UiState, onScan: () -> Unit, onUnpair: () -> Unit) {
+fun QueueScreen(
+    state: QueueRepository.UiState,
+    update: Updater.State,
+    canUpdate: Boolean,
+    onScan: () -> Unit,
+    onUnpair: () -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onUpdateTap: () -> Unit,
+) {
     val status = state.status
     val accent = Color(status.accent)
     val glow by animateColorAsState(
@@ -107,7 +118,7 @@ fun QueueScreen(state: QueueRepository.UiState, onScan: () -> Unit, onUnpair: ()
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            SettingsMenu(onScan, onUnpair)
+            SettingsMenu(onScan, onUnpair, canUpdate, onCheckForUpdates)
         }
         Spacer(Modifier.weight(1f))
         ModeBadge(status, 132.dp, Modifier.scale(1f + flash.value * 0.27f))
@@ -137,6 +148,7 @@ fun QueueScreen(state: QueueRepository.UiState, onScan: () -> Unit, onUnpair: ()
             else -> Unit
         }
         Spacer(Modifier.weight(1f))
+        UpdateRow(update, onUpdateTap)
         if (!state.reachable) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.WifiOff, contentDescription = null, tint = Orange, modifier = Modifier.size(16.dp))
@@ -157,14 +169,57 @@ fun QueueScreen(state: QueueRepository.UiState, onScan: () -> Unit, onUnpair: ()
     }
 }
 
+/**
+ * The update on offer, in the same strip as the "can't reach the server" warning. Tapping it
+ * downloads the APK and hands it to the system installer, which asks the user to confirm.
+ */
 @Composable
-private fun SettingsMenu(onScan: () -> Unit, onUnpair: () -> Unit) {
+private fun UpdateRow(update: Updater.State, onTap: () -> Unit) {
+    val (text, colour) = when (update) {
+        is Updater.State.Available -> "Update to ${update.version} — tap to install" to FlashGreen
+        is Updater.State.Downloading -> "Downloading the update… ${update.percent}%" to Secondary
+        is Updater.State.Failed -> "${update.reason} — tap to try again" to Orange
+        Updater.State.Installing -> "Installing…" to Secondary
+        Updater.State.Checking -> "Checking for updates…" to Secondary
+        Updater.State.UpToDate -> "You're on the latest version" to Secondary
+        Updater.State.Idle -> return
+    }
+    val tappable = update is Updater.State.Available || update is Updater.State.Failed
+    Row(
+        Modifier
+            .let { if (tappable) it.clickable(onClick = onTap) else it }
+            .padding(vertical = 6.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.FileDownload, contentDescription = null, tint = colour, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(text, fontSize = 13.sp, color = colour)
+    }
+}
+
+@Composable
+private fun SettingsMenu(
+    onScan: () -> Unit,
+    onUnpair: () -> Unit,
+    canUpdate: Boolean,
+    onCheckForUpdates: () -> Unit,
+) {
     var open by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { open = true }) {
             Icon(Icons.Filled.Settings, contentDescription = "Settings", tint = Secondary)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (canUpdate) {
+                DropdownMenuItem(
+                    text = { Text("Check for updates") },
+                    leadingIcon = { Icon(Icons.Filled.FileDownload, contentDescription = null) },
+                    onClick = {
+                        open = false
+                        onCheckForUpdates()
+                    },
+                )
+            }
             DropdownMenuItem(
                 text = { Text("Scan new code") },
                 leadingIcon = { Icon(Icons.Filled.QrCodeScanner, contentDescription = null) },

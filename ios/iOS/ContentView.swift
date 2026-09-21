@@ -40,6 +40,11 @@ struct ContentView: View {
                 HStack {
                     Spacer()
                     Menu {
+                        if Updates.checksForUpdates {
+                            Button("Check for updates", systemImage: "arrow.down.circle") {
+                                model.checkForUpdate(force: true)
+                            }
+                        }
                         Button("Scan new code", systemImage: "qrcode.viewfinder") { showScanner = true }
                         Button("Unpair", systemImage: "xmark.circle", role: .destructive) { model.unpair() }
                     } label: {
@@ -76,6 +81,7 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                updateLine
                 if !model.reachable {
                     Label("Can't reach the server — retrying", systemImage: "wifi.exclamationmark")
                         .font(.footnote)
@@ -87,6 +93,25 @@ struct ContentView: View {
         .onChange(of: model.matchAlerts) { _, _ in
             withAnimation(.easeOut(duration: 0.15)) { flash = true }
             withAnimation(.easeIn(duration: 0.9).delay(0.25)) { flash = false }
+        }
+    }
+
+    /// iOS can't install an app on itself, so this only says a newer build is out; the IPA still
+    /// goes on through AltStore or Sideloadly from the release page.
+    @ViewBuilder
+    private var updateLine: some View {
+        if let (text, icon, colour) = updateLabel {
+            Label(text, systemImage: icon).font(.footnote).foregroundStyle(colour)
+        }
+    }
+
+    private var updateLabel: (String, String, Color)? {
+        switch model.updateNotice {
+        case .available(let version): return ("Update available · \(version)", "arrow.down.circle", .green)
+        case .checking: return ("Checking for updates…", "arrow.down.circle", .secondary)
+        case .upToDate: return ("You're on the latest version", "checkmark.circle", .secondary)
+        case .failed: return ("Couldn't check for updates", "exclamationmark.circle", .orange)
+        case .quiet: return nil
         }
     }
 }

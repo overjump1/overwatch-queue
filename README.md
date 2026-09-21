@@ -23,6 +23,18 @@ Only two things make a sound: a queue starting ("In queue") and a match being fo
 - When the match ends it shows **Not in queue** for 10 minutes, then goes away.
 - If you cancel the queue it shows **Not in queue** for a minute, then goes away.
 
+## Updating
+
+Each app checks the [latest release](https://github.com/overjump1/overwatch-queue/releases) when it opens and then every six hours, and there's a **Check for updates** item in each app's menu (the Windows app has the button in its footer, next to its version).
+
+- **Windows**: one click downloads the installer and runs it silently, then the app starts again on the new version. No UAC prompt for a per-user install.
+- **Android**: one tap downloads the APK and hands it to the system installer, which asks you to confirm. The first time, Android sends you to *Install unknown apps* to allow it for OW Queue. The new APK only installs over the old one if both were signed with the same key — see `ANDROID_DEBUG_KEYSTORE` under [Building](#building).
+- **iPhone**: only says a newer build is out. iOS can't install an app on itself, so the IPA still goes on through AltStore or Sideloadly. TestFlight builds don't check at all, because TestFlight already tells you.
+
+Each app compares itself against **the version in its own asset's filename**, not the release tag. `Release` copies unchanged apps forward, so `v2.0.42` can hold `OWQueue-Setup-2.0.40.exe`; going by the tag would have the Windows app reinstalling its own build forever.
+
+Builds that aren't from a release never check: they're on a `0.x` version (`0.0.0` running `pc/app.py` from source, `0.0.0-dev` for a local Gradle build, `0.0.0-dev.<run>` for a pull request artifact), which is below every release and would claim an update forever.
+
 ## Windows app
 
 Download `OWQueue-Setup-<version>.exe` from [Releases](https://github.com/overjump1/overwatch-queue/releases) and run it. It installs for your user only (no admin prompt) and can start the app when you sign in.
