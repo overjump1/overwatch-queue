@@ -38,8 +38,8 @@ type Reply = { status: number; body: unknown };
  * A queue or a match the PC hasn't mentioned in this long is over as far as anyone here is
  * concerned: the PC was closed, went to sleep, or lost its network mid-queue. Hours rather than
  * minutes because the PC only speaks when something changes -- no real queue or match goes three
- * hours without changing, so it needs no heartbeat to hold this off. The activity says it lost
- * contact well before then, at STALE_AFTER_SECONDS.
+ * hours without changing, so it needs no heartbeat to hold this off. The same horizon as the
+ * activity's own STALE_AFTER_SECONDS, which covers a phone this end push can't reach.
  */
 const ABANDONED_AFTER_SECONDS = 3 * 3600;
 

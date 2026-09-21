@@ -42,10 +42,12 @@ export const AFTER_MATCH_LINGER_SECONDS = 10 * 60;
 export const AFTER_CANCEL_LINGER_SECONDS = 60;
 /**
  * An activity that has heard nothing for this long says it lost contact. Nothing repeats the state
- * to hold that off, so it has to outlast the longest a healthy queue or match goes without news --
- * the worker only ever speaks when something changes. A PC that stops talking greys out after it.
+ * to hold that off -- the worker only ever speaks when something changes -- so this is deliberately
+ * far past the longest a healthy queue or match goes quiet. It is the same three hours the worker
+ * gives up after, seen from the phone: the worker's end push normally takes the activity down
+ * first, and this is what does it when the phone was unreachable and that push never landed.
  */
-export const STALE_AFTER_SECONDS = 30 * 60;
+export const STALE_AFTER_SECONDS = 3 * 3600;
 const MAX_SECONDS = 6 * 3600;
 
 export function inMatch(status: Status): boolean {
