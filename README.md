@@ -29,11 +29,11 @@ Each app checks the [latest release](https://github.com/overjump1/overwatch-queu
 
 - **Windows**: one click downloads the installer and runs it silently, then the app starts again on the new version. No UAC prompt for a per-user install.
 - **Android**: one tap downloads the APK and hands it to the system installer, which asks you to confirm. The first time, Android sends you to *Install unknown apps* to allow it for OW Queue. The new APK only installs over the old one if both were signed with the same key — see `ANDROID_DEBUG_KEYSTORE` under [Building](#building).
-- **iPhone**: only says a newer build is out. iOS can't install an app on itself, so the IPA still goes on through AltStore or Sideloadly. TestFlight builds don't check at all, because TestFlight already tells you.
+- **iPhone**: only says a newer build is out. iOS can't install an app on itself, so the IPA still goes on through AltStore or Sideloadly. TestFlight builds don't check at all, because TestFlight already tells you: `ci_scripts/ci_post_clone.sh` marks them with `OWQTestFlightBuild` in the Info.plist.
 
 Each app compares itself against **the version in its own asset's filename**, not the release tag. `Release` copies unchanged apps forward, so `v2.0.42` can hold `OWQueue-Setup-2.0.40.exe`; going by the tag would have the Windows app reinstalling its own build forever.
 
-Builds that aren't from a release never check: they're on a `0.x` version (`0.0.0` running `pc/app.py` from source, `0.0.0-dev` for a local Gradle build, `0.0.0-dev.<run>` for a pull request artifact), which is below every release and would claim an update forever.
+Builds that aren't from a release never check: they're on a `0.x` version (`0.0.0` running `pc/app.py` from source, `0.0.0-dev` for a local Gradle build, `0.0.0-dev.<run>` for a pull request artifact, `0.0.0` for an iPhone build nobody stamped), which is below every release and would claim an update forever.
 
 ## Windows app
 
@@ -59,6 +59,8 @@ If Battle.net runs as administrator, the app has to run as administrator as well
 ### Releasing
 
 Every push to `main` that changes an app publishes a [release](https://github.com/overjump1/overwatch-queue/releases) (`v2.0.<run>`) with the Android APK, the Windows installer and the iPhone IPA. The `Release` workflow only rebuilds the apps whose files changed since the last release (`android/`, `pc/`, or `ios/` + `project.yml` + the Xcode project, plus each app's workflow) and copies the others from that release unchanged. Pushes that don't touch an app (the worker, the README) don't make a release. To rebuild everything, run the `Release` workflow by hand with **Rebuild every app** ticked.
+
+Each release takes down the ones before it, so only the newest build is there to download. The tags stay behind, so the diff above still has something to compare against.
 
 The `Windows app` workflow builds the app with PyInstaller (`pc/owqueue.spec`) and packs it into a setup exe with Inno Setup (`pc/installer.iss`). Pull requests upload the installer as a workflow artifact.
 
@@ -87,7 +89,7 @@ npm test
 
 ### TestFlight (Xcode Cloud)
 
-Pushes to `main` build and upload to TestFlight. `ci_scripts/ci_post_clone.sh` writes both Firebase configs from the workflow's secret environment variables: `GOOGLE_SERVICE_INFO_PLIST` holds `base64 -i ios/iOS/GoogleService-Info.plist` and `WATCH_GOOGLE_SERVICE_INFO_PLIST` holds `base64 -i ios/Watch/GoogleService-Info.plist`.
+Pushes to `main` build and upload to TestFlight. `ci_scripts/ci_post_clone.sh` stamps the build as `2.0.<Xcode Cloud build number>` (the project itself ships on `0.0.0`, so a build that missed the stamp can't pass for a release) and writes both Firebase configs from the workflow's secret environment variables: `GOOGLE_SERVICE_INFO_PLIST` holds `base64 -i ios/iOS/GoogleService-Info.plist` and `WATCH_GOOGLE_SERVICE_INFO_PLIST` holds `base64 -i ios/Watch/GoogleService-Info.plist`.
 
 To test in the Simulator against a local worker (`npx wrangler dev`), run a Debug build with the launch argument `-workerURL http://127.0.0.1:8787`, then pair:
 

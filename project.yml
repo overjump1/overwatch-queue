@@ -10,7 +10,10 @@ settings:
     DEVELOPMENT_TEAM: 56N4LCCUN2
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "2.0"
+    # Placeholders. Every build that goes anywhere is stamped: Xcode Cloud in
+    # ci_scripts/ci_post_clone.sh, the GitHub release IPA on the xcodebuild command line. A 0.0.0
+    # build is one nobody stamped, and it doesn't check for updates (ios/iOS/Updates.swift).
+    MARKETING_VERSION: "0.0.0"
     CURRENT_PROJECT_VERSION: "1"
 packages:
   Firebase:
