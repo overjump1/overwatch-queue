@@ -100,25 +100,18 @@ struct ContentView: View {
     /// goes on through AltStore or Sideloadly from the release page.
     @ViewBuilder
     private var updateLine: some View {
+        if let (text, icon, colour) = updateLabel {
+            Label(text, systemImage: icon).font(.footnote).foregroundStyle(colour)
+        }
+    }
+
+    private var updateLabel: (String, String, Color)? {
         switch model.updateNotice {
-        case .available(let version):
-            Label("Update available · \(version)", systemImage: "arrow.down.circle")
-                .font(.footnote)
-                .foregroundStyle(.green)
-        case .checking:
-            Label("Checking for updates…", systemImage: "arrow.down.circle")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        case .upToDate:
-            Label("You're on the latest version", systemImage: "checkmark.circle")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        case .failed:
-            Label("Couldn't check for updates", systemImage: "exclamationmark.circle")
-                .font(.footnote)
-                .foregroundStyle(.orange)
-        case .quiet:
-            EmptyView()
+        case .available(let version): return ("Update available · \(version)", "arrow.down.circle", .green)
+        case .checking: return ("Checking for updates…", "arrow.down.circle", .secondary)
+        case .upToDate: return ("You're on the latest version", "checkmark.circle", .secondary)
+        case .failed: return ("Couldn't check for updates", "exclamationmark.circle", .orange)
+        case .quiet: return nil
         }
     }
 }

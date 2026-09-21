@@ -16,7 +16,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.io.File
 
 /**
  * The app's own updates: a check against the latest GitHub release, then one tap to download the
@@ -24,15 +23,15 @@ import java.io.File
  */
 class Updater private constructor(context: Context) {
     /**
-     * `announce` marks what the user asked for. A check they started says so and says how it went;
-     * the six-hourly one in the background stays quiet unless it finds something.
+     * What the update row shows. An update speaks for itself; the rest only reaches [Idle]'s place
+     * when the user asked for a check, since the six-hourly one should stay quiet.
      */
     sealed interface State {
         data object Idle : State
 
-        data class Checking(val announce: Boolean) : State
+        data object Checking : State
 
-        data class UpToDate(val announce: Boolean) : State
+        data object UpToDate : State
 
         data class Available(val version: String) : State
 
@@ -40,7 +39,7 @@ class Updater private constructor(context: Context) {
 
         data object Installing : State
 
-        data class Failed(val reason: String, val announce: Boolean) : State
+        data class Failed(val reason: String) : State
     }
 
     private val context = context.applicationContext
@@ -48,7 +47,7 @@ class Updater private constructor(context: Context) {
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
 
-    /** The release on offer, kept across a failure so tapping again can pick up where it left off. */
+    /** Kept across a failure, so tapping again picks up where it left off. */
     private var release: Updates.Release? = null
     private var checkedAt = 0L
     private var job: Job? = null
@@ -60,63 +59,57 @@ class Updater private constructor(context: Context) {
     fun check(force: Boolean) {
         if (!enabled || job?.isActive == true) return
         if (!force && checkedAt != 0L && System.currentTimeMillis() - checkedAt < CHECK_INTERVAL_MS) return
-        // A downloaded update stays on offer; checking again would only find the same release.
-        if (downloadedApk() != null) return
         job = scope.launch {
-            _state.value = State.Checking(force)
-            val result = Updates.latest(BuildConfig.VERSION_NAME)
-            if (result !is Updates.Result.Ok) {
+            if (force) _state.value = State.Checking
+            val found = runCatching { Updates.latest(BuildConfig.VERSION_NAME) }.getOrElse {
+                Log.w(TAG, "Couldn't check for updates", it)
                 // Not counted as a check, so the next one isn't six hours away.
-                _state.value = State.Failed("Couldn't check for updates", announce = force)
+                _state.value = if (force) State.Failed("Couldn't check for updates") else State.Idle
                 return@launch
             }
             checkedAt = System.currentTimeMillis()
-            release = result.release
-            val found = result.release
+            release = found
             if (found != null) {
                 Log.i(TAG, "Update available: ${found.version}")
                 _state.value = State.Available(found.version)
                 return@launch
             }
-            _state.value = State.UpToDate(force)
+            if (!force) return@launch
             // "You're on the latest version" has been read by now; don't leave it sitting there.
-            if (force) {
-                delay(ANNOUNCE_MS)
-                if (_state.value == State.UpToDate(true)) _state.value = State.Idle
-            }
+            _state.value = State.UpToDate
+            delay(ANNOUNCE_MS)
+            if (_state.value == State.UpToDate) _state.value = State.Idle
         }
     }
 
     /** The update row was tapped: install what's on offer, or have another go at what failed. */
     fun tap() {
         if (job?.isActive == true) return
-        if (release == null) check(force = true) else install()
-    }
-
-    private fun install() {
-        val found = release ?: return
+        val found = release ?: return check(force = true)
         // Android only lets an app install APKs once the user allows it for this app specifically.
         if (!context.packageManager.canRequestPackageInstalls()) {
-            askToAllowInstalls()
+            val settings = Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:${context.packageName}"),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(settings) }.onFailure {
+                _state.value = State.Failed("Allow installing apps for OW Queue in Settings")
+            }
             return
         }
         job = scope.launch {
-            val apk = downloadedApk() ?: run {
-                _state.value = State.Downloading(0)
-                runCatching {
-                    Updates.download(context, found) { percent ->
-                        _state.value = State.Downloading(percent)
-                    }
-                }.getOrElse {
-                    Log.w(TAG, "Downloading the update failed", it)
-                    _state.value = State.Failed("Download failed", announce = true)
-                    return@launch
-                }
+            _state.value = State.Downloading(0)
+            val apk = runCatching {
+                Updates.download(context, found) { _state.value = State.Downloading(it) }
+            }.getOrElse {
+                Log.w(TAG, "Downloading the update failed", it)
+                _state.value = State.Failed("Download failed")
+                return@launch
             }
             _state.value = State.Installing
             runCatching { Updates.install(context, apk, statusTarget()) }.onFailure {
                 Log.w(TAG, "Handing the APK to the installer failed", it)
-                _state.value = State.Failed("Couldn't start the install", announce = true)
+                _state.value = State.Failed("Couldn't start the install")
             }
         }
     }
@@ -124,26 +117,12 @@ class Updater private constructor(context: Context) {
     /** From UpdateInstallReceiver, on its way back from the system installer. */
     fun installFailed(reason: String) {
         Log.w(TAG, "Install failed: $reason")
-        _state.value = State.Failed(reason, announce = true)
+        _state.value = State.Failed(reason)
     }
 
     /** The user declined the system installer's confirmation, so the update stays on offer. */
     fun installCancelled() {
         release?.let { _state.value = State.Available(it.version) }
-    }
-
-    private fun askToAllowInstalls() {
-        val settings = Intent(
-            Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-            Uri.parse("package:${context.packageName}"),
-        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        runCatching { context.startActivity(settings) }.onFailure {
-            _state.value = State.Failed("Allow installing apps for OW Queue in Settings", announce = true)
-        }
-    }
-
-    private fun downloadedApk(): File? = release?.let {
-        File(File(context.cacheDir, "updates"), "OWQueue-${it.version}.apk").takeIf { apk -> apk.isFile }
     }
 
     private fun statusTarget(): PendingIntent = PendingIntent.getBroadcast(

@@ -108,36 +108,27 @@ final class AppModel: ObservableObject {
 
     // MARK: - Updates
 
-    /// `force` is the menu item; otherwise this only looks again once six hours have passed.
+    /// `force` is the menu item; otherwise this only looks again once six hours have passed. An
+    /// update speaks up either way; everything else is only worth saying when the user asked, and
+    /// is taken back down once they've read it.
     func checkForUpdate(force: Bool) {
         guard Updates.checksForUpdates, updateTask == nil else { return }
         if !force, let last = updateCheckedAt, Date.now.timeIntervalSince(last) < 6 * 60 * 60 { return }
         if force { updateNotice = .checking }
         updateTask = Task {
-            let outcome = await Updates.check()
+            let notice = await Updates.check()
             updateTask = nil
-            switch outcome {
-            case .newer(let version):
-                updateCheckedAt = .now
-                updateNotice = .available(version)
-            case .upToDate:
-                updateCheckedAt = .now
-                // "You're on the latest version" has been read by now; don't leave it sitting there.
-                updateNotice = force ? .upToDate : .quiet
-                await clear(.upToDate)
-            case .failed:
-                // Not counted as a check, so the next one isn't six hours away.
-                updateNotice = force ? .failed : .quiet
-                await clear(.failed)
+            // A check that couldn't reach GitHub doesn't count, so the next one isn't six hours away.
+            if notice != .failed { updateCheckedAt = .now }
+            if case .available = notice {
+                updateNotice = notice
+                return
             }
+            updateNotice = force ? notice : .quiet
+            guard force else { return }
+            try? await Task.sleep(for: .seconds(4))
+            if updateNotice == notice { updateNotice = .quiet }
         }
-    }
-
-    /// Takes a passing notice back down, unless something newer has already replaced it.
-    private func clear(_ notice: UpdateNotice) async {
-        guard updateNotice == notice else { return }
-        try? await Task.sleep(for: .seconds(4))
-        if updateNotice == notice { updateNotice = .quiet }
     }
 
     // MARK: - Worker

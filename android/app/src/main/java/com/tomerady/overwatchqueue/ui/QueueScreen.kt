@@ -175,14 +175,14 @@ fun QueueScreen(
  */
 @Composable
 private fun UpdateRow(update: Updater.State, onTap: () -> Unit) {
-    val (text, colour) = when {
-        update is Updater.State.Available -> "Update to ${update.version} — tap to install" to FlashGreen
-        update is Updater.State.Downloading -> "Downloading the update… ${update.percent}%" to Secondary
-        update is Updater.State.Installing -> "Installing…" to Secondary
-        update is Updater.State.Checking && update.announce -> "Checking for updates…" to Secondary
-        update is Updater.State.UpToDate && update.announce -> "You're on the latest version" to Secondary
-        update is Updater.State.Failed && update.announce -> "${update.reason} — tap to try again" to Orange
-        else -> return
+    val (text, colour) = when (update) {
+        is Updater.State.Available -> "Update to ${update.version} — tap to install" to FlashGreen
+        is Updater.State.Downloading -> "Downloading the update… ${update.percent}%" to Secondary
+        is Updater.State.Failed -> "${update.reason} — tap to try again" to Orange
+        Updater.State.Installing -> "Installing…" to Secondary
+        Updater.State.Checking -> "Checking for updates…" to Secondary
+        Updater.State.UpToDate -> "You're on the latest version" to Secondary
+        Updater.State.Idle -> return
     }
     val tappable = update is Updater.State.Available || update is Updater.State.Failed
     Row(
@@ -191,12 +191,7 @@ private fun UpdateRow(update: Updater.State, onTap: () -> Unit) {
             .padding(vertical = 6.dp, horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            Icons.Filled.FileDownload,
-            contentDescription = null,
-            tint = colour,
-            modifier = Modifier.size(16.dp),
-        )
+        Icon(Icons.Filled.FileDownload, contentDescription = null, tint = colour, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(6.dp))
         Text(text, fontSize = 13.sp, color = colour)
     }

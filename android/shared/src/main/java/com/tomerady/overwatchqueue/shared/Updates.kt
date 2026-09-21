@@ -3,7 +3,6 @@ package com.tomerady.overwatchqueue.shared
 import android.app.PendingIntent
 import android.content.Context
 import android.content.pm.PackageInstaller
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
@@ -12,13 +11,7 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
-/**
- * The app's own updates, from the GitHub releases the Release workflow publishes.
- *
- * The version compared against comes from the APK asset's filename, not the release tag:
- * release.yml only rebuilds the apps that changed and copies the rest of the assets forward, so
- * v2.0.42 can still hold OWQueue-2.0.40.apk.
- */
+/** The app's own updates, from the GitHub releases the Release workflow publishes. */
 object Updates {
     private const val RELEASE_API =
         "https://api.github.com/repos/overjump1/overwatch-queue/releases/latest"
@@ -27,14 +20,6 @@ object Updates {
 
     /** The APK on offer. [version] is read from its filename. */
     data class Release(val version: String, val url: String, val size: Long)
-
-    /** Shaped like [Worker.Result]: "nothing newer" and "couldn't ask" are not the same answer. */
-    sealed interface Result {
-        /** [release] is null when this build is already the latest one. */
-        data class Ok(val release: Release?) : Result
-
-        data object Failed : Result
-    }
 
     @Serializable
     private data class GithubRelease(val assets: List<GithubAsset> = emptyList())
@@ -50,8 +35,7 @@ object Updates {
     fun parse(version: String?): IntArray? {
         val parts = mutableListOf<Int>()
         for (piece in version.orEmpty().trim().trimStart('v', 'V').split('.', '-', '+')) {
-            val number = piece.toIntOrNull() ?: break
-            parts += number
+            parts += piece.toIntOrNull() ?: break
         }
         if (parts.isEmpty()) return null
         while (parts.size < 3) parts += 0
@@ -67,60 +51,47 @@ object Updates {
         return false
     }
 
-    /**
-     * Builds from source and pull request artifacts are 0.x and never check: they're older than
-     * every release, so they'd offer an update forever (and couldn't install it, being signed with
-     * a different key).
-     */
+    /** False for source and pull request builds: 0.x is below every release, so they'd offer one forever. */
     fun checksForUpdates(current: String?): Boolean = (parse(current)?.get(0) ?: 0) > 0
 
-    /** The APK from a `releases/latest` reply, if it's newer than [current]. */
+    /**
+     * The APK in a `releases/latest` reply, if it's newer than [current]. The version comes from the
+     * asset's filename, not the release tag: release.yml copies unchanged apps forward, so v2.0.3
+     * holds OWQueue-2.0.2.apk and the tag would offer an update this build already is.
+     */
     fun findUpdate(body: String, current: String?): Release? {
         val release = runCatching {
             QueueStatus.json.decodeFromString(GithubRelease.serializer(), body)
         }.getOrNull() ?: return null
         for (asset in release.assets) {
             val version = ASSET.matchEntire(asset.name)?.groupValues?.get(1) ?: continue
-            return if (asset.url.isNotEmpty() && isNewer(version, current)) {
-                Release(version, asset.url, asset.size)
-            } else {
-                null
-            }
+            return Release(version, asset.url, asset.size)
+                .takeIf { asset.url.isNotEmpty() && isNewer(version, current) }
         }
         return null
     }
 
-    suspend fun latest(current: String?): Result = withContext(Dispatchers.IO) {
-        if (!checksForUpdates(current)) return@withContext Result.Ok(null)
-        val body = get(RELEASE_API, current) ?: return@withContext Result.Failed
-        Result.Ok(findUpdate(body, current))
-    }
-
-    private fun get(url: String, current: String?): String? = try {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        try {
+    /** The newer APK in the latest release, null if this build is it. Throws if GitHub can't be reached. */
+    suspend fun latest(current: String?): Release? = withContext(Dispatchers.IO) {
+        if (!checksForUpdates(current)) return@withContext null
+        val connection = URL(RELEASE_API).openConnection() as HttpURLConnection
+        val body = try {
             connection.connectTimeout = TIMEOUT_MS
             connection.readTimeout = TIMEOUT_MS
             connection.setRequestProperty("Accept", "application/vnd.github+json")
             // GitHub turns away requests without one.
             connection.setRequestProperty("User-Agent", "OWQueue/${current.orEmpty()}")
-            if (connection.responseCode == 200) {
-                connection.inputStream.bufferedReader().use { it.readText() }
-            } else {
-                null
-            }
+            check(connection.responseCode == 200) { "HTTP ${connection.responseCode}" }
+            connection.inputStream.bufferedReader().use { it.readText() }
         } finally {
             connection.disconnect()
         }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        null
+        findUpdate(body, current)
     }
 
     /**
-     * Downloads [release] into the cache, reporting 0..100. Throws if the download is cut short,
-     * because a truncated APK is one the installer would reject with nothing useful to say.
+     * The APK on disk, downloaded if it isn't already there, reporting 0..100 on the way. Throws on
+     * a short read: a truncated APK is one the installer rejects with nothing useful to say.
      */
     suspend fun download(
         context: Context,
@@ -128,9 +99,10 @@ object Updates {
         onProgress: (Int) -> Unit,
     ): File = withContext(Dispatchers.IO) {
         val directory = File(context.cacheDir, "updates").apply { mkdirs() }
-        // Only ever one update in flight, and the old one is no use once a newer release lands.
-        directory.listFiles()?.forEach { it.delete() }
         val target = File(directory, "OWQueue-${release.version}.apk")
+        if (release.size > 0 && target.length() == release.size) return@withContext target
+        // Anything else in there is an older release's APK.
+        directory.listFiles()?.forEach { it.delete() }
         val partial = File(directory, target.name + ".part")
         val connection = URL(release.url).openConnection() as HttpURLConnection
         try {
@@ -167,19 +139,16 @@ object Updates {
     }
 
     /**
-     * Hands [apk] to the system installer, which asks the user to confirm. [statusTarget] is the
-     * receiver that hears how it went; see UpdateInstallReceiver.
+     * Hands [apk] to the system installer, which confirms with the user and reports on [statusTarget].
+     * The default user-action policy lets Android 12+ skip that prompt once we're the installer of record.
      */
     suspend fun install(context: Context, apk: File, statusTarget: PendingIntent) =
         withContext(Dispatchers.IO) {
             val installer = context.packageManager.packageInstaller
-            // Left at the default user-action policy: the system asks for confirmation, except on
-            // Android 12+ once this app is the installer of record, where it can skip the prompt.
             val params = PackageInstaller.SessionParams(
                 PackageInstaller.SessionParams.MODE_FULL_INSTALL,
             ).apply { setAppPackageName(context.packageName) }
-            val sessionId = installer.createSession(params)
-            installer.openSession(sessionId).use { session ->
+            installer.openSession(installer.createSession(params)).use { session ->
                 session.openWrite("apk", 0, apk.length()).use { output ->
                     apk.inputStream().use { it.copyTo(output) }
                     session.fsync(output)

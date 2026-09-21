@@ -1,9 +1,8 @@
 import Foundation
 
-/// What the update line at the bottom of the queue screen says. A check the user asked for says so
-/// and says how it went; the six-hourly one in the background stays quiet unless it finds something.
+/// What the update line at the bottom of the queue screen says. `check()` returns one of the last
+/// three; `.quiet` is the resting state and `.checking` is set while a check the user asked for runs.
 enum UpdateNotice: Equatable {
-    /// Nothing to say: no check has run, or a quiet background one found nothing.
     case quiet
     case checking
     case available(String)
@@ -11,14 +10,10 @@ enum UpdateNotice: Equatable {
     case failed
 }
 
-/// Whether a newer build of the app is out, from the GitHub releases the Release workflow publishes.
+/// Whether a newer build is out, from the GitHub releases the Release workflow publishes.
 ///
-/// iOS can't install an app on itself, so this only reports the version; getting the new build onto
-/// the phone is still AltStore or Sideloadly with the IPA from the release page.
-///
-/// The version compared against comes from the IPA asset's filename, not the release tag:
-/// release.yml only rebuilds the apps that changed and copies the rest of the assets forward, so
-/// v2.0.42 can still hold OWQueue-2.0.40.ipa.
+/// iOS can't install an app on itself, so this only reports the version; getting the build onto the
+/// phone is still AltStore or Sideloadly with the IPA from the release page.
 enum Updates {
     static let releaseAPI = URL(string: "https://api.github.com/repos/overjump1/overwatch-queue/releases/latest")!
     private static let assetPrefix = "OWQueue-"
@@ -56,13 +51,12 @@ enum Updates {
         return false
     }
 
-    /// Off where a check would be wrong or pointless:
-    /// - TestFlight and the App Store hand out their own updates, and their builds keep the
-    ///   `MARKETING_VERSION` from project.yml, which is below every release and would claim an
-    ///   update forever. A receipt on disk is what marks those builds.
-    /// - Debug builds from Xcode, for the same reason.
-    /// - Anything on a 0.x version, which is older than every release.
-    /// Worked out once: the view body reads it, and it can't change while the app is running.
+    /// Worked out once, since the view body reads it and it can't change while the app runs.
+    ///
+    /// Off where a check would be wrong or pointless: TestFlight and the App Store hand out their
+    /// own updates and their builds keep project.yml's `MARKETING_VERSION`, which is below every
+    /// release and would claim an update forever (a receipt on disk marks those builds); Debug
+    /// builds, for the same reason; and anything on a 0.x version, which is older than every release.
     static let checksForUpdates: Bool = {
         #if DEBUG
         return false
@@ -75,19 +69,10 @@ enum Updates {
         #endif
     }()
 
-    /// Shaped like `Worker.Result`: "nothing newer" and "couldn't ask" are not the same answer.
-    enum Outcome {
-        case newer(String)
-        case upToDate
-        case failed
-    }
-
-    /// The version of the IPA in the latest release, if it's newer than this build.
-    static func check() async -> Outcome {
+    static func check() async -> UpdateNotice {
         guard checksForUpdates else { return .upToDate }
         var request = URLRequest(url: releaseAPI, timeoutInterval: 20)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        // GitHub turns away requests without one.
         request.setValue("OWQueue/\(current)", forHTTPHeaderField: "User-Agent")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
@@ -96,10 +81,14 @@ enum Updates {
         guard let version = newerVersion(in: release.assets.map(\.name), than: current) else {
             return .upToDate
         }
-        return .newer(version)
+        return .available(version)
     }
 
-    /// Split out from the request so the filename-over-tag rule stands on its own.
+    /// The version of the newer IPA among `assetNames`, if there is one.
+    ///
+    /// The version comes from the asset's filename, not the release tag: release.yml only rebuilds
+    /// the apps that changed and copies the rest forward, so v2.0.3 holds OWQueue-2.0.2.ipa and
+    /// going by the tag would claim an update this build already is.
     static func newerVersion(in assetNames: [String], than current: String) -> String? {
         for name in assetNames where name.hasPrefix(assetPrefix) && name.hasSuffix(assetSuffix) {
             let version = String(name.dropFirst(assetPrefix.count).dropLast(assetSuffix.count))

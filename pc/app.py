@@ -170,6 +170,21 @@ def _font(size, weight=QFont.Weight.Normal):
     return font
 
 
+def _update_button(state, version, percent):
+    """The footer button's text, colour, and whether pressing it does anything."""
+    if state == up.CHECKING:
+        return "Checking…", MUTED, False
+    if state == up.UP_TO_DATE:
+        return "Up to date", MUTED, True
+    if state == up.AVAILABLE:
+        return "Update to %s" % version, GOOD, True
+    if state == up.DOWNLOADING:
+        return "Downloading… %d%%" % percent, MUTED, False
+    if state == up.FAILED:
+        return "Update failed — retry", WARN, True
+    return "Check for updates", MUTED, True
+
+
 class App(QWidget):
     def __init__(self, pair_id, relay, watcher, updater):
         super().__init__()
@@ -181,7 +196,6 @@ class App(QWidget):
         self._restarting = False
         self._qr_requested_with = None  # the phones paired when "Show QR code" was pressed, None when not pressed
         self._checks_updates = up.checks_for_updates()
-        self._installing = False  # one click downloads and installs, so the install waits on the download
 
         self.setWindowTitle("OW Queue")
         self.setStyleSheet(
@@ -247,7 +261,7 @@ class App(QWidget):
         self.version_label.setStyleSheet("color: %s;" % MUTED)
         self.update_button = QPushButton(font=_font(9))
         self.update_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.update_button.clicked.connect(self.update_clicked)
+        self.update_button.clicked.connect(self.updater.press)
         # Builds from source never check, so there's nothing for the button to do.
         self.update_button.setVisible(self._checks_updates)
         footer = QHBoxLayout()
@@ -336,20 +350,9 @@ class App(QWidget):
         if not self._checks_updates:
             return
         state, version, percent = self.updater.snapshot()
-        # One click does the whole update, so a finished download installs itself.
-        if self._installing and self.updater.ready():
-            self._installing = False
-            if self.updater.install():
-                QApplication.instance().quit()
-                return
-        text, color, enabled = {
-            up.CHECKING: ("Checking…", MUTED, False),
-            up.UP_TO_DATE: ("Up to date", MUTED, True),
-            up.AVAILABLE: ("Update to %s" % version, GOOD, True),
-            up.DOWNLOADING: ("Downloading… %d%%" % percent, MUTED, False),
-            up.INSTALLING: ("Installing…", MUTED, False),
-            up.FAILED: ("Update check failed — retry", WARN, True),
-        }.get(state, ("Check for updates", MUTED, True))
+        if state == up.INSTALLING:
+            return QApplication.instance().quit()  # the installer closes us and starts us again
+        text, color, enabled = _update_button(state, version, percent)
         self.update_button.setEnabled(enabled)
         if self.update_button.text() == text:
             return
@@ -357,16 +360,6 @@ class App(QWidget):
         self.update_button.setStyleSheet(
             "QPushButton { color: %s; background: transparent; border: none; padding: 2px 4px; }"
             "QPushButton:hover { background: #262a33; }" % color)
-
-    def update_clicked(self):
-        state, _, _ = self.updater.snapshot()
-        if state == up.AVAILABLE:
-            # Downloads now and installs as soon as it lands; the installer restarts the app.
-            self._installing = True
-            self.updater.download()
-        else:
-            self.updater.check_now()
-        self.refresh()
 
     def _draw_qr(self):
         code = qrcode.QRCode(border=2, error_correction=qrcode.constants.ERROR_CORRECT_M)
