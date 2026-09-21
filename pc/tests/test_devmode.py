@@ -2,7 +2,6 @@ import os
 import sys
 import threading
 import unittest
-from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -68,57 +67,19 @@ class _FakeDebugPort:
 
 class ReaderTests(unittest.TestCase):
     def setUp(self):
-        self.lines = []
-        self.reader = devmode.Reader("memory", log=self.lines.append)
-        self.reader.memory = _FakeMemory()
+        self.reader = devmode.Reader("devmode", log=lambda message: None)
 
-    def test_memory_only_never_opens_a_debug_port(self):
-        self.assertIsNone(self.reader.debug)
-        self.reader.start()
-        self.assertEqual(self.reader.read(), (p.MENUS, None))
-        self.assertEqual(self.reader.source, "memory")
-
-    def test_the_debug_port_wins_while_it_answers(self):
+    def test_it_reads_what_the_debug_port_answers(self):
         self.reader.debug = _FakeDebugPort([{"program_id": "Pro", "rich_presence": "Arcade: In Queue"}])
         self.assertEqual(self.reader.read(), (p.QUEUEING, "arcade"))
-        self.assertEqual(self.reader.source, "devmode")
         self.assertTrue(self.reader.connected)
-        self.assertEqual(self.reader.memory.reads, 0)
 
-    def test_a_quiet_debug_port_falls_back_to_memory(self):
-        self.reader.debug = _FakeDebugPort([None])
-        self.assertEqual(self.reader.read(), (p.MENUS, None))
-        self.assertEqual(self.reader.source, "memory")
-        self.assertEqual(self.reader.memory.reads, 1)
-
-    def test_falling_back_rebaselines_the_memory_reader(self):
-        """The copy counts from before the app read over the debug port say nothing about
-        what arrived while it wasn't looking."""
+    def test_a_quiet_debug_port_is_not_connected(self):
         self.reader.debug = _FakeDebugPort([{"program_id": "Pro", "rich_presence": "In Menus"}, None])
         self.reader.read()
-        self.assertEqual(self.reader.memory.rebaselines, 0)
-        self.reader.read()
-        self.assertEqual(self.reader.memory.rebaselines, 1)
-
-    def test_neither_source_connected_is_not_connected(self):
-        self.reader.debug = _FakeDebugPort([None])
-        self.reader.memory.connected = False
-        self.reader.read()
+        self.assertTrue(self.reader.connected)
+        self.assertEqual(self.reader.read(), (p.UNKNOWN, None))
         self.assertFalse(self.reader.connected)
-
-
-class _FakeMemory:
-    def __init__(self):
-        self.reads = 0
-        self.rebaselines = 0
-        self.connected = True
-
-    def read(self):
-        self.reads += 1
-        return p.MENUS, None
-
-    def rebaseline(self):
-        self.rebaselines += 1
 
 
 class EnsureTests(unittest.TestCase):
@@ -225,8 +186,9 @@ class RestartTests(unittest.TestCase):
         self.assertTrue(reader.restart())
         self.assertEqual(self.asked, [9876])
 
-    def test_there_is_nothing_to_restart_for_a_memory_only_reader(self):
-        reader = devmode.Reader("memory", log=lambda message: None)
+    def test_there_is_nothing_to_restart_where_there_is_no_debug_port(self):
+        reader = devmode.Reader("devmode", log=lambda message: None)
+        reader.debug = None
         self.assertFalse(reader.restart())
         self.assertEqual(self.asked, [])
 
@@ -258,15 +220,16 @@ def _set_event():
 
 
 class ModeTests(unittest.TestCase):
-    def test_devmode_degrades_to_memory_where_it_cannot_work(self):
+    def test_there_is_no_debug_port_where_it_cannot_work(self):
         saved = devmode.AVAILABLE
         devmode.AVAILABLE = False
         try:
             reader = devmode.Reader("devmode", log=lambda message: None)
         finally:
             devmode.AVAILABLE = saved
-        self.assertEqual(reader.mode, "memory")
         self.assertIsNone(reader.debug)
+        self.assertEqual(reader.read(), (p.UNKNOWN, None))
+        self.assertFalse(reader.connected)
 
 
 @unittest.skipUnless(p.AVAILABLE, "Windows only")
@@ -276,25 +239,6 @@ class PidsNamedTests(unittest.TestCase):
 
     def test_nothing_is_running_under_a_made_up_name(self):
         self.assertEqual(p.pids_named("no-such-program-42.exe"), frozenset())
-
-
-class RebaselineTests(unittest.TestCase):
-    def test_it_keeps_the_reading_and_forgets_the_counts(self):
-        """The reading stands; it's the counts either side of the gap that can't be
-        compared, so the next scan is a fresh baseline and the one after it can read an
-        arrival off it."""
-        reader = p.Presence(log=lambda message: None)
-        tracker = reader._tracker
-        tracker.observe(Counter({("status", "In Menus"): 9}))
-        reader.rebaseline()
-        self.assertIs(reader._tracker, tracker)
-        # A scan mid-queue teaches it nothing: the counts grew while nobody was looking.
-        self.assertEqual(tracker.observe(Counter({("status", "In Menus"): 9,
-                                                  ("status", "Competitive: In Queue"): 40})),
-                         (p.MENUS, None))
-        self.assertEqual(tracker.observe(Counter({("status", "In Menus"): 9,
-                                                  ("status", "Competitive: In Queue"): 41})),
-                         (p.QUEUEING, "competitive"))
 
 
 if __name__ == "__main__":
