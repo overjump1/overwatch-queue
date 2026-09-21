@@ -142,3 +142,18 @@ jobs:
             --title "OW Queue $VERSION" \
             --notes "$notes" \
             --generate-notes
+
+      # Only the newest build stays downloadable. The step above has already copied out of the last
+      # release whatever it needed, and the tags stay, so `changes` can still diff against them.
+      - name: Take down the older releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.changes.outputs.version }}
+        run: |
+          tags=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName -q '.[].tagName')
+          for tag in $tags; do
+            if [ "$tag" != "v$VERSION" ]; then
+              echo "Deleting $tag"
+              gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
+            fi
+          done
