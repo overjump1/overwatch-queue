@@ -1,6 +1,14 @@
-"""OW Queue for Windows: watches your Overwatch queue and pushes it to your iPhone and Apple Watch."""
+"""OW Queue for Windows: watches your Overwatch queue and pushes it to your iPhone and Apple Watch.
+
+Battle.net is asked what you're doing over its own debug port, which means starting it in
+developer mode (`--remote-debugging-port`) -- see `devmode`. `--presence-source` picks
+something else: `auto` uses the port only if Battle.net already has one open and never
+touches Battle.net itself, and `memory` only ever reads Battle.net's process memory.
+Either way this app only reads, and Overwatch is never touched.
+"""
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import logging.handlers
@@ -16,9 +24,9 @@ from PyQt6.QtGui import QColor, QFont, QPainter, QPixmap
 from PyQt6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton,
                              QVBoxLayout, QWidget)
 
+import devmode
 import updater as up
 from detector import FOUND, QUEUEING, Detector
-from presence import Presence
 from relay import Relay
 from roleselect import RoleSelect
 from updater import Updater
@@ -54,6 +62,8 @@ MODE_NAMES = {
     "mysteryHeroes": "Mystery Heroes",
     "custom": "Custom Game",
 }
+
+SOURCE_NAMES = {"devmode": "developer mode", "memory": "reading its memory"}
 
 DATA_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "OWQueue")
 PAIRING_FILE = os.path.join(DATA_DIR, "pairing.json")
@@ -109,9 +119,9 @@ def clock(seconds):
 class Watcher:
     """Reads Battle.net once a second on a background thread and reports state changes."""
 
-    def __init__(self, relay):
+    def __init__(self, relay, presence):
         self.relay = relay
-        self.presence = Presence(log=log.info)
+        self.presence = presence
         self.role_select = RoleSelect(os.path.join(DATA_DIR, "icons"), log=log.info)
         self.detector = Detector(time.monotonic())
         self.lock = threading.Lock()
@@ -138,7 +148,8 @@ class Watcher:
             elapsed = self.detector.elapsed(now)
             since_found = self.detector.since_found(now)
         if before != after:
-            log.info("Presence %s/%s, role select %s -> %s", reading, mode, role_select, after)
+            log.info("Presence %s/%s, role select %s -> %s at %ds", reading, mode, role_select,
+                     after, int(elapsed))
         key = after[:2]
         # Re-sent every minute, with fresh times, so the worker knows the PC is still there.
         if key[0] is not None and (key != self._sent or now - self._sent_at >= HEARTBEAT_SECONDS):
@@ -150,7 +161,7 @@ class Watcher:
             d = self.detector
             now = time.monotonic()
             return (d.state, d.mode, d.elapsed(now), d.since_found(now), d.holding_for_role_select,
-                    self.presence.connected)
+                    self.presence.connected, self.presence.source)
 
 
 def _font(size, weight=QFont.Weight.Normal):
@@ -167,6 +178,7 @@ class App(QWidget):
         self.watcher = watcher
         self.updater = updater
         self._qr_for = None
+        self._restarting = False
         self._qr_requested_with = None  # the phones paired when "Show QR code" was pressed, None when not pressed
         self._checks_updates = up.checks_for_updates()
         self._installing = False  # one click downloads and installs, so the install waits on the download
@@ -200,6 +212,16 @@ class App(QWidget):
         self.server_label = QLabel(font=_font(10), wordWrap=True)
         for label in (self.bnet_label, self.phone_label, self.server_label):
             layout.addWidget(label)
+
+        self.restart_button = QPushButton("Restart Battle.net", font=_font(10))
+        self.restart_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.restart_button.clicked.connect(self.restart_battlenet)
+        restart_row = QHBoxLayout()
+        restart_row.addStretch()
+        restart_row.addWidget(self.restart_button)
+        restart_row.addStretch()
+        layout.addSpacing(8)
+        layout.addLayout(restart_row)
 
         self.qr = QLabel(alignment=Qt.AlignmentFlag.AlignCenter)
         self.qr.setFixedSize(QR_SIZE, QR_SIZE)
@@ -253,7 +275,7 @@ class App(QWidget):
         label.setStyleSheet("color: %s;" % color)
 
     def _render(self):
-        state, mode, elapsed, since_found, holding, connected = self.watcher.snapshot()
+        state, mode, elapsed, since_found, holding, connected, source = self.watcher.snapshot()
         color = MODE_COLORS.get(mode, TEXT)
         mode_name = MODE_NAMES.get(mode, "Overwatch")
         if state == QUEUEING:
@@ -278,9 +300,14 @@ class App(QWidget):
             self._set(self.timer_label, "–:––", MUTED)
 
         if connected:
-            self._set(self.bnet_label, "● Battle.net connected", GOOD)
+            self._set(self.bnet_label, "● Battle.net connected (%s)" % SOURCE_NAMES.get(source, source), GOOD)
         else:
             self._set(self.bnet_label, "● Battle.net not found — open it and log in", WARN)
+
+        self.restart_button.setVisible(self.watcher.presence.mode != "memory")
+        self.restart_button.setEnabled(not self._restarting)
+        self.restart_button.setText("Restarting Battle.net…" if self._restarting
+                                    else "Restart Battle.net")
 
         paired = list(self.relay.paired)
         if self._qr_requested_with is not None and not set(paired) <= set(self._qr_requested_with):
@@ -361,6 +388,25 @@ class App(QWidget):
         self.qr.setPixmap(pixmap)
         self._qr_for = self.pair_id
 
+    def restart_battlenet(self):
+        """Closes Battle.net and reopens it with its debug port on. Off the GUI thread,
+        because it waits for Battle.net to go away and come back; the 500ms refresh picks
+        the button back up when it's done. No confirmation: the button says what it does,
+        and a Battle.net restart leaves a running game alone."""
+        if self._restarting:
+            return
+        self._restarting = True
+        self.refresh()
+        threading.Thread(target=self._restart, daemon=True, name="battlenet-restart").start()
+
+    def _restart(self):
+        try:
+            self.watcher.presence.restart()
+        except Exception:  # noqa: BLE001 - a button press must never take the app down
+            log.exception("Restarting Battle.net failed")
+        finally:
+            self._restarting = False
+
     def toggle_qr(self):
         self._qr_requested_with = None if self._qr_requested_with is not None else list(self.relay.paired)
         self.refresh()
@@ -381,17 +427,54 @@ class App(QWidget):
         self.refresh()
 
 
+class _Parser(argparse.ArgumentParser):
+    """Complains by raising rather than by printing or exiting: the installed build has no
+    console at all, so `--help` or a stray argument would otherwise be a silent death on
+    startup -- argparse writing to a `sys.stdout` that is None."""
+
+    def error(self, message):
+        raise ValueError(message)
+
+    def exit(self, status=0, message=None):
+        raise ValueError(message or "nothing to do but print and quit")
+
+    def _print_message(self, message, file=None):
+        if (file or sys.stdout) is not None:
+            super()._print_message(message, file)
+
+
+def parse_args(argv=None):
+    parser = _Parser(prog="OWQueue", description=__doc__.splitlines()[0])
+    parser.add_argument("--presence-source", choices=("devmode", "auto", "memory"), default="devmode",
+                        help="how to read Battle.net's presence (default: start Battle.net in "
+                             "developer mode and read over its debug port, falling back to reading "
+                             "its memory; 'auto' uses a debug port only if one is already open; "
+                             "'memory' never opens one)")
+    parser.add_argument("--battlenet-port", type=int, default=devmode.DEBUG_PORT,
+                        help="the --remote-debugging-port to start Battle.net with (default: %d)"
+                             % devmode.DEBUG_PORT)
+    try:
+        return parser.parse_args(argv)
+    except ValueError as problem:
+        log.warning("Ignoring the command line: %s", problem)
+        return parser.parse_args([])
+
+
 def main():
     setup_logging()
+    args = parse_args()
     pair_id = load_pair_id()
     relay = Relay(pair_id, log=log.info)
-    watcher = Watcher(relay)
+    reader = devmode.Reader(args.presence_source, args.battlenet_port, log=log.info)
+    watcher = Watcher(relay, reader)
     updater = Updater(DATA_DIR, log=log.info)
     stop = threading.Event()
     threading.Thread(target=relay.run, args=(stop,), daemon=True).start()
     threading.Thread(target=watcher.run, args=(stop,), daemon=True).start()
     threading.Thread(target=watcher.role_select.prefetch, daemon=True).start()
     threading.Thread(target=updater.run, args=(stop,), daemon=True).start()
+    # Off the GUI thread: it waits out a Battle.net that's still starting, then a restart.
+    threading.Thread(target=reader.start, args=(stop,), daemon=True, name="battlenet-devmode").start()
 
     app = QApplication(sys.argv)
     app.aboutToQuit.connect(stop.set)
