@@ -33,5 +33,11 @@ echo "Building $version ($CI_BUILD_NUMBER)"
 
 # TestFlight and the App Store hand out their own updates, so these builds don't check GitHub.
 # A plist key rather than a guess at runtime: it's the one thing that says where the build came from.
-/usr/libexec/PlistBuddy -c "Delete :OWQTestFlightBuild" ios/iOS/Info.plist 2>/dev/null || true
-/usr/libexec/PlistBuddy -c "Add :OWQTestFlightBuild bool true" ios/iOS/Info.plist
+# Checked both ways round, because a marker that quietly went missing is the bug this fixes: without
+# the file PlistBuddy would make one of its own off to the side and the app would keep checking.
+plist=ios/iOS/Info.plist
+[ -f "$plist" ] || { echo "error: $plist isn't there; has the app's Info.plist moved?"; exit 1; }
+/usr/libexec/PlistBuddy -c "Delete :OWQTestFlightBuild" "$plist" 2>/dev/null || true
+/usr/libexec/PlistBuddy -c "Add :OWQTestFlightBuild bool true" "$plist"
+marked=$(/usr/libexec/PlistBuddy -c "Print :OWQTestFlightBuild" "$plist" 2>/dev/null || true)
+[ "$marked" = true ] || { echo "error: couldn't mark the build as TestFlight's"; exit 1; }
