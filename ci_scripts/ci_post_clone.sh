@@ -14,10 +14,7 @@ write_config() {
 write_config "$GOOGLE_SERVICE_INFO_PLIST" GOOGLE_SERVICE_INFO_PLIST ios/iOS/GoogleService-Info.plist
 write_config "$WATCH_GOOGLE_SERVICE_INFO_PLIST" WATCH_GOOGLE_SERVICE_INFO_PLIST ios/Watch/GoogleService-Info.plist
 
-# The project ships on 0.0.0 so that a build nobody stamped can't claim to be a release (see
-# ios/iOS/Updates.swift). Xcode Cloud numbers its builds itself, so TestFlight shows a version that
-# moves: 2.0.<Xcode Cloud build>. That counter isn't GitHub's run number, so this version and a
-# release's 2.0.<run> don't line up — which is fine, because these builds never look at GitHub.
+# The project ships on 0.0.0, so a build nobody stamped can't pass for a release (Updates.swift).
 if [ -z "$CI_BUILD_NUMBER" ]; then
   echo "error: CI_BUILD_NUMBER isn't set; the build would go out as 0.0.0"
   exit 1
@@ -31,10 +28,8 @@ grep -q "MARKETING_VERSION = $version;" OverwatchQueue.xcodeproj/project.pbxproj
   || { echo "error: couldn't stamp the version into the Xcode project"; exit 1; }
 echo "Building $version ($CI_BUILD_NUMBER)"
 
-# TestFlight and the App Store hand out their own updates, so these builds don't check GitHub.
-# A plist key rather than a guess at runtime: it's the one thing that says where the build came from.
-# Checked both ways round, because a marker that quietly went missing is the bug this fixes: without
-# the file PlistBuddy would make one of its own off to the side and the app would keep checking.
+# TestFlight hands out its own updates, so these builds don't check GitHub. PlistBuddy writes a
+# file of its own when the path is wrong, hence the checks either side of the write.
 plist=ios/iOS/Info.plist
 [ -f "$plist" ] || { echo "error: $plist isn't there; has the app's Info.plist moved?"; exit 1; }
 /usr/libexec/PlistBuddy -c "Delete :OWQTestFlightBuild" "$plist" 2>/dev/null || true

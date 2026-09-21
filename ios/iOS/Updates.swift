@@ -51,20 +51,15 @@ enum Updates {
         return false
     }
 
-    /// Whether this build came from Xcode Cloud, which writes the key in ci_scripts/ci_post_clone.sh.
-    ///
-    /// TestFlight and the App Store hand out their own updates, so these builds have no business
-    /// asking GitHub: they're versioned from Xcode Cloud's build counter, not the run number
-    /// releases are numbered from, so the comparison would offer an update that doesn't exist.
+    /// Written by ci_scripts/ci_post_clone.sh. TestFlight hands out its own updates, and these
+    /// builds are numbered from Xcode Cloud's counter rather than the one releases use.
     static var isTestFlightBuild: Bool {
         Bundle.main.object(forInfoDictionaryKey: "OWQTestFlightBuild") as? Bool ?? false
     }
 
-    /// Worked out once, since the view body reads it and it can't change while the app runs.
-    ///
-    /// Off for TestFlight and App Store builds, for Debug builds, and for anything left on the
-    /// 0.0.0 the project ships with — a build nobody stamped, which is below every release and
-    /// would claim an update forever.
+    /// Worked out once, since the view body reads it and it can't change while the app runs. Off
+    /// for TestFlight, for Debug builds, and for the 0.0.0 a build nobody stamped keeps — below
+    /// every release, so it would claim an update forever.
     static let checksForUpdates: Bool = {
         #if DEBUG
         return false
