@@ -34,7 +34,6 @@ from version import VERSION
 
 POLL_SECONDS = 1.0
 GUI_REFRESH_MS = 500
-HEARTBEAT_SECONDS = 60
 # Matches the worker: "Match found!" becomes "In a match" this long after the match is found.
 PLAYING_AFTER_SECONDS = 60
 QR_SIZE = 232
@@ -115,7 +114,9 @@ def clock(seconds):
 
 
 class Watcher:
-    """Reads Battle.net once a second on a background thread and reports state changes."""
+    """Reads Battle.net once a second on a background thread and reports state changes.
+    Only changes: the worker keeps whatever it was last told until it's told something else,
+    so a fifteen-minute queue costs one request."""
 
     def __init__(self, relay, presence):
         self.relay = relay
@@ -124,7 +125,6 @@ class Watcher:
         self.detector = Detector(time.monotonic())
         self.lock = threading.Lock()
         self._sent = None
-        self._sent_at = 0.0
 
     def run(self, stop):
         while not stop.is_set():
@@ -149,9 +149,8 @@ class Watcher:
             log.info("Presence %s/%s, role select %s -> %s at %ds", reading, mode, role_select,
                      after, int(elapsed))
         key = after[:2]
-        # Re-sent every minute, with fresh times, so the worker knows the PC is still there.
-        if key[0] is not None and (key != self._sent or now - self._sent_at >= HEARTBEAT_SECONDS):
-            self._sent, self._sent_at = key, now
+        if key[0] is not None and key != self._sent:
+            self._sent = key
             self.relay.publish(key[0], key[1], elapsed, since_found)
 
     def snapshot(self):

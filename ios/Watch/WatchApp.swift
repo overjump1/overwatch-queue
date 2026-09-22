@@ -60,6 +60,11 @@ final class WatchDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCe
     }
 }
 
+/// The watch gets a "Match found!" banner and nothing else -- no Live Activity, no state push --
+/// so unlike the phone its screen *is* this poll. Short is affordable because watchOS puts the
+/// app away after a couple of minutes, making a session a handful of requests.
+private let pollSeconds = 10.0
+
 @MainActor
 final class WatchModel: NSObject, ObservableObject, WCSessionDelegate {
     static let shared = WatchModel()
@@ -90,7 +95,7 @@ final class WatchModel: NSObject, ObservableObject, WCSessionDelegate {
         pollTask = Task {
             while !Task.isCancelled {
                 await refresh()
-                try? await Task.sleep(for: .seconds(2))
+                try? await Task.sleep(for: .seconds(pollSeconds))
             }
         }
     }

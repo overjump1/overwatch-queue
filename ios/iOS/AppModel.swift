@@ -24,7 +24,10 @@ final class AppModel: ObservableObject {
     private var updateTokenActivityID: String?
     private var active = false
     private var launched = false
-    private var pollTask: Task<Void, Never>?
+    private var syncTask: Task<Void, Never>?
+    /// Whether the last register's reply carried the state. A worker too old to send one back
+    /// must not read as "already refreshed", or the screen would open empty.
+    private var registerCarriedStatus = false
     private var observedActivities = Set<String>()
     /// The match we already alerted for, so the same match never alerts twice.
     private var alertedFoundAt: Double?
@@ -57,28 +60,28 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// A silent push from the worker woke the app: report the current tokens, and catch up on the
-    /// state while we're awake, which takes down an activity whose end push never arrived.
+    /// A silent push from the worker woke the app: report the current tokens. The register's reply
+    /// carries the state back with it, so this costs one request, not two.
     func refreshTokens() async {
         launch()
         await register()
-        await refresh()
     }
 
     func setActive(_ isActive: Bool) {
         active = isActive
-        pollTask?.cancel()
-        pollTask = nil
+        syncTask?.cancel()
+        syncTask = nil
         guard isActive else { return }
         launch()
         // Checks at most every six hours; coming back to the app just gives it the chance.
         checkForUpdate(force: false)
-        pollTask = Task {
+        // One request on the way in, and no poll after it. The register's reply carries the state,
+        // and from then on the Live Activity's pushes carry every change -- coming back to the app
+        // is what catches one that never arrived.
+        syncTask = Task {
             await register()
-            while !Task.isCancelled {
-                await refresh()
-                try? await Task.sleep(for: .seconds(2))
-            }
+            // An older worker answers a register with nothing; ask outright rather than open empty.
+            if !registerCarriedStatus { await refresh() }
         }
     }
 
@@ -171,8 +174,25 @@ final class AppModel: ObservableObject {
         if let fcmToken { body["fcm"] = fcmToken }
         if let startToken { body["startToken"] = startToken }
         if let updateToken { body["updateToken"] = updateToken }
-        if case .reset = await Worker.register(pairID: id, body: body) {
+        switch await Worker.register(pairID: id, body: body) {
+        case .reset:
             handleReset(id)
+        case .ok(let fetched):
+            reachable = true
+            // Applied in the background as well, which is what takes down an activity whose end
+            // push never arrived. What made that unsafe was apply() reading the linger off
+            // `status` -- still .idle in a freshly woken copy of the app; it now reads it off the
+            // running activity instead. Everything else in apply() that shouldn't run off screen
+            // (the match alert, starting an activity) guards on `active` itself.
+            if let fetched, id == pairID {
+                registerCarriedStatus = true
+                apply(fetched)
+            } else {
+                registerCarriedStatus = false
+            }
+        case .failed:
+            reachable = false
+            registerCarriedStatus = false
         }
     }
 

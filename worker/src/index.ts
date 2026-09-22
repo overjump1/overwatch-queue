@@ -36,10 +36,11 @@ type Reply = { status: number; body: unknown };
 
 /**
  * A queue or a match the PC hasn't mentioned in this long is over as far as anyone here is
- * concerned: the PC was closed, went to sleep, or lost its network mid-queue. Hours rather than
- * minutes because the PC only speaks when something changes -- no real queue or match goes three
- * hours without changing, so it needs no heartbeat to hold this off. The same horizon as the
- * activity's own STALE_AFTER_SECONDS, which covers a phone this end push can't reach.
+ * concerned: the PC was closed, went to sleep, or lost its network mid-queue, and without this
+ * the phone would show a queue ticking up for good. Hours rather than minutes precisely so the
+ * PC needs no heartbeat to hold it off -- it only ever speaks when something changes, and no
+ * real queue or match goes three hours without changing. The same horizon as the activity's own
+ * STALE_AFTER_SECONDS, which covers a phone this end push can't reach.
  */
 const ABANDONED_AFTER_SECONDS = 3 * 3600;
 
@@ -79,7 +80,7 @@ export class Pair extends DurableObject<Env> {
       const pushes = pushesFor(prev, next);
       for (const push of pushes) await this.deliver(push, next, now);
       await this.schedule(next);
-      return { status: 200, body: { status: next } };
+      return { status: 200, body: await this.snapshot() };
     });
   }
 
@@ -92,13 +93,13 @@ export class Pair extends DurableObject<Env> {
         const fcm = token(input.fcm, FCM_TOKEN);
         if (!fcm) return { status: 400, body: { error: "bad_token" } };
         await this.ctx.storage.put(`device:${input.kind}`, { fcm } satisfies AndroidDevice);
-        return { status: 200, body: {} };
+        return { status: 200, body: await this.snapshot() };
       }
       if (input.kind === "watch") {
         const fcm = token(input.fcm, FCM_TOKEN);
         if (!fcm) return { status: 400, body: { error: "bad_token" } };
         await this.ctx.storage.put("watch", { fcm } satisfies Watch);
-        return { status: 200, body: {} };
+        return { status: 200, body: await this.snapshot() };
       }
       if (input.kind !== "phone") return { status: 400, body: { error: "bad_kind" } };
       const phone = await this.phone();
@@ -123,24 +124,13 @@ export class Pair extends DurableObject<Env> {
         // showed as a plain banner at most. Now that we have the current one, start it for real.
         await this.deliverApple({ kind: "start", alert: startAlert(status) }, status, now);
       }
-      return { status: 200, body: {} };
+      return { status: 200, body: await this.snapshot() };
     });
   }
 
   async read(): Promise<Reply> {
     if (await this.ctx.storage.get("deleted")) return { status: 410, body: { error: "reset" } };
-    const phone = await this.phone();
-    const watch = await this.ctx.storage.get<Watch>("watch");
-    const android = await this.ctx.storage.get<AndroidDevice>("device:android");
-    return {
-      status: 200,
-      body: {
-        status: await this.status(),
-        phonePaired: Boolean(phone.fcm),
-        watchPaired: Boolean(watch?.fcm),
-        androidPaired: Boolean(android?.fcm),
-      },
-    };
+    return { status: 200, body: await this.snapshot() };
   }
 
   async reset(): Promise<Reply> {
@@ -173,6 +163,10 @@ export class Pair extends DurableObject<Env> {
     });
   }
 
+  /**
+   * The two things the worker decides on its own: "Match found!" becoming "In a match" a minute
+   * later, and giving up on a PC that stopped talking. Whichever comes first.
+   */
   private async schedule(status: Status): Promise<void> {
     const now = Date.now();
     const times: number[] = [];
@@ -191,6 +185,26 @@ export class Pair extends DurableObject<Env> {
 
   private async phone(): Promise<Phone> {
     return (await this.ctx.storage.get<Phone>("phone")) ?? {};
+  }
+
+  /**
+   * What every reply says: the state, and who's paired. Registering or reporting already has the
+   * pair open, so handing this back saves the caller a second request for it.
+   */
+  private async snapshot(): Promise<Record<string, unknown>> {
+    return { status: await this.status(), ...(await this.paired()) };
+  }
+
+  /** Which devices have registered. A report carries these so the PC needs no second request. */
+  private async paired(): Promise<Record<string, boolean>> {
+    const phone = await this.phone();
+    const watch = await this.ctx.storage.get<Watch>("watch");
+    const android = await this.ctx.storage.get<AndroidDevice>("device:android");
+    return {
+      phonePaired: Boolean(phone.fcm),
+      watchPaired: Boolean(watch?.fcm),
+      androidPaired: Boolean(android?.fcm),
+    };
   }
 
   /** Sends a push to every paired device. */
