@@ -1,4 +1,4 @@
-package com.tomerady.overwatchqueue.shared
+package com.tomerady.overqueue.shared
 
 import android.Manifest
 import android.app.NotificationChannel

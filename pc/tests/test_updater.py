@@ -53,15 +53,15 @@ class FindUpdateTests(unittest.TestCase):
         self.assertTrue(u.checks_for_updates())
 
     def test_offers_a_newer_installer(self):
-        found = u.find_update(release("OWQueue-2.0.42.apk", "OWQueue-Setup-2.0.42.exe"))
-        self.assertEqual(found, ("2.0.42", "https://example.test/OWQueue-Setup-2.0.42.exe", 1234))
+        found = u.find_update(release("OverQueue-2.0.42.apk", "OverQueue-Setup-2.0.42.exe"))
+        self.assertEqual(found, ("2.0.42", "https://example.test/OverQueue-Setup-2.0.42.exe", 1234))
 
     def test_reads_the_version_from_the_asset_not_the_tag(self):
         # release.yml copies unchanged apps forward, so a newer tag can hold this build's installer.
-        self.assertIsNone(u.find_update(release("OWQueue-Setup-2.0.40.exe")))
+        self.assertIsNone(u.find_update(release("OverQueue-Setup-2.0.40.exe")))
 
     def test_ignores_the_other_platforms_and_empty_releases(self):
-        self.assertIsNone(u.find_update(release("OWQueue-2.0.42.apk", "OWQueue-2.0.42.ipa")))
+        self.assertIsNone(u.find_update(release("OverQueue-2.0.42.apk", "OverQueue-2.0.42.ipa")))
         self.assertIsNone(u.find_update(release()))
         self.assertIsNone(u.find_update({}))
 

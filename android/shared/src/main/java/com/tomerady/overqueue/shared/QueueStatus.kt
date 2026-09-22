@@ -1,4 +1,4 @@
-package com.tomerady.overwatchqueue.shared
+package com.tomerady.overqueue.shared
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable

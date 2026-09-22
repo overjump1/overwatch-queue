@@ -52,8 +52,8 @@ jobs:
           {
             "project_info": {
               "project_number": "000000000000",
-              "project_id": "owqueue-placeholder",
-              "storage_bucket": "owqueue-placeholder.appspot.com"
+              "project_id": "overqueue-placeholder",
+              "storage_bucket": "overqueue-placeholder.appspot.com"
             },
             "client": [{
               "client_info": {
@@ -97,10 +97,10 @@ jobs:
           -PversionCode=${{ inputs.version-code || github.run_number }}
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk "OWQueue-${{ steps.version.outputs.version }}.apk"
+        run: cp app/build/outputs/apk/debug/app-debug.apk "OverQueue-${{ steps.version.outputs.version }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: OWQueue-${{ steps.version.outputs.version }}-android
-          path: android/OWQueue-*.apk
+          name: OverQueue-${{ steps.version.outputs.version }}-android
+          path: android/OverQueue-*.apk
           if-no-files-found: error
