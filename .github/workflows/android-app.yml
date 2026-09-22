@@ -16,6 +16,16 @@ on:
         type: number
         required: false
         default: 1
+      # A dev build's worker and the release it updates from (see release.yml). Left empty, the
+      # build keeps the real ones it ships with.
+      worker-url:
+        type: string
+        required: false
+        default: ""
+      release-api:
+        type: string
+        required: false
+        default: ""
   workflow_dispatch: {}
 
 permissions:
@@ -91,10 +101,15 @@ jobs:
           fi
 
       - name: Test and build
+        env:
+          WORKER_URL: ${{ inputs.worker-url }}
+          RELEASE_API: ${{ inputs.release-api }}
         run: >
           gradle --no-daemon :shared:testDebugUnitTest :app:assembleDebug
           -PversionName=${{ steps.version.outputs.version }}
           -PversionCode=${{ inputs.version-code || github.run_number }}
+          ${WORKER_URL:+"-PworkerUrl=$WORKER_URL"}
+          ${RELEASE_API:+"-PreleaseApi=$RELEASE_API"}
 
       - name: Rename APK
         run: cp app/build/outputs/apk/debug/app-debug.apk "OverQueue-${{ steps.version.outputs.version }}.apk"

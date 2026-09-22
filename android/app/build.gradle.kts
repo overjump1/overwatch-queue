@@ -27,12 +27,15 @@ android {
         versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
         versionName = (findProperty("versionName") as String?) ?: "0.0.0-dev"
         buildConfigField("String", "WORKER_URL", "\"https://overwatch-queue-push-relay.tomerady.workers.dev\"")
+        buildConfigField("String", "RELEASE_API", "\"https://api.github.com/repos/overjump1/overwatch-queue/releases/latest\"")
     }
 
     buildTypes {
         debug {
             // ./gradlew installDebug -PworkerUrl=http://10.0.2.2:8787 talks to `npx wrangler dev` from the emulator.
+            // CI's dev builds pass both: the dev worker, and the dev prerelease to update from.
             (findProperty("workerUrl") as String?)?.let { buildConfigField("String", "WORKER_URL", "\"$it\"") }
+            (findProperty("releaseApi") as String?)?.let { buildConfigField("String", "RELEASE_API", "\"$it\"") }
         }
         release {
             isMinifyEnabled = false

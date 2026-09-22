@@ -12,6 +12,16 @@ on:
       version:
         type: string
         required: true
+      # A dev build's worker and the release it updates from (see release.yml). Left empty, the
+      # build keeps the real ones it ships with.
+      worker-url:
+        type: string
+        required: false
+        default: ""
+      release-api:
+        type: string
+        required: false
+        default: ""
   workflow_dispatch: {}
 
 permissions:
@@ -52,6 +62,23 @@ jobs:
       - name: Stamp the version
         shell: bash
         run: sed -i 's/^VERSION = .*/VERSION = "${{ steps.version.outputs.version }}"/' pc/version.py
+
+      # A dev build talks to the dev worker and updates from the dev prerelease. Checked afterwards,
+      # because a sed that matches nothing succeeds anyway and would ship a dev build on the real
+      # worker without a word.
+      - name: Point a dev build at the dev worker
+        shell: bash
+        env:
+          WORKER_URL: ${{ inputs.worker-url }}
+          RELEASE_API: ${{ inputs.release-api }}
+        run: |
+          stamp() {
+            [ -n "$2" ] || return 0
+            sed -i "s|^$1 = .*|$1 = \"$2\"|" pc/version.py
+            grep -qxF "$1 = \"$2\"" pc/version.py || { echo "::error::$1 didn't land in pc/version.py"; exit 1; }
+          }
+          stamp WORKER_URL "$WORKER_URL"
+          stamp RELEASE_API "$RELEASE_API"
 
       - name: Build app
         run: pyinstaller --noconfirm pc/overqueue.spec
