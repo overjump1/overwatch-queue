@@ -26,15 +26,20 @@ object Worker {
         data class Failed(val reason: String) : Result
     }
 
-    suspend fun fetchStatus(pairId: String): Result =
-        send("GET", "/v1/pair/$pairId/state", null) { text ->
-            val status = QueueStatus.json.parseToJsonElement(text).jsonObject["status"]
-            status?.let { QueueStatus.decode(it.toString()) }
-        }
+    private val decodeStatus: (String) -> QueueStatus? = { text ->
+        val status = QueueStatus.json.parseToJsonElement(text).jsonObject["status"]
+        status?.let { QueueStatus.decode(it.toString()) }
+    }
 
-    /** `body` has the device `kind` ("android") and its `fcm` token. */
+    suspend fun fetchStatus(pairId: String): Result =
+        send("GET", "/v1/pair/$pairId/state", null, decodeStatus)
+
+    /**
+     * `body` has the device `kind` ("android") and its `fcm` token. The reply carries the current
+     * state as well, so registering doubles as a refresh instead of needing one after it.
+     */
     suspend fun register(pairId: String, body: JsonObject): Result =
-        send("POST", "/v1/pair/$pairId/device", body.toString()) { null }
+        send("POST", "/v1/pair/$pairId/device", body.toString(), decodeStatus)
 
     private suspend fun send(
         method: String,

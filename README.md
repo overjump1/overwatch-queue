@@ -79,6 +79,16 @@ npx wrangler deploy
 npm test
 ```
 
+`wrangler dev` keeps its local Durable Object state in `worker/.wrangler/state`. On Windows,
+workerd can't open that store if the path to the repo has a space in it: the worker starts and
+serves anything that doesn't touch the pairing, and every request that does answers
+`internal error` with a reference id and nothing else to go on. Keep the state somewhere
+without spaces and it works:
+
+```
+npx wrangler dev --persist-to %TEMP%\owq-state
+```
+
 ## iPhone and Watch apps
 
 1. Put `GoogleService-Info.plist` in `ios/iOS/`.

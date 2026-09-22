@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 // Checks at most every six hours; coming back to the app just gives it the chance.
                 updater.check(force = false)
-                repository.poll()
+                repository.watch()
             }
         }
 
