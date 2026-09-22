@@ -1,4 +1,4 @@
-package com.tomerady.overwatchqueue.shared
+package com.tomerady.overqueue.shared
 
 import android.content.Context
 import java.net.URI
@@ -14,10 +14,16 @@ object Pairing {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, id).apply()
     }
 
-    /** Accepts `owq://pair?id=<32 hex>` (from the QR code) and returns the pairing id. */
+    /**
+     * `owq://` is the same link under the name the app used to go by: a PC that hasn't been
+     * updated yet still writes that one, and it has to keep pairing.
+     */
+    private val SCHEMES = setOf("overqueue", "owq")
+
+    /** Accepts `overqueue://pair?id=<32 hex>` (from the QR code) and returns the pairing id. */
     fun parse(text: String): String? {
         val uri = runCatching { URI(text.trim()) }.getOrNull() ?: return null
-        if (uri.scheme != "owq" || uri.host != "pair") return null
+        if (uri.scheme !in SCHEMES || uri.host != "pair") return null
         val id = uri.rawQuery.orEmpty()
             .split("&")
             .map { it.split("=", limit = 2) }

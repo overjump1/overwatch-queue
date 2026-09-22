@@ -107,7 +107,7 @@ class RoleSelect:
         path = os.path.join(self.cache_dir, role + (".svg" if role == "flex" else ".png"))
         if not os.path.exists(path):
             try:
-                request = urllib.request.Request(ICON_URLS[role], headers={"User-Agent": "OWQueue/2.0"})
+                request = urllib.request.Request(ICON_URLS[role], headers={"User-Agent": "OverQueue/2.0"})
                 with urllib.request.urlopen(request, timeout=15) as response:
                     data = response.read()
                 with open(path + ".part", "wb") as handle:

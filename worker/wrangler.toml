@@ -4,6 +4,17 @@ compatibility_date = "2024-11-01"
 
 # Secret, set once: wrangler secret put FCM_SERVICE_ACCOUNT
 
+# Workers Logs: the console.log lines the worker writes, plus one invocation log per request.
+# Kept 3 days on the Free plan, 200,000 events a day; past that Cloudflare stops logging, not the
+# worker. Invocation logs carry the request, so they include the pairing ID in the URL —
+# docs/privacy.md says so, and has to keep saying so while this is on.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+invocation_logs = true
+
 [[durable_objects.bindings]]
 name = "PAIR"
 class_name = "Pair"

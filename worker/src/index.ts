@@ -119,6 +119,22 @@ export class Pair extends DurableObject<Env> {
     });
   }
 
+  /**
+   * A device unpairing. Only that device's tokens go: the pairing itself stays, so the other
+   * phones on it carry on and the PC's code still works. The Watch goes with the iPhone, since
+   * it's paired through the iPhone in the first place.
+   */
+  async forget(kind: string): Promise<Reply> {
+    return this.serial(async () => {
+      if (await this.ctx.storage.get("deleted")) return { status: 410, body: { error: "reset" } };
+      if (kind === "phone") await this.ctx.storage.delete(["phone", "watch"]);
+      else if (kind === "watch") await this.ctx.storage.delete("watch");
+      else if (ANDROID_KINDS.includes(kind as AndroidKind)) await this.ctx.storage.delete(`device:${kind}`);
+      else return { status: 400, body: { error: "bad_kind" } };
+      return { status: 200, body: {} };
+    });
+  }
+
   async read(): Promise<Reply> {
     if (await this.ctx.storage.get("deleted")) return { status: 410, body: { error: "reset" } };
     const phone = await this.phone();
@@ -288,7 +304,8 @@ function dead(result: FcmResult): boolean {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const match = new URL(request.url).pathname.match(/^\/v1\/pair\/([^/]+)(\/state|\/device)?$/);
+    const url = new URL(request.url);
+    const match = url.pathname.match(/^\/v1\/pair\/([^/]+)(\/state|\/device)?$/);
     if (!match) return json(404, { error: "not_found" });
     const [, id, action] = match;
     if (!PAIR_ID.test(id)) return json(400, { error: "bad_pair_id" });
@@ -307,6 +324,9 @@ export default {
     if (action === "/state" && request.method === "POST") reply = await pair.report(body);
     else if (action === "/state" && request.method === "GET") reply = await pair.read();
     else if (action === "/device" && request.method === "POST") reply = await pair.register(body);
+    else if (action === "/device" && request.method === "DELETE") {
+      reply = await pair.forget(url.searchParams.get("kind") ?? "");
+    }
     else if (!action && request.method === "DELETE") reply = await pair.reset();
     else return json(405, { error: "method_not_allowed" });
     return json(reply.status, reply.body);

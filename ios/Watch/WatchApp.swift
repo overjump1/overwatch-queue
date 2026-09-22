@@ -6,7 +6,7 @@ import FirebaseCore
 import FirebaseMessaging
 
 @main
-struct OverwatchQueueWatchApp: App {
+struct OverQueueWatchApp: App {
     @WKApplicationDelegateAdaptor(WatchDelegate.self) private var delegate
     @StateObject private var model = WatchModel.shared
     @Environment(\.scenePhase) private var scenePhase

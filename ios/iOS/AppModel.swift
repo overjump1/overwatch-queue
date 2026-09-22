@@ -14,6 +14,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var reachable = true
     @Published private(set) var pairingWasReset = false
     @Published private(set) var matchAlerts = 0
+    /// True while the phone is timing a queue on its own, with no PC involved.
+    @Published private(set) var manual = false
     /// A newer release, if there is one. iOS can't install it, so this only reports it.
     @Published private(set) var updateNotice: UpdateNotice = .quiet
 
@@ -29,6 +31,10 @@ final class AppModel: ObservableObject {
     private var localActivityQueueStart: Double?
     /// The match we already alerted for, so the same match never alerts twice.
     private var alertedFoundAt: Double?
+    /// The Live Activity a manual queue is running, so it's updated rather than replaced.
+    private var manualActivityID: String?
+    /// Turns a manual `found` into `playing` a minute later, the way the worker's alarm does.
+    private var manualTask: Task<Void, Never>?
     private var updateCheckedAt: Date?
     private var updateTask: Task<Void, Never>?
     private let watch = WatchBridge()
@@ -70,6 +76,11 @@ final class AppModel: ObservableObject {
         launch()
         // Checks at most every six hours; coming back to the app just gives it the chance.
         checkForUpdate(force: false)
+        // A manual queue is the phone's own; nothing from the worker should land on top of it.
+        guard !manual else {
+            reconcileManual()
+            return
+        }
         pollTask = Task {
             await register()
             while !Task.isCancelled {
@@ -98,11 +109,20 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// The user unpairing. The worker is told to forget this phone as well, so its push tokens
+    /// go now rather than sitting there until the PC happens to reset the code.
     func unpair() {
+        if let id = pairID { Task { await Worker.forget(pairID: id) } }
+        clearPairing()
+    }
+
+    private func clearPairing() {
         Pairing.id = nil
         pairID = nil
-        status = .idle
         watch.send(pairID: nil)
+        // A manual queue is the phone's own and carries on; only a PC-driven one ends here.
+        guard !manual else { return }
+        status = .idle
         endAllActivities()
     }
 
@@ -131,10 +151,81 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: - Timing a queue on the phone alone
+
+    /// Times a queue with no PC in it. Everything downstream of `status` behaves exactly as it
+    /// does for a paired PC — same screen, same Live Activity, same alert — the only difference
+    /// being that the phone is the one saying when the queue started and when it ended.
+    func startManualQueue(mode: GameMode) {
+        manual = true
+        pollTask?.cancel()
+        pollTask = nil
+        launch()
+        setManual(QueueStatus(state: .queueing, mode: mode, startedAt: Date.now.timeIntervalSince1970))
+    }
+
+    /// The user got their match. The wait holds on screen for a minute, then the match timer
+    /// takes over, which is what the worker's alarm does for a PC-driven queue.
+    func manualMatchFound() {
+        guard manual, status.state == .queueing else { return }
+        let found = Date.now.timeIntervalSince1970
+        setManual(QueueStatus(state: .found, mode: status.mode, startedAt: status.startedAt, foundAt: found))
+        matchAlerts += 1
+        // A manual activity is updated in-process rather than pushed, so nothing else makes a sound.
+        alerts.play(sound: true)
+        manualTask?.cancel()
+        manualTask = Task {
+            try? await Task.sleep(for: .seconds(playingAfterFoundSeconds))
+            guard !Task.isCancelled, manual, status.state == .found else { return }
+            setManual(QueueStatus(state: .playing, mode: status.mode,
+                                  startedAt: status.startedAt, foundAt: found))
+        }
+    }
+
+    /// Ends the manual queue and hands the app back to the PC, if one is paired. Dismissed right
+    /// away rather than lingering: unlike a PC's queue ending on its own, this one was asked for.
+    func endManualQueue() {
+        guard manual else { return }
+        manualTask?.cancel()
+        manualTask = nil
+        manual = false
+        manualActivityID = nil
+        status = .idle
+        endActivities(showingIdleFor: 0)
+        setActive(active)
+    }
+
+    /// The phone can be asleep through the minute after a match is found, and a suspended
+    /// `manualTask` won't have moved on. Coming back to the app takes that step instead.
+    private func reconcileManual() {
+        guard status.state == .found, let foundAt = status.foundAt,
+              Date.now.timeIntervalSince1970 - foundAt >= playingAfterFoundSeconds
+        else { return }
+        setManual(QueueStatus(state: .playing, mode: status.mode, startedAt: status.startedAt, foundAt: foundAt))
+    }
+
+    private func setManual(_ new: QueueStatus) {
+        status = new
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        if let id = manualActivityID, let activity = runningActivity(id) {
+            Task { await activity.update(ActivityContent(state: new, staleDate: nil)) }
+            return
+        }
+        guard let activity = try? Activity.request(attributes: QueueActivityAttributes(),
+                                                   content: .init(state: new, staleDate: nil),
+                                                   pushType: nil)
+        else { return }
+        manualActivityID = activity.id
+    }
+
+    private func runningActivity(_ id: String) -> Activity<QueueActivityAttributes>? {
+        Activity<QueueActivityAttributes>.activities.first { $0.id == id && $0.activityState == .active }
+    }
+
     // MARK: - Worker
 
     private func refresh() async {
-        guard let id = pairID else { return }
+        guard let id = pairID, !manual else { return }
         switch await Worker.fetchStatus(pairID: id) {
         case .ok(let fetched):
             reachable = true
@@ -169,7 +260,8 @@ final class AppModel: ObservableObject {
 
     private func handleReset(_ id: String) {
         guard id == pairID else { return }
-        unpair()
+        // The worker has already thrown the pairing away; there's nothing left to tell it.
+        clearPairing()
         pairingWasReset = true
     }
 
@@ -196,7 +288,8 @@ final class AppModel: ObservableObject {
     // MARK: - Live Activity
 
     private func observe(_ activity: Activity<QueueActivityAttributes>) {
-        guard !observedActivities.contains(activity.id) else { return }
+        // The manual queue drives its own activity in-process; it has no push tokens to report.
+        guard activity.id != manualActivityID, !observedActivities.contains(activity.id) else { return }
         observedActivities.insert(activity.id)
         for other in Activity<QueueActivityAttributes>.activities where other.id != activity.id {
             Task { await other.end(nil, dismissalPolicy: .immediate) }
@@ -225,7 +318,7 @@ final class AppModel: ObservableObject {
 
     /// Backup for a push-to-start that didn't arrive: start the activity locally, once per queue.
     private func startActivityIfMissing(for status: QueueStatus) {
-        guard active, status.state == .queueing, let startedAt = status.startedAt,
+        guard active, !manual, status.state == .queueing, let startedAt = status.startedAt,
               localActivityQueueStart != startedAt,
               !hasRunningActivity,
               ActivityAuthorizationInfo().areActivitiesEnabled

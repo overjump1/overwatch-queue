@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.tomerady.overwatchqueue.shared"
+    namespace = "com.tomerady.overqueue.shared"
     compileSdk = 35
 
     defaultConfig {

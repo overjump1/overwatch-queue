@@ -11,7 +11,7 @@ struct WatchView: View {
                     .foregroundStyle(.secondary)
                 Text("Pair on your iPhone")
                     .font(.headline)
-                Text("Open OW Queue on your iPhone and scan the code on your PC.")
+                Text("Open OverQueue on your iPhone and scan the code on your PC.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

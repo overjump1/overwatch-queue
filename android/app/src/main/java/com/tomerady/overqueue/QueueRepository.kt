@@ -1,16 +1,16 @@
-package com.tomerady.overwatchqueue
+package com.tomerady.overqueue
 
 import android.content.Context
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import com.google.firebase.messaging.FirebaseMessaging
-import com.tomerady.overwatchqueue.shared.MatchAlert
-import com.tomerady.overwatchqueue.shared.Pairing
-import com.tomerady.overwatchqueue.shared.QueueNotifier
-import com.tomerady.overwatchqueue.shared.QueuePush
-import com.tomerady.overwatchqueue.shared.QueueState
-import com.tomerady.overwatchqueue.shared.QueueStatus
-import com.tomerady.overwatchqueue.shared.Worker
+import com.tomerady.overqueue.shared.MatchAlert
+import com.tomerady.overqueue.shared.Pairing
+import com.tomerady.overqueue.shared.QueueNotifier
+import com.tomerady.overqueue.shared.QueuePush
+import com.tomerady.overqueue.shared.QueueState
+import com.tomerady.overqueue.shared.QueueStatus
+import com.tomerady.overqueue.shared.Worker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -107,7 +107,16 @@ class QueueRepository private constructor(context: Context) {
         return true
     }
 
+    /**
+     * The user unpairing. The worker is told to forget this phone as well, so its token goes now
+     * rather than sitting there until the PC happens to reset the code.
+     */
     fun unpair() {
+        _state.value.pairId?.let { id -> scope.launch { Worker.forget(id) } }
+        clearPairing()
+    }
+
+    private fun clearPairing() {
         registerJob?.cancel()
         registeredAs = null
         Pairing.save(context, null)
@@ -204,7 +213,8 @@ class QueueRepository private constructor(context: Context) {
 
     private fun handleReset(id: String) {
         if (id != _state.value.pairId) return
-        unpair()
+        // The worker has already thrown the pairing away; there's nothing left to tell it.
+        clearPairing()
         _state.update { it.copy(pairingWasReset = true) }
     }
 
@@ -238,7 +248,7 @@ class QueueRepository private constructor(context: Context) {
     }
 
     companion object {
-        private const val TAG = "OWQueue"
+        private const val TAG = "OverQueue"
 
         @Volatile private var instance: QueueRepository? = null
 

@@ -1,4 +1,4 @@
-package com.tomerady.overwatchqueue.shared
+package com.tomerady.overqueue.shared
 
 /** An FCM data message from the worker (`androidPayload` in worker/src/logic.ts). */
 data class QueuePush(

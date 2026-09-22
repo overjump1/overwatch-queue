@@ -9,8 +9,8 @@ import time
 import urllib.error
 import urllib.request
 
-WORKER_URL = os.environ.get("OWQ_WORKER_URL", "https://overwatch-queue-push-relay.tomerady.workers.dev").rstrip("/")
-USER_AGENT = "OWQueue/2.0"
+WORKER_URL = os.environ.get("OVERQUEUE_WORKER_URL", "https://overwatch-queue-push-relay.tomerady.workers.dev").rstrip("/")
+USER_AGENT = "OverQueue/2.0"
 TIMEOUT_SECONDS = 10
 UNPAIRED_CHECK_SECONDS = 5
 PAIRED_CHECK_SECONDS = 60

@@ -1,8 +1,8 @@
-package com.tomerady.overwatchqueue
+package com.tomerady.overqueue
 
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import com.tomerady.overwatchqueue.shared.QueuePush
+import com.tomerady.overqueue.shared.QueuePush
 
 /** Gets the worker's pushes, even while the app is closed. */
 class QueueMessagingService : FirebaseMessagingService() {

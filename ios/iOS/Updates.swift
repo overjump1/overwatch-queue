@@ -16,7 +16,7 @@ enum UpdateNotice: Equatable {
 /// phone is still AltStore or Sideloadly with the IPA from the release page.
 enum Updates {
     static let releaseAPI = URL(string: "https://api.github.com/repos/overjump1/overwatch-queue/releases/latest")!
-    private static let assetPrefix = "OWQueue-"
+    private static let assetPrefix = "OverQueue-"
     private static let assetSuffix = ".ipa"
 
     private struct Release: Decodable {
@@ -51,20 +51,23 @@ enum Updates {
         return false
     }
 
-    /// Written by ci_scripts/ci_post_clone.sh. TestFlight hands out its own updates, and these
-    /// builds are numbered from Xcode Cloud's counter rather than the one releases use.
-    static var isTestFlightBuild: Bool {
-        Bundle.main.object(forInfoDictionaryKey: "OWQTestFlightBuild") as? Bool ?? false
+    /// Written by .github/workflows/ios-app.yml, so only the IPA on the release page carries it.
+    /// That build is the one whose updates live on GitHub; TestFlight hands out its own and the
+    /// App Store hands out its own, and an App Store build that pointed anyone at a release page
+    /// would be breaking App Review's rules as well as wasting their time. Opting in beats opting
+    /// out here: a build nobody stamped keeps quiet instead of guessing.
+    static var isGitHubReleaseBuild: Bool {
+        Bundle.main.object(forInfoDictionaryKey: "OWQGitHubBuild") as? Bool ?? false
     }
 
-    /// Worked out once, since the view body reads it and it can't change while the app runs. Off
-    /// for TestFlight, for Debug builds, and for the 0.0.0 a build nobody stamped keeps — below
-    /// every release, so it would claim an update forever.
+    /// Worked out once, since the view body reads it and it can't change while the app runs. On
+    /// for the release IPA alone, off for Debug builds, and off for the 0.0.0 a build nobody
+    /// stamped keeps — below every release, so it would claim an update forever.
     static let checksForUpdates: Bool = {
         #if DEBUG
         return false
         #else
-        return !isTestFlightBuild && (parse(current)?.first ?? 0) > 0
+        return isGitHubReleaseBuild && (parse(current)?.first ?? 0) > 0
         #endif
     }()
 
@@ -72,7 +75,7 @@ enum Updates {
         guard checksForUpdates else { return .upToDate }
         var request = URLRequest(url: releaseAPI, timeoutInterval: 20)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("OWQueue/\(current)", forHTTPHeaderField: "User-Agent")
+        request.setValue("OverQueue/\(current)", forHTTPHeaderField: "User-Agent")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let release = try? JSONDecoder().decode(Release.self, from: data)
@@ -86,7 +89,7 @@ enum Updates {
     /// The version of the newer IPA among `assetNames`, if there is one.
     ///
     /// The version comes from the asset's filename, not the release tag: release.yml only rebuilds
-    /// the apps that changed and copies the rest forward, so v2.0.3 holds OWQueue-2.0.2.ipa and
+    /// the apps that changed and copies the rest forward, so v2.0.3 holds OverQueue-2.0.2.ipa and
     /// going by the tag would claim an update this build already is.
     static func newerVersion(in assetNames: [String], than current: String) -> String? {
         for name in assetNames where name.hasPrefix(assetPrefix) && name.hasSuffix(assetSuffix) {

@@ -1,4 +1,4 @@
-"""OW Queue for Windows: watches your Overwatch queue and pushes it to your iPhone and Apple Watch.
+"""OverQueue for Windows: watches your Overwatch queue and pushes it to your iPhone and Apple Watch.
 
 Battle.net is asked what you're doing over its own debug port, which means starting it in
 developer mode (`--remote-debugging-port`) -- see `devmode`. `--presence-source` picks
@@ -63,22 +63,38 @@ MODE_NAMES = {
     "custom": "Custom Game",
 }
 
-DATA_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "OWQueue")
+_APPDATA = os.environ.get("APPDATA") or os.path.expanduser("~")
+DATA_DIR = os.path.join(_APPDATA, "OverQueue")
+# The app was called OW Queue before this. Its folder holds the pairing code every paired
+# phone was scanned against, so the folder moves across rather than leaving everyone to scan
+# a new one; after that the old name is never looked at again.
+LEGACY_DATA_DIR = os.path.join(_APPDATA, "OWQueue")
 PAIRING_FILE = os.path.join(DATA_DIR, "pairing.json")
 
-log = logging.getLogger("owqueue")
+log = logging.getLogger("overqueue")
+
+
+def adopt_legacy_data_dir():
+    """Moves the old folder over, once, before anything reads or writes the new one."""
+    if os.path.exists(DATA_DIR) or not os.path.isdir(LEGACY_DATA_DIR):
+        return
+    try:
+        os.rename(LEGACY_DATA_DIR, DATA_DIR)
+    except OSError:
+        pass  # A new pairing code is a nuisance, not a reason not to start.
 
 
 def setup_logging():
     if sys.stdout:  # None in the installed build, which has no console
         log.addHandler(logging.StreamHandler(sys.stdout))
     log.setLevel(logging.INFO)
+    adopt_legacy_data_dir()
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
     except OSError:
         return
     handler = logging.handlers.RotatingFileHandler(
-        os.path.join(DATA_DIR, "owqueue.log"), maxBytes=1_000_000, backupCount=2, encoding="utf-8")
+        os.path.join(DATA_DIR, "overqueue.log"), maxBytes=1_000_000, backupCount=2, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
     log.addHandler(handler)
 
@@ -195,7 +211,7 @@ class App(QWidget):
         self._qr_requested_with = None  # the phones paired when "Show QR code" was pressed, None when not pressed
         self._checks_updates = up.checks_for_updates()
 
-        self.setWindowTitle("OW Queue")
+        self.setWindowTitle("OverQueue")
         self.setStyleSheet(
             "QWidget { background: %s; color: %s; }"
             "QFrame#card { background: %s; border-radius: 12px; }"
@@ -255,7 +271,7 @@ class App(QWidget):
         layout.addSpacing(10)
         layout.addLayout(buttons)
 
-        self.version_label = QLabel("OW Queue %s" % VERSION, font=_font(9))
+        self.version_label = QLabel("OverQueue %s" % VERSION, font=_font(9))
         self.version_label.setStyleSheet("color: %s;" % MUTED)
         self.update_button = QPushButton(font=_font(9))
         self.update_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -268,6 +284,12 @@ class App(QWidget):
         footer.addWidget(self.update_button)
         layout.addSpacing(10)
         layout.addLayout(footer)
+
+        disclaimer = QLabel("Not affiliated with Overwatch or Blizzard Entertainment.", font=_font(8))
+        disclaimer.setStyleSheet("color: %s;" % MUTED)
+        disclaimer.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addSpacing(6)
+        layout.addWidget(disclaimer)
 
         self.timer = QTimer(self, interval=GUI_REFRESH_MS, timeout=self.refresh)
         self.timer.start()
@@ -331,7 +353,7 @@ class App(QWidget):
         elif paired:
             self._set(self.phone_label, "● %s paired" % " and ".join(paired), GOOD)
         else:
-            self._set(self.phone_label, "Scan this code with the OW Queue app on your phone", MUTED)
+            self._set(self.phone_label, "Scan this code with the OverQueue app on your phone", MUTED)
         if show_qr and self._qr_for != self.pair_id:
             self._draw_qr()
         self.qr.setVisible(show_qr)
@@ -361,7 +383,7 @@ class App(QWidget):
 
     def _draw_qr(self):
         code = qrcode.QRCode(border=2, error_correction=qrcode.constants.ERROR_CORRECT_M)
-        code.add_data("owq://pair?id=%s" % self.pair_id)
+        code.add_data("overqueue://pair?id=%s" % self.pair_id)
         code.make(fit=True)
         matrix = code.get_matrix()
         ratio = self.devicePixelRatioF()
@@ -435,7 +457,7 @@ class _Parser(argparse.ArgumentParser):
 
 
 def parse_args(argv=None):
-    parser = _Parser(prog="OWQueue", description=__doc__.splitlines()[0])
+    parser = _Parser(prog="OverQueue", description=__doc__.splitlines()[0])
     parser.add_argument("--presence-source", choices=("devmode", "auto"), default="devmode",
                         help="how to read Battle.net's presence (default: start Battle.net in "
                              "developer mode and read over its debug port; 'auto' uses a debug "

@@ -1,4 +1,4 @@
-package com.tomerady.overwatchqueue
+package com.tomerady.overqueue
 
 import android.content.BroadcastReceiver
 import android.content.Context

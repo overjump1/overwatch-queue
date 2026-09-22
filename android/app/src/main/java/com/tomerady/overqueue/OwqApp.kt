@@ -1,8 +1,8 @@
-package com.tomerady.overwatchqueue
+package com.tomerady.overqueue
 
 import android.app.Application
-import com.tomerady.overwatchqueue.shared.QueueNotifier
-import com.tomerady.overwatchqueue.shared.Worker
+import com.tomerady.overqueue.shared.QueueNotifier
+import com.tomerady.overqueue.shared.Worker
 
 class OwqApp : Application() {
     override fun onCreate() {
