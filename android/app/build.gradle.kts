@@ -13,10 +13,13 @@ if (file("google-services.json").exists()) {
 }
 
 android {
-    namespace = "com.tomerady.overwatchqueue"
+    namespace = "com.tomerady.overqueue"
     compileSdk = 35
 
     defaultConfig {
+        // Not the namespace above, on purpose. This is the id Android installs the app under, and
+        // an APK carrying a different one installs beside the old app instead of over it -- so it
+        // keeps the name the app shipped with. Nothing shows it to anyone.
         applicationId = "com.tomerady.overwatchqueue"
         minSdk = 26
         targetSdk = 35

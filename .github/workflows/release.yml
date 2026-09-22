@@ -65,7 +65,7 @@ jobs:
           any=false
           check android '\.apk$' '^(android/|\.github/workflows/android-app\.yml)'
           check windows '\.exe$' '^(pc/|\.github/workflows/windows-app\.yml)'
-          check ios '\.ipa$' '^(ios/|project\.yml|OverwatchQueue\.xcodeproj/|\.github/workflows/ios-app\.yml)'
+          check ios '\.ipa$' '^(ios/|project\.yml|OverQueue\.xcodeproj/|\.github/workflows/ios-app\.yml)'
           echo "any=$any" >> "$GITHUB_OUTPUT"
           echo "previous=$previous" >> "$GITHUB_OUTPUT"
           echo "version=2.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
@@ -126,6 +126,19 @@ jobs:
           copy "${{ needs.changes.outputs.ios }}" '*.ipa'
           ls -l release
 
+      # Apps installed before the rename look for the old filenames, and a release without one
+      # tells them they are up to date forever. Both names ship until those installs have had
+      # a few releases to catch up, and then this step can go.
+      - name: Keep the pre-rename filenames alive
+        run: |
+          cd release
+          for file in OverQueue-*; do
+            [ -e "$file" ] || continue
+            legacy="OWQueue-${file#OverQueue-}"
+            [ -e "$legacy" ] || cp "$file" "$legacy"
+          done
+          ls -l
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -139,7 +152,7 @@ jobs:
           gh release create "v$VERSION" release/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "OW Queue $VERSION" \
+            --title "OverQueue $VERSION" \
             --notes "$notes" \
             --generate-notes
 

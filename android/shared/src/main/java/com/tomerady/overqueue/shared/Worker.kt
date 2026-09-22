@@ -1,4 +1,4 @@
-package com.tomerady.overwatchqueue.shared
+package com.tomerady.overqueue.shared
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -40,6 +40,10 @@ object Worker {
      */
     suspend fun register(pairId: String, body: JsonObject): Result =
         send("POST", "/v1/pair/$pairId/device", body.toString(), decodeStatus)
+
+    /** Unpairing: the worker drops this phone's token. */
+    suspend fun forget(pairId: String): Result =
+        send("DELETE", "/v1/pair/$pairId/device?kind=android", null) { null }
 
     private suspend fun send(
         method: String,

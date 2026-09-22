@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>OW Queue</string>
+	<string>OverQueue</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -25,6 +25,7 @@
 			<string>com.tomerady.OverwatchQueue.pair</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>overqueue</string>
 				<string>owq</string>
 			</array>
 		</dict>

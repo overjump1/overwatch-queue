@@ -1,4 +1,4 @@
-package com.tomerady.overwatchqueue
+package com.tomerady.overqueue
 
 import android.Manifest
 import android.content.Intent
@@ -28,8 +28,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import com.tomerady.overwatchqueue.ui.PairScreen
-import com.tomerady.overwatchqueue.ui.QueueScreen
+import com.tomerady.overqueue.ui.PairScreen
+import com.tomerady.overqueue.ui.QueueScreen
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -66,7 +66,7 @@ class MainActivity : ComponentActivity() {
         handle(intent)
     }
 
-    /** `owq://pair?id=...` from the camera app. */
+    /** `overqueue://pair?id=...` from the camera app. */
     private fun handle(intent: Intent?) {
         intent?.dataString?.let { repository.pair(it) }
     }

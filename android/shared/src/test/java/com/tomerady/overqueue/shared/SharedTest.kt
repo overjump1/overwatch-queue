@@ -1,4 +1,4 @@
-package com.tomerady.overwatchqueue.shared
+package com.tomerady.overqueue.shared
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -117,17 +117,17 @@ class UpdatesTest {
     }
 
     @Test fun offersANewerApk() {
-        val found = Updates.findUpdate(release("OWQueue-Setup-2.0.42.exe", "OWQueue-2.0.42.apk"), "2.0.40")
-        assertEquals(Updates.Release("2.0.42", "https://example.test/OWQueue-2.0.42.apk", 1234), found)
+        val found = Updates.findUpdate(release("OverQueue-Setup-2.0.42.exe", "OverQueue-2.0.42.apk"), "2.0.40")
+        assertEquals(Updates.Release("2.0.42", "https://example.test/OverQueue-2.0.42.apk", 1234), found)
     }
 
     @Test fun readsTheVersionFromTheAssetNotTheTag() {
         // release.yml copies unchanged apps forward, so a newer tag can hold this build's APK.
-        assertNull(Updates.findUpdate(release("OWQueue-2.0.40.apk"), "2.0.40"))
+        assertNull(Updates.findUpdate(release("OverQueue-2.0.40.apk"), "2.0.40"))
     }
 
     @Test fun ignoresTheOtherPlatforms() {
-        assertNull(Updates.findUpdate(release("OWQueue-Setup-2.0.42.exe", "OWQueue-2.0.42.ipa"), "2.0.40"))
+        assertNull(Updates.findUpdate(release("OverQueue-Setup-2.0.42.exe", "OverQueue-2.0.42.ipa"), "2.0.40"))
     }
 
     @Test fun survivesAReleaseWithNothingInIt() {

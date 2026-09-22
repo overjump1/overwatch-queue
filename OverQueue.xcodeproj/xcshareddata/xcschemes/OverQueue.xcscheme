@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "94351ACD2B2826DD5FA05838"
-               BuildableName = "OverwatchQueue.app"
-               BlueprintName = "OverwatchQueue"
-               ReferencedContainer = "container:OverwatchQueue.xcodeproj">
+               BuildableName = "OverQueue.app"
+               BlueprintName = "OverQueue"
+               ReferencedContainer = "container:OverQueue.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -33,9 +33,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "94351ACD2B2826DD5FA05838"
-            BuildableName = "OverwatchQueue.app"
-            BlueprintName = "OverwatchQueue"
-            ReferencedContainer = "container:OverwatchQueue.xcodeproj">
+            BuildableName = "OverQueue.app"
+            BlueprintName = "OverQueue"
+            ReferencedContainer = "container:OverQueue.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -56,9 +56,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "94351ACD2B2826DD5FA05838"
-            BuildableName = "OverwatchQueue.app"
-            BlueprintName = "OverwatchQueue"
-            ReferencedContainer = "container:OverwatchQueue.xcodeproj">
+            BuildableName = "OverQueue.app"
+            BlueprintName = "OverQueue"
+            ReferencedContainer = "container:OverQueue.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <CommandLineArguments>
@@ -75,9 +75,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "94351ACD2B2826DD5FA05838"
-            BuildableName = "OverwatchQueue.app"
-            BlueprintName = "OverwatchQueue"
-            ReferencedContainer = "container:OverwatchQueue.xcodeproj">
+            BuildableName = "OverQueue.app"
+            BlueprintName = "OverQueue"
+            ReferencedContainer = "container:OverQueue.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

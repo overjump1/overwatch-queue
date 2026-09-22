@@ -1,5 +1,5 @@
-# PyInstaller build for the Windows app: `pyinstaller pc/owqueue.spec` from the repo root.
-# Produces a one-folder build in dist/OWQueue, which installer.iss packs into the setup exe.
+# PyInstaller build for the Windows app: `pyinstaller pc/overqueue.spec` from the repo root.
+# Produces a one-folder build in dist/OverQueue, which installer.iss packs into the setup exe.
 # One folder rather than one file: it starts faster and doesn't unpack to %TEMP% on every launch.
 
 # Big files the app never uses: OpenCV's video decoder, Qt's software OpenGL fallback, Qt's translations.
@@ -20,8 +20,8 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="OWQueue",
+    name="OverQueue",
     console=False,
     upx=False,
 )
-coll = COLLECT(exe, used(a.binaries), used(a.datas), name="OWQueue", upx=False)
+coll = COLLECT(exe, used(a.binaries), used(a.datas), name="OverQueue", upx=False)

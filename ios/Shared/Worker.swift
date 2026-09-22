@@ -33,9 +33,18 @@ enum Worker {
         }
     }
 
-    private static func send(_ method: String, path: String, body: [String: Any]?,
+    /// Unpairing: the worker drops this phone's tokens, and the Watch's with them.
+    static func forget(pairID: String) async {
+        _ = await send("DELETE", path: "/v1/pair/\(pairID)/device", query: "kind=phone", body: nil) { _ in nil }
+    }
+
+    private static func send(_ method: String, path: String, query: String? = nil, body: [String: Any]?,
                              decode: (Data) -> QueueStatus?) async -> Result {
-        guard let url = base?.appendingPathComponent(path) else { return .failed }
+        guard let base, var components = URLComponents(url: base.appendingPathComponent(path),
+                                                       resolvingAgainstBaseURL: false)
+        else { return .failed }
+        components.query = query
+        guard let url = components.url else { return .failed }
         var request = URLRequest(url: url, timeoutInterval: 10)
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -62,10 +71,14 @@ enum Pairing {
         set { UserDefaults.standard.set(newValue, forKey: key) }
     }
 
-    /// Accepts `owq://pair?id=<32 hex>` (from the QR code) and returns the pairing id.
+    /// Accepts `overqueue://pair?id=<32 hex>` (from the QR code) and returns the pairing id.
+    /// `owq://` is the same link under the name the app used to go by: a PC that hasn't been
+    /// updated yet still writes that one, and it has to keep pairing.
+    static let schemes = ["overqueue", "owq"]
+
     static func parse(_ text: String) -> String? {
         guard let components = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
-              components.scheme == "owq", components.host == "pair",
+              let scheme = components.scheme, schemes.contains(scheme), components.host == "pair",
               let id = components.queryItems?.first(where: { $0.name == "id" })?.value?.lowercased(),
               id.count == 32, id.allSatisfy({ $0.isHexDigit })
         else { return nil }

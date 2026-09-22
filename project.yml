@@ -1,4 +1,4 @@
-name: OverwatchQueue
+name: OverQueue
 options:
   bundleIdPrefix: com.tomerady
   deploymentTarget:
@@ -18,7 +18,7 @@ packages:
     url: https://github.com/firebase/firebase-ios-sdk
     from: 11.0.0
 targets:
-  OverwatchQueue:
+  OverQueue:
     type: application
     platform: iOS
     sources:
@@ -26,7 +26,7 @@ targets:
       - ios/Shared
     dependencies:
       - target: QueueWidgets
-      - target: OverwatchQueue Watch App
+      - target: OverQueue Watch App
       - package: Firebase
         product: FirebaseMessaging
     settings:
@@ -37,7 +37,7 @@ targets:
     info:
       path: ios/iOS/Info.plist
       properties:
-        CFBundleDisplayName: OW Queue
+        CFBundleDisplayName: OverQueue
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
@@ -51,9 +51,9 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
           - CFBundleURLName: com.tomerady.OverwatchQueue.pair
-            CFBundleURLSchemes: [owq]
+            CFBundleURLSchemes: [overqueue, owq]
     entitlements:
-      path: ios/iOS/OverwatchQueue.entitlements
+      path: ios/iOS/OverQueue.entitlements
       properties:
         aps-environment: development
         com.apple.developer.usernotifications.time-sensitive: true
@@ -72,13 +72,13 @@ targets:
     info:
       path: ios/Widgets/Info.plist
       properties:
-        CFBundleDisplayName: OW Queue
+        CFBundleDisplayName: OverQueue
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
-  OverwatchQueue Watch App:
+  OverQueue Watch App:
     type: application
     platform: watchOS
     sources:
@@ -96,7 +96,7 @@ targets:
     info:
       path: ios/Watch/Info.plist
       properties:
-        CFBundleDisplayName: OW Queue
+        CFBundleDisplayName: OverQueue
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         WKApplication: true
@@ -113,10 +113,10 @@ targets:
         com.apple.developer.usernotifications.time-sensitive: true
 
 schemes:
-  OverwatchQueue:
+  OverQueue:
     build:
       targets:
-        OverwatchQueue: all
+        OverQueue: all
     run:
       config: Debug
     archive:

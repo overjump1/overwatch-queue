@@ -16,12 +16,14 @@
 		262F2EDCEA7A02731670A131 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68FE4F8DDAE02A0D2CEA52D7 /* AppModel.swift */; };
 		3017C331903E7C5C771C1789 /* QueueLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E72CEF42640090BE81BA831 /* QueueLiveActivity.swift */; };
 		31C7790AF27C010AA8B43336 /* Worker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B434A9892332FC8CB6A5E924 /* Worker.swift */; };
+		0A11PRIVACYIOSBLD000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0A11PRIVACYIOSREF000001 /* PrivacyInfo.xcprivacy */; };
+		0A11PRIVACYWCHBLD000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0A11PRIVACYWCHREF000001 /* PrivacyInfo.xcprivacy */; };
 		36A5B759DD525C59FAA9B507 /* match_found.caf in Resources */ = {isa = PBXBuildFile; fileRef = 4A67731CE8636753B80EDA5D /* match_found.caf */; };
 		37A033C95EB934B275027C1C /* WatchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE3E6E948B4A84825D4356B9 /* WatchView.swift */; };
 		3CEC0130B0F2CCE05DF31901 /* match_found.caf in Resources */ = {isa = PBXBuildFile; fileRef = 4A67731CE8636753B80EDA5D /* match_found.caf */; };
 		43388CFC7DB4C0E8A8F9530C /* QueueViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53D8452B54B85C5F6773307C /* QueueViews.swift */; };
 		4D0A20F51FF4E0975870E80D /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 13854591A8BBE967A5474E6F /* GoogleService-Info.plist */; };
-		742B6A6072AE5ADB4D3A0DAF /* OverwatchQueue Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 5CF4172B47D45767F0DC5792 /* OverwatchQueue Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		742B6A6072AE5ADB4D3A0DAF /* OverQueue Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 5CF4172B47D45767F0DC5792 /* OverQueue Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		788583F9959C8DF5C7693C4D /* Updates.swift in Sources */ = {isa = PBXBuildFile; fileRef = B143E24BDDF20D1662331A2F /* Updates.swift */; };
 		909C40CD27E5CB513DDA1E0F /* QueueViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53D8452B54B85C5F6773307C /* QueueViews.swift */; };
 		B668E038F94433D0BD9F3612 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3B9910EFF63BA8C9C0FBAB9 /* ContentView.swift */; };
@@ -49,7 +51,7 @@
 			containerPortal = 6BC969E03ACA7214828C7656 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 8121C34F9F5BE16D187AF345;
-			remoteInfo = "OverwatchQueue Watch App";
+			remoteInfo = "OverQueue Watch App";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -60,7 +62,7 @@
 			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
 			dstSubfolderSpec = 16;
 			files = (
-				742B6A6072AE5ADB4D3A0DAF /* OverwatchQueue Watch App.app in Embed Watch Content */,
+				742B6A6072AE5ADB4D3A0DAF /* OverQueue Watch App.app in Embed Watch Content */,
 			);
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -86,12 +88,14 @@
 		3654B66725FC45AD40E6DF76 /* Watch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Watch.entitlements; sourceTree = "<group>"; };
 		3CA5107F6C77EE9B745CB3AD /* QueueWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = QueueWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		3DE549A2751A23DEFD41FFC1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		3F41C4D1F5D0DAAB36741257 /* OverwatchQueue.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OverwatchQueue.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3F41C4D1F5D0DAAB36741257 /* OverQueue.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OverQueue.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		45118B133C188480BDE7CDCF /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
+		0A11PRIVACYIOSREF000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		0A11PRIVACYWCHREF000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		4A67731CE8636753B80EDA5D /* match_found.caf */ = {isa = PBXFileReference; path = match_found.caf; sourceTree = "<group>"; };
 		4D377DEDFE44A9D7C8884CED /* Queue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Queue.swift; sourceTree = "<group>"; };
 		53D8452B54B85C5F6773307C /* QueueViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueViews.swift; sourceTree = "<group>"; };
-		5CF4172B47D45767F0DC5792 /* OverwatchQueue Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OverwatchQueue Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		5CF4172B47D45767F0DC5792 /* OverQueue Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OverQueue Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		65D9297E497CB77FD3E1C383 /* PairView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairView.swift; sourceTree = "<group>"; };
 		68FE4F8DDAE02A0D2CEA52D7 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		8B0DBC86D46BB9FA775DED79 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -99,7 +103,7 @@
 		A3756F43E5C290460B2422B1 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		B143E24BDDF20D1662331A2F /* Updates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updates.swift; sourceTree = "<group>"; };
 		B434A9892332FC8CB6A5E924 /* Worker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Worker.swift; sourceTree = "<group>"; };
-		CD7B8A949F39D71DD933025E /* OverwatchQueue.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OverwatchQueue.entitlements; sourceTree = "<group>"; };
+		CD7B8A949F39D71DD933025E /* OverQueue.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OverQueue.entitlements; sourceTree = "<group>"; };
 		DEA9355FDD5EBB241C46D253 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		EE3E6E948B4A84825D4356B9 /* WatchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchView.swift; sourceTree = "<group>"; };
 		F3B9910EFF63BA8C9C0FBAB9 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -131,6 +135,7 @@
 				3DE549A2751A23DEFD41FFC1 /* Assets.xcassets */,
 				A3756F43E5C290460B2422B1 /* GoogleService-Info.plist */,
 				0519382B477F3EE920FB409B /* Info.plist */,
+				0A11PRIVACYWCHREF000001 /* PrivacyInfo.xcprivacy */,
 				3654B66725FC45AD40E6DF76 /* Watch.entitlements */,
 				2F34A0DC3CBADF87BDE26B18 /* WatchApp.swift */,
 				EE3E6E948B4A84825D4356B9 /* WatchView.swift */,
@@ -166,8 +171,9 @@
 				F3B9910EFF63BA8C9C0FBAB9 /* ContentView.swift */,
 				13854591A8BBE967A5474E6F /* GoogleService-Info.plist */,
 				01324174F0D29273802D32AC /* Info.plist */,
-				CD7B8A949F39D71DD933025E /* OverwatchQueue.entitlements */,
+				CD7B8A949F39D71DD933025E /* OverQueue.entitlements */,
 				65D9297E497CB77FD3E1C383 /* PairView.swift */,
+				0A11PRIVACYIOSREF000001 /* PrivacyInfo.xcprivacy */,
 				B143E24BDDF20D1662331A2F /* Updates.swift */,
 			);
 			path = iOS;
@@ -187,8 +193,8 @@
 		E8A2BB71CC6FF99AAA6EC575 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				5CF4172B47D45767F0DC5792 /* OverwatchQueue Watch App.app */,
-				3F41C4D1F5D0DAAB36741257 /* OverwatchQueue.app */,
+				5CF4172B47D45767F0DC5792 /* OverQueue Watch App.app */,
+				3F41C4D1F5D0DAAB36741257 /* OverQueue.app */,
 				3CA5107F6C77EE9B745CB3AD /* QueueWidgets.appex */,
 			);
 			name = Products;
@@ -206,9 +212,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		8121C34F9F5BE16D187AF345 /* OverwatchQueue Watch App */ = {
+		8121C34F9F5BE16D187AF345 /* OverQueue Watch App */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 0CA70606BB4373AEBED87F69 /* Build configuration list for PBXNativeTarget "OverwatchQueue Watch App" */;
+			buildConfigurationList = 0CA70606BB4373AEBED87F69 /* Build configuration list for PBXNativeTarget "OverQueue Watch App" */;
 			buildPhases = (
 				51BB5BB57BA72D4A85AB7B45 /* Sources */,
 				84934D75476136E27529AE86 /* Resources */,
@@ -218,17 +224,17 @@
 			);
 			dependencies = (
 			);
-			name = "OverwatchQueue Watch App";
+			name = "OverQueue Watch App";
 			packageProductDependencies = (
 				0E3A8E7D185E75AA47933EB6 /* FirebaseMessaging */,
 			);
-			productName = "OverwatchQueue Watch App";
-			productReference = 5CF4172B47D45767F0DC5792 /* OverwatchQueue Watch App.app */;
+			productName = "OverQueue Watch App";
+			productReference = 5CF4172B47D45767F0DC5792 /* OverQueue Watch App.app */;
 			productType = "com.apple.product-type.application";
 		};
-		94351ACD2B2826DD5FA05838 /* OverwatchQueue */ = {
+		94351ACD2B2826DD5FA05838 /* OverQueue */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 257462A52E0623558FC953D4 /* Build configuration list for PBXNativeTarget "OverwatchQueue" */;
+			buildConfigurationList = 257462A52E0623558FC953D4 /* Build configuration list for PBXNativeTarget "OverQueue" */;
 			buildPhases = (
 				ED4C2A01F888820365FE8128 /* Sources */,
 				24D90D23E6F5416EC11DE286 /* Resources */,
@@ -242,12 +248,12 @@
 				1400C65DCC586ECED1C0D9D6 /* PBXTargetDependency */,
 				258CAC68F001D29EDCAC8363 /* PBXTargetDependency */,
 			);
-			name = OverwatchQueue;
+			name = OverQueue;
 			packageProductDependencies = (
 				90D4D72EA2A04CB63C04114F /* FirebaseMessaging */,
 			);
-			productName = OverwatchQueue;
-			productReference = 3F41C4D1F5D0DAAB36741257 /* OverwatchQueue.app */;
+			productName = OverQueue;
+			productReference = 3F41C4D1F5D0DAAB36741257 /* OverQueue.app */;
 			productType = "com.apple.product-type.application";
 		};
 		A0B9DACEE802DDFA4CC9757B /* QueueWidgets */ = {
@@ -290,7 +296,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 84AB3C546917171165BC01DC /* Build configuration list for PBXProject "OverwatchQueue" */;
+			buildConfigurationList = 84AB3C546917171165BC01DC /* Build configuration list for PBXProject "OverQueue" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -307,9 +313,9 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				94351ACD2B2826DD5FA05838 /* OverwatchQueue */,
+				94351ACD2B2826DD5FA05838 /* OverQueue */,
 				A0B9DACEE802DDFA4CC9757B /* QueueWidgets */,
-				8121C34F9F5BE16D187AF345 /* OverwatchQueue Watch App */,
+				8121C34F9F5BE16D187AF345 /* OverQueue Watch App */,
 			);
 		};
 /* End PBXProject section */
@@ -321,6 +327,7 @@
 			files = (
 				D2D3D6E75975615459548234 /* Assets.xcassets in Resources */,
 				4D0A20F51FF4E0975870E80D /* GoogleService-Info.plist in Resources */,
+				0A11PRIVACYIOSBLD000001 /* PrivacyInfo.xcprivacy in Resources */,
 				3CEC0130B0F2CCE05DF31901 /* match_found.caf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -331,6 +338,7 @@
 			files = (
 				221E3D8BA534A385810FBF1C /* Assets.xcassets in Resources */,
 				CF98E6A7AA6D3F08F21027C7 /* GoogleService-Info.plist in Resources */,
+				0A11PRIVACYWCHBLD000001 /* PrivacyInfo.xcprivacy in Resources */,
 				36A5B759DD525C59FAA9B507 /* match_found.caf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -386,7 +394,7 @@
 		};
 		258CAC68F001D29EDCAC8363 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 8121C34F9F5BE16D187AF345 /* OverwatchQueue Watch App */;
+			target = 8121C34F9F5BE16D187AF345 /* OverQueue Watch App */;
 			targetProxy = BB649A169AAD7E79DACC3377 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -491,7 +499,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = ios/iOS/OverwatchQueue.entitlements;
+				CODE_SIGN_ENTITLEMENTS = ios/iOS/OverQueue.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = ios/iOS/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -523,7 +531,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = ios/iOS/OverwatchQueue.entitlements;
+				CODE_SIGN_ENTITLEMENTS = ios/iOS/OverQueue.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = ios/iOS/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -612,7 +620,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		0CA70606BB4373AEBED87F69 /* Build configuration list for PBXNativeTarget "OverwatchQueue Watch App" */ = {
+		0CA70606BB4373AEBED87F69 /* Build configuration list for PBXNativeTarget "OverQueue Watch App" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				064EA7F1707550554A4E3ECF /* Debug */,
@@ -621,7 +629,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		257462A52E0623558FC953D4 /* Build configuration list for PBXNativeTarget "OverwatchQueue" */ = {
+		257462A52E0623558FC953D4 /* Build configuration list for PBXNativeTarget "OverQueue" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				7E669F9C1943C79B5CC8A229 /* Debug */,
@@ -630,7 +638,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		84AB3C546917171165BC01DC /* Build configuration list for PBXProject "OverwatchQueue" */ = {
+		84AB3C546917171165BC01DC /* Build configuration list for PBXProject "OverQueue" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				51FE547DE1D8BA354ECA6ADA /* Debug */,
