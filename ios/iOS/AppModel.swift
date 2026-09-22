@@ -31,7 +31,6 @@ final class AppModel: ObservableObject {
     /// must not read as "already refreshed", or the screen would open empty.
     private var registerCarriedStatus = false
     private var observedActivities = Set<String>()
-    private var localActivityQueueStart: Double?
     /// The match we already alerted for, so the same match never alerts twice.
     private var alertedFoundAt: Double?
     /// The Live Activity a manual queue is running, so it's updated rather than replaced.
@@ -60,12 +59,15 @@ final class AppModel: ObservableObject {
                 observe(activity)
             }
         }
-        if let newest = Activity<QueueActivityAttributes>.activities.last {
-            observe(newest)
+        // The list also holds activities that have ended and are still on the lock screen for their
+        // linger, in no documented order, so take the running one rather than whatever is last.
+        if let existing = runningActivity ?? Activity<QueueActivityAttributes>.activities.last {
+            observe(existing)
         }
     }
 
-    /// A silent push from the worker woke the app: report the current tokens.
+    /// A silent push from the worker woke the app: report the current tokens. The register's reply
+    /// carries the state back with it, so this costs one request, not two.
     func refreshTokens() async {
         launch()
         await register()
@@ -249,6 +251,12 @@ final class AppModel: ObservableObject {
         if let current = Activity<QueueActivityAttributes>.pushToStartToken {
             startToken = current.hex
         }
+        // pushTokenUpdates only runs while the app does, so an activity iOS started from a push
+        // while the app was dead has no other way of getting its token to the worker.
+        if let running = runningActivity, let token = running.pushToken {
+            updateToken = token.hex
+            updateTokenActivityID = running.id
+        }
         var body: [String: Any] = [
             "kind": "phone",
             "activitiesEnabled": ActivityAuthorizationInfo().areActivitiesEnabled,
@@ -262,10 +270,14 @@ final class AppModel: ObservableObject {
             handleReset(id)
         case .ok(let fetched):
             reachable = true
-            // Only while the app is on screen. In the background -- a silent wake push, a rotated
-            // token -- `status` is still whatever this copy of the app started with, and apply()
-            // would take the activity's linger from it and dismiss a live one outright.
-            if let fetched, id == pairID, active, !manual {
+            // Applied in the background as well, which is what takes down an activity whose end
+            // push never arrived. What made that unsafe was apply() reading the linger off
+            // `status` -- still .idle in a freshly woken copy of the app; it now reads it off the
+            // running activity instead. Everything else in apply() that shouldn't run off screen
+            // (the match alert, starting an activity) guards on `active` itself. A manual queue
+            // stays the phone's own either way: nothing from the worker lands on top of it, and
+            // register() is reached from paths that don't check that for themselves.
+            if let fetched, id == pairID, !manual {
                 registerCarriedStatus = true
                 apply(fetched)
             } else {
@@ -289,8 +301,11 @@ final class AppModel: ObservableObject {
     private func apply(_ new: QueueStatus) {
         let old = status
         if new.state == .idle {
-            // Usually the worker's end push got here first; this covers it not arriving.
-            endActivities(showingIdleFor: old.inMatch ? 10 * 60 : old.state == .queueing ? 60 : 0)
+            // Usually the worker's end push got here first; this covers it not arriving. How long
+            // "Not in queue" stays up goes by what the activity is showing, not by `old`, which is
+            // still .idle when a silent push has just woken a fresh copy of the app.
+            let showing = runningActivity?.content.state ?? old
+            endActivities(showingIdleFor: showing.inMatch ? 10 * 60 : showing.state == .queueing ? 60 : 0)
         }
         guard new != old else { return }
         status = new
@@ -310,8 +325,13 @@ final class AppModel: ObservableObject {
         // The manual queue drives its own activity in-process; it has no push tokens to report.
         guard activity.id != manualActivityID, !observedActivities.contains(activity.id) else { return }
         observedActivities.insert(activity.id)
-        for other in Activity<QueueActivityAttributes>.activities where other.id != activity.id {
-            Task { await other.end(nil, dismissalPolicy: .immediate) }
+        // Only a running activity clears the others out. One that has already ended would take the
+        // live one down with it, which is what happened when a push-to-start woke the app and the
+        // previous queue's "Not in queue" was still lingering.
+        if activity.activityState == .active {
+            for other in Activity<QueueActivityAttributes>.activities where other.id != activity.id {
+                Task { await other.end(nil, dismissalPolicy: .immediate) }
+            }
         }
         Task {
             for await data in activity.pushTokenUpdates {
@@ -336,6 +356,8 @@ final class AppModel: ObservableObject {
     }
 
     /// Backup for a push-to-start that didn't arrive: start the activity locally, once per queue.
+    /// Foreground only, and not by choice: ActivityKit refuses `request` from the background unless
+    /// it comes from a LiveActivityIntent, so a silent push can't stand in for a push-to-start.
     private func startActivityIfMissing(for status: QueueStatus) {
         guard active, !manual, status.state == .queueing, let startedAt = status.startedAt,
               localActivityQueueStart != startedAt,
@@ -343,15 +365,25 @@ final class AppModel: ObservableObject {
               ActivityAuthorizationInfo().areActivitiesEnabled
         else { return }
         localActivityQueueStart = startedAt
+        let staleDate = Date().addingTimeInterval(QueueStatus.staleAfter)
         if let activity = try? Activity.request(attributes: QueueActivityAttributes(),
-                                                content: .init(state: status, staleDate: nil),
+                                                content: .init(state: status, staleDate: staleDate),
                                                 pushType: .token) {
             observe(activity)
         }
     }
 
-    private var hasRunningActivity: Bool {
-        Activity<QueueActivityAttributes>.activities.contains { $0.activityState == .active }
+    private var runningActivity: Activity<QueueActivityAttributes>? {
+        Activity<QueueActivityAttributes>.activities.first { $0.activityState == .active }
+    }
+
+    private var hasRunningActivity: Bool { runningActivity != nil }
+
+    /// The queue an activity was already started locally for, kept across launches so relaunching
+    /// mid-queue doesn't start a second one.
+    private var localActivityQueueStart: Double? {
+        get { UserDefaults.standard.object(forKey: "localActivityQueueStart") as? Double }
+        set { UserDefaults.standard.set(newValue, forKey: "localActivityQueueStart") }
     }
 
     /// Ends the running activity quietly, leaving "Not in queue" on the lock screen for `seconds`.

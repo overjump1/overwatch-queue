@@ -1,7 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 import { alertMessage, androidMessage, FcmResult, liveActivityMessage, parseServiceAccount, send, wakeMessage } from "./fcm";
 import {
-  activityPayload, advance, androidPayload, foundBody, IDLE, nextStatus, parseReport, PLAYING_AFTER_SECONDS, Push, pushesFor, Status,
+  activityPayload, advance, androidPayload, foundBody, IDLE, nextStatus, parseReport,
+  PLAYING_AFTER_SECONDS, Push, pushesFor, Status,
 } from "./logic";
 
 export interface Env {
@@ -38,7 +39,8 @@ type Reply = { status: number; body: unknown };
  * concerned: the PC was closed, went to sleep, or lost its network mid-queue, and without this
  * the phone would show a queue ticking up for good. Hours rather than minutes precisely so the
  * PC needs no heartbeat to hold it off -- it only ever speaks when something changes, and no
- * real queue or match goes three hours without changing.
+ * real queue or match goes three hours without changing. The same horizon as the activity's own
+ * STALE_AFTER_SECONDS, which covers a phone this end push can't reach.
  */
 const ABANDONED_AFTER_SECONDS = 3 * 3600;
 
@@ -263,25 +265,25 @@ export class Pair extends DurableObject<Env> {
       }
       if (!phone.fcm) return;
 
-      if (push.kind === "update" && !phone.updateToken) {
-        if (push.alert === "found") await this.deliverApple({ kind: "start", alert: "found" }, status, now);
-        return;
+      const activityToken = push.kind === "start" ? phone.startToken : phone.updateToken;
+      let result: FcmResult | null = null;
+      if (activityToken) {
+        const alert = push.kind === "start" || push.kind === "update" ? push.alert : undefined;
+        const linger = push.kind === "end" ? push.linger ?? 0 : 0;
+        const payload = activityPayload(push.kind, status, now, alert, linger);
+        result = await this.fcm(liveActivityMessage(phone.fcm, activityToken, payload));
+        console.log(`push ${push.kind}${alert ? ` (${alert})` : ""} -> ${tail(activityToken)}: `
+          + (result ? `${result.status}${result.error ? ` ${result.error}` : ""}` : "unreachable"));
+      } else {
+        console.log(`push ${push.kind} has no ${push.kind === "start" ? "start" : "update"} token`);
       }
-      if (push.kind === "end" && !phone.updateToken) return;
-      if (push.kind === "start" && !phone.startToken) return;
-
-      const activityToken = push.kind === "start" ? phone.startToken! : phone.updateToken!;
-      const alert = push.kind === "start" || push.kind === "update" ? push.alert : undefined;
-      const linger = push.kind === "end" ? push.linger ?? 0 : 0;
-      const payload = activityPayload(push.kind, status, now, alert, linger);
-      const result = await this.fcm(liveActivityMessage(phone.fcm, activityToken, payload));
-      console.log(`push ${push.kind}${alert ? ` (${alert})` : ""} -> ${tail(activityToken)}: `
-        + (result ? `${result.status}${result.error ? ` ${result.error}` : ""}` : "unreachable"));
 
       if (push.kind === "end" || push.kind === "start") {
         delete phone.updateToken;
         // iOS can swap the push-to-start token once it has used it, and a new activity has a new
         // update token. Wake the app so it reports both instead of waiting until it's next opened.
+        // This has to happen even when the push above never went: a token we don't have is exactly
+        // the one we need back, and skipping the wake is how the phone got stuck on stale tokens.
         await this.fcm(wakeMessage(phone.fcm));
       }
       const tokenDead = result !== null && dead(result);
@@ -290,9 +292,11 @@ export class Pair extends DurableObject<Env> {
         else delete phone.updateToken;
       }
       await this.ctx.storage.put("phone", phone);
-      if (tokenDead && push.kind === "update" && push.alert === "found") {
-        if (phone.startToken) await this.deliverApple({ kind: "start", alert: "found" }, status, now);
-        else await this.fcm(alertMessage(phone.fcm, "Match found!", foundBody(status)));
+      // A found match is the one thing that can't just be dropped. If the running activity couldn't
+      // take it, start a fresh one carrying the alert; if there's no start token either, the
+      // matchAlert push that follows this one sends the plain banner.
+      if (push.kind === "update" && push.alert === "found" && (!activityToken || tokenDead) && phone.startToken) {
+        await this.deliverApple({ kind: "start", alert: "found" }, status, now);
       }
     } catch (error) {
       console.log(`deliver ${push.kind} failed: ${String(error)}`);

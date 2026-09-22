@@ -40,6 +40,14 @@ export const PLAYING_AFTER_SECONDS = 60;
 export const AFTER_MATCH_LINGER_SECONDS = 10 * 60;
 /** ...and after the queue was cancelled, just long enough to confirm it. */
 export const AFTER_CANCEL_LINGER_SECONDS = 60;
+/**
+ * An activity that has heard nothing for this long says it lost contact. Nothing repeats the state
+ * to hold that off -- the worker only ever speaks when something changes -- so this is deliberately
+ * far past the longest a healthy queue or match goes quiet. It is the same three hours the worker
+ * gives up after, seen from the phone: the worker's end push normally takes the activity down
+ * first, and this is what does it when the phone was unreachable and that push never landed.
+ */
+export const STALE_AFTER_SECONDS = 3 * 3600;
 const MAX_SECONDS = 6 * 3600;
 
 export function inMatch(status: Status): boolean {
@@ -160,8 +168,13 @@ export function activityPayload(
   if (event === "start") {
     aps["attributes-type"] = "QueueActivityAttributes";
     aps["attributes"] = {};
+    // iOS 18 takes an explicit opt-in for how a pushed activity is updated: a token of its own, or
+    // a channel. Apple documents it as optional rather than required, but this activity's whole
+    // life depends on an update token coming back, so ask for one instead of trusting the default.
+    aps["input-push-token"] = 1;
   }
   if (event === "end") aps["dismissal-date"] = Math.floor(now) + linger;
+  else aps["stale-date"] = Math.floor(now) + STALE_AFTER_SECONDS;
   if (alert === "queue") {
     aps["alert"] = { title: "In queue", body: modeName(status.mode) };
   } else if (alert === "playing") {
