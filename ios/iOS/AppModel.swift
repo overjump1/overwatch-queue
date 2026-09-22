@@ -24,7 +24,10 @@ final class AppModel: ObservableObject {
     private var updateTokenActivityID: String?
     private var active = false
     private var launched = false
-    private var pollTask: Task<Void, Never>?
+    private var syncTask: Task<Void, Never>?
+    /// Whether the last register's reply carried the state. A worker too old to send one back
+    /// must not read as "already refreshed", or the screen would open empty.
+    private var registerCarriedStatus = false
     private var observedActivities = Set<String>()
     private var localActivityQueueStart: Double?
     /// The match we already alerted for, so the same match never alerts twice.
@@ -64,18 +67,19 @@ final class AppModel: ObservableObject {
 
     func setActive(_ isActive: Bool) {
         active = isActive
-        pollTask?.cancel()
-        pollTask = nil
+        syncTask?.cancel()
+        syncTask = nil
         guard isActive else { return }
         launch()
         // Checks at most every six hours; coming back to the app just gives it the chance.
         checkForUpdate(force: false)
-        pollTask = Task {
+        // One request on the way in, and no poll after it. The register's reply carries the state,
+        // and from then on the Live Activity's pushes carry every change -- coming back to the app
+        // is what catches one that never arrived.
+        syncTask = Task {
             await register()
-            while !Task.isCancelled {
-                await refresh()
-                try? await Task.sleep(for: .seconds(2))
-            }
+            // An older worker answers a register with nothing; ask outright rather than open empty.
+            if !registerCarriedStatus { await refresh() }
         }
     }
 
@@ -162,8 +166,23 @@ final class AppModel: ObservableObject {
         if let fcmToken { body["fcm"] = fcmToken }
         if let startToken { body["startToken"] = startToken }
         if let updateToken { body["updateToken"] = updateToken }
-        if case .reset = await Worker.register(pairID: id, body: body) {
+        switch await Worker.register(pairID: id, body: body) {
+        case .reset:
             handleReset(id)
+        case .ok(let fetched):
+            reachable = true
+            // Only while the app is on screen. In the background -- a silent wake push, a rotated
+            // token -- `status` is still whatever this copy of the app started with, and apply()
+            // would take the activity's linger from it and dismiss a live one outright.
+            if let fetched, id == pairID, active {
+                registerCarriedStatus = true
+                apply(fetched)
+            } else {
+                registerCarriedStatus = false
+            }
+        case .failed:
+            reachable = false
+            registerCarriedStatus = false
         }
     }
 
