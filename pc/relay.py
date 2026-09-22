@@ -9,7 +9,9 @@ import time
 import urllib.error
 import urllib.request
 
-WORKER_URL = os.environ.get("OVERQUEUE_WORKER_URL", "https://overwatch-queue-push-relay.tomerady.workers.dev").rstrip("/")
+import version
+
+WORKER_URL = os.environ.get("OVERQUEUE_WORKER_URL", version.WORKER_URL).rstrip("/")
 USER_AGENT = "OverQueue/2.0"
 TIMEOUT_SECONDS = 10
 # How often to ask who's paired, while that's still worth asking -- see `run`.

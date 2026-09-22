@@ -14,9 +14,8 @@ import time
 import urllib.error
 import urllib.request
 
-from version import VERSION
+from version import RELEASE_API, VERSION
 
-RELEASE_API = "https://api.github.com/repos/overjump1/overwatch-queue/releases/latest"
 ASSET = re.compile(r"^OverQueue-Setup-(.+)\.exe$", re.IGNORECASE)
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "OverQueue/%s" % VERSION}
 TIMEOUT_SECONDS = 20

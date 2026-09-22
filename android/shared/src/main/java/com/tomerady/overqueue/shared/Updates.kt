@@ -13,8 +13,12 @@ import java.net.URL
 
 /** The app's own updates, from the GitHub releases the Release workflow publishes. */
 object Updates {
-    private const val RELEASE_API =
-        "https://api.github.com/repos/overjump1/overwatch-queue/releases/latest"
+    const val DEFAULT_RELEASE_API = "https://api.github.com/repos/overjump1/overwatch-queue/releases/latest"
+
+    /** Where [latest] looks. A dev build points it at the dev prerelease (see OwqApp). */
+    @Volatile
+    var releaseApi: String = DEFAULT_RELEASE_API
+
     private val ASSET = Regex("""^OverQueue-(.+)\.apk$""", RegexOption.IGNORE_CASE)
     private const val TIMEOUT_MS = 20_000
 
@@ -74,7 +78,7 @@ object Updates {
     /** The newer APK in the latest release, null if this build is it. Throws if GitHub can't be reached. */
     suspend fun latest(current: String?): Release? = withContext(Dispatchers.IO) {
         if (!checksForUpdates(current)) return@withContext null
-        val connection = URL(RELEASE_API).openConnection() as HttpURLConnection
+        val connection = URL(releaseApi).openConnection() as HttpURLConnection
         val body = try {
             connection.connectTimeout = TIMEOUT_MS
             connection.readTimeout = TIMEOUT_MS

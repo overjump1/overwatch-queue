@@ -3,9 +3,13 @@ name: Release
 # Every push to main that changes an app publishes a GitHub release with the APK, the Windows
 # installer and the IPA. Only the apps that changed since the last release are rebuilt; the
 # others are copied over from that release unchanged.
+#
+# Pushes to dev do the same into a single prerelease, dev-latest, replaced on every build. Those
+# builds talk to the dev worker and update only from dev-latest. GitHub never counts a prerelease
+# as the latest release, which is exactly what the real apps ask for, so they never see a dev one.
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
     inputs:
       rebuild-all:
@@ -23,6 +27,9 @@ concurrency:
 
 jobs:
   changes:
+    # A manual run from any other branch would publish that branch as the real release and take
+    # the actual one down.
+    if: github.ref_name == 'main' || github.ref_name == 'dev'
     runs-on: ubuntu-latest
     outputs:
       android: ${{ steps.diff.outputs.android }}
@@ -32,6 +39,9 @@ jobs:
       previous: ${{ steps.diff.outputs.previous }}
       version: ${{ steps.diff.outputs.version }}
       version-code: ${{ steps.diff.outputs.version-code }}
+      channel: ${{ steps.diff.outputs.channel }}
+      worker-url: ${{ steps.diff.outputs.worker-url }}
+      release-api: ${{ steps.diff.outputs.release-api }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,8 +52,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REBUILD_ALL: ${{ inputs.rebuild-all || false }}
+          CHANNEL: ${{ github.ref_name == 'dev' && 'dev' || 'main' }}
         run: |
-          previous=$(gh release view --json tagName -q .tagName 2>/dev/null || true)
+          # dev's last build is its one prerelease. main's is the newest real release, which is what
+          # `gh release view` with no tag gives -- never a prerelease, so never dev-latest.
+          if [ "$CHANNEL" = dev ]; then
+            previous=$(gh release view dev-latest --json tagName -q .tagName 2>/dev/null || true)
+          else
+            previous=$(gh release view --json tagName -q .tagName 2>/dev/null || true)
+          fi
           assets=$( [ -n "$previous" ] && gh release view "$previous" --json assets -q '.assets[].name' || true)
           changed=$( [ -n "$previous" ] && git diff --name-only "$previous" HEAD || true)
           echo "Last release: ${previous:-none}"
@@ -68,8 +85,17 @@ jobs:
           check ios '\.ipa$' '^(ios/|project\.yml|OverQueue\.xcodeproj/|\.github/workflows/ios-app\.yml)'
           echo "any=$any" >> "$GITHUB_OUTPUT"
           echo "previous=$previous" >> "$GITHUB_OUTPUT"
-          echo "version=2.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
-          # Above the numbers earlier CI builds used, so release APKs install over them.
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          if [ "$CHANNEL" = dev ]; then
+            echo "version=2.0.${GITHUB_RUN_NUMBER}-dev" >> "$GITHUB_OUTPUT"
+            # Baked into the dev builds. main's builds get neither, and keep the real ones they ship with.
+            echo "worker-url=https://overwatch-queue-push-relay-dev.tomerady.workers.dev" >> "$GITHUB_OUTPUT"
+            echo "release-api=https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/dev-latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=2.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+          # Above the numbers earlier CI builds used, so release APKs install over them. Both branches
+          # share this workflow's run counter, so whichever build is newer installs over the other.
           echo "version-code=$((GITHUB_RUN_NUMBER + 1000))" >> "$GITHUB_OUTPUT"
 
   android:
@@ -80,6 +106,8 @@ jobs:
     with:
       version: ${{ needs.changes.outputs.version }}
       version-code: ${{ fromJSON(needs.changes.outputs.version-code) }}
+      worker-url: ${{ needs.changes.outputs.worker-url }}
+      release-api: ${{ needs.changes.outputs.release-api }}
 
   windows:
     needs: changes
@@ -88,6 +116,8 @@ jobs:
     secrets: inherit
     with:
       version: ${{ needs.changes.outputs.version }}
+      worker-url: ${{ needs.changes.outputs.worker-url }}
+      release-api: ${{ needs.changes.outputs.release-api }}
 
   ios:
     needs: changes
@@ -97,6 +127,8 @@ jobs:
     with:
       version: ${{ needs.changes.outputs.version }}
       build-number: ${{ fromJSON(github.run_number) }}
+      worker-url: ${{ needs.changes.outputs.worker-url }}
+      release-api: ${{ needs.changes.outputs.release-api }}
 
   release:
     needs: [changes, android, windows, ios]
@@ -128,8 +160,10 @@ jobs:
 
       # Apps installed before the rename look for the old filenames, and a release without one
       # tells them they are up to date forever. Both names ship until those installs have had
-      # a few releases to catch up, and then this step can go.
+      # a few releases to catch up, and then this step can go. Nothing was ever installed from dev
+      # under the old name.
       - name: Keep the pre-rename filenames alive
+        if: needs.changes.outputs.channel == 'main'
         run: |
           cd release
           for file in OverQueue-*; do
@@ -140,6 +174,7 @@ jobs:
           ls -l
 
       - name: Publish release
+        if: needs.changes.outputs.channel == 'main'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.changes.outputs.version }}
@@ -156,16 +191,44 @@ jobs:
             --notes "$notes" \
             --generate-notes
 
+      # One prerelease, taken down and put back up with each build, so its address never moves: the
+      # dev apps ask for /releases/tags/dev-latest the way the real ones ask for /releases/latest.
+      # --latest=false on top of --prerelease, so it can never become the release those update to.
+      - name: Publish the dev prerelease
+        if: needs.changes.outputs.channel == 'dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.changes.outputs.version }}
+        run: |
+          built=()
+          [ "${{ needs.changes.outputs.android }}" = true ] && built+=("Android")
+          [ "${{ needs.changes.outputs.windows }}" = true ] && built+=("Windows")
+          [ "${{ needs.changes.outputs.ios }}" = true ] && built+=("iPhone")
+          notes="Dev build of ${GITHUB_SHA::7}, talking to the dev worker. New builds: $(IFS=,; echo "${built[*]}" | sed 's/,/, /g'). The other apps are unchanged from the previous dev build."
+          gh release delete dev-latest --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null || true
+          # And the tag itself, in case it outlived its release: a new release made on a leftover tag
+          # would sit on the old commit, and the next build would diff against the wrong one.
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/dev-latest" 2>/dev/null || true
+          gh release create dev-latest release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "OverQueue $VERSION (dev)" \
+            --notes "$notes" \
+            --prerelease \
+            --latest=false
+
       # Only the newest build stays downloadable. The step above has already copied out of the last
       # release whatever it needed, and the tags stay, so `changes` can still diff against them.
       - name: Take down the older releases
+        if: needs.changes.outputs.channel == 'main'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.changes.outputs.version }}
         run: |
           tags=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName -q '.[].tagName')
           for tag in $tags; do
-            if [ "$tag" != "v$VERSION" ]; then
+            # dev-latest belongs to the dev branch, and it replaces itself.
+            if [ "$tag" != "v$VERSION" ] && [ "$tag" != "dev-latest" ]; then
               echo "Deleting $tag"
               gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
             fi

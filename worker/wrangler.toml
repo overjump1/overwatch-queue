@@ -22,3 +22,14 @@ class_name = "Pair"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Pair"]
+
+# The dev worker, which the dev branch deploys to (see .github/workflows/deploy-relay.yml) and dev
+# builds of the apps talk to. Its own Durable Objects, so nothing tested here touches a real pairing.
+# Deploy by hand with `npx wrangler deploy --env dev`; the Firebase secret is `--env dev` too.
+[env.dev]
+name = "overwatch-queue-push-relay-dev"
+
+# Bindings don't carry over into an environment, so the dev worker names its own.
+[[env.dev.durable_objects.bindings]]
+name = "PAIR"
+class_name = "Pair"

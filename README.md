@@ -39,6 +39,20 @@ Each app compares itself against **the version in its own asset's filename**, no
 
 Builds that aren't from a release never check: they're on a `0.x` version (`0.0.0` running `pc/app.py` from source, `0.0.0-dev` for a local Gradle build, `0.0.0-dev.<run>` for a pull request artifact, `0.0.0` for an iPhone build nobody stamped), which is below every release and would claim an update forever.
 
+## Dev environment
+
+`dev` has a worker and builds of its own, so a change can be tried end to end before it reaches `main`:
+
+- **Worker**: every push to `dev` that touches `worker/` deploys `overwatch-queue-push-relay-dev.tomerady.workers.dev`, `wrangler.toml`'s `[env.dev]`. It has its own Durable Objects, so nothing done there touches a real pairing. By hand: `npx wrangler deploy --env dev`.
+- **Apps**: every push to `dev` that changes an app rebuilds it into a single prerelease, [`dev-latest`](https://github.com/overjump1/overwatch-queue/releases/tag/dev-latest), replaced each time. Those builds are versioned `2.0.<run>-dev`, talk to the dev worker, and update only from `dev-latest`. GitHub never counts a prerelease as the latest release, which is what the real apps ask for, so they never see a dev build.
+
+Worth knowing before installing one:
+
+- **A dev build replaces the real app** rather than installing beside it. It has the same app ID, which is what lets it use the same Firebase setup. To go back, install a real build over it. On Android that only works if the real build is the newer of the two — both branches share one build counter, so a later build always installs over an earlier one — and otherwise you uninstall first and scan the QR code again.
+- **Pair everything on the same side.** A dev PC app shows the same QR code as a real one, since the pairing lives in `%APPDATA%\OverQueue` either way, but a real phone that scans it pairs on the real worker, where the dev PC reports nothing.
+- **TestFlight isn't covered.** Xcode Cloud's workflows are set up in App Store Connect rather than here, and its builds talk to the real worker. Try iPhone changes with the sideloaded IPA from `dev-latest`.
+- Both workers draw on the same Cloudflare account's limits.
+
 ## Windows app
 
 Download `OverQueue-Setup-<version>.exe` from [Releases](https://github.com/overjump1/overwatch-queue/releases) and run it. It installs for your user only (no admin prompt) and can start the app when you sign in.
@@ -60,7 +74,7 @@ If Battle.net runs as administrator, the app has to run as administrator as well
 
 ### Releasing
 
-Every push to `main` that changes an app publishes a [release](https://github.com/overjump1/overwatch-queue/releases) (`v2.0.<run>`) with the Android APK, the Windows installer and the iPhone IPA. The `Release` workflow only rebuilds the apps whose files changed since the last release (`android/`, `pc/`, or `ios/` + `project.yml` + the Xcode project, plus each app's workflow) and copies the others from that release unchanged. Pushes that don't touch an app (the worker, the README) don't make a release. To rebuild everything, run the `Release` workflow by hand with **Rebuild every app** ticked.
+Every push to `main` that changes an app publishes a [release](https://github.com/overjump1/overwatch-queue/releases) (`v2.0.<run>`) with the Android APK, the Windows installer and the iPhone IPA. The `Release` workflow only rebuilds the apps whose files changed since the last release (`android/`, `pc/`, or `ios/` + `project.yml` + the Xcode project, plus each app's workflow) and copies the others from that release unchanged. Pushes that don't touch an app (the worker, the README) don't make a release. To rebuild everything, run the `Release` workflow by hand with **Rebuild every app** ticked. Pushes to `dev` do the same into a prerelease of their own — see [Dev environment](#dev-environment).
 
 Each release takes down the ones before it, so only the newest build is there to download. The tags stay behind, so the diff above still has something to compare against.
 
@@ -78,10 +92,12 @@ iscc /DAppVersion=1.0.0 pc\installer.iss
 
 ```
 cd worker && npm install
-npx wrangler secret put FCM_SERVICE_ACCOUNT   # one time: Firebase service-account JSON
-npx wrangler deploy
+npx wrangler secret put FCM_SERVICE_ACCOUNT --env ""   # one time: Firebase service-account JSON
+npx wrangler deploy --env ""                           # the real worker; --env dev for the dev one
 npm test
 ```
+
+`--env ""` is the top of `wrangler.toml`, the real worker. It has to be said now that there's a `dev` environment as well: without it wrangler warns, and a script that forgets it is one flag away from the wrong worker.
 
 `wrangler dev` keeps its local Durable Object state in `worker/.wrangler/state`. On Windows,
 workerd can't open that store if the path to the repo has a space in it: the worker starts and

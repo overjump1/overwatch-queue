@@ -6,6 +6,10 @@ enum Worker {
         #if DEBUG
         if let override = UserDefaults.standard.string(forKey: "workerURL") { return URL(string: override) }
         #endif
+        // A dev build carries the dev worker's address (see .github/workflows/ios-app.yml).
+        if let stamped = Bundle.main.object(forInfoDictionaryKey: "OWQWorkerURL") as? String {
+            return URL(string: stamped)
+        }
         return URL(string: "https://overwatch-queue-push-relay.tomerady.workers.dev")
     }
 
