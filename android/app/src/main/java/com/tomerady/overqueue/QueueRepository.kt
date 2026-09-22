@@ -14,6 +14,7 @@ import com.tomerady.overqueue.shared.Worker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -55,6 +56,9 @@ class QueueRepository private constructor(context: Context) {
     /** The pairing and token the worker last accepted; anything else still needs registering. */
     @Volatile private var registeredAs: Pair<String, String>? = null
     private var registerJob: Job? = null
+    /** Whether the last register's reply carried the state. A worker too old to send one back
+     *  must not read as "already refreshed", or the screen would open empty. */
+    @Volatile private var registerCarriedStatus = false
     private var active = false
     private var lastPushAt = 0L
     /** The match the screen already flashed for, so the same match never flashes twice. */
@@ -75,20 +79,30 @@ class QueueRepository private constructor(context: Context) {
         }
     }
 
-    /** Polls the worker every 2 seconds until cancelled, while the app is on screen. */
-    suspend fun poll() {
+    /**
+     * Syncs once as the app comes on screen, then just sits there keeping [active] true. There is
+     * no poll: the worker's pushes carry the whole status and [onPush] applies them as they land,
+     * so the only thing left to catch is a push that never arrived -- and coming back to the app
+     * runs this again, which catches it.
+     */
+    suspend fun watch() {
         active = true
         try {
-            while (true) {
-                // Retried on every tick until it sticks: a phone the worker doesn't know gets no pushes.
-                if (fcmToken == null) requestFcmToken() else if (!isRegistered()) register()
-                refresh()
-                updateNotificationProblem()
-                delay(2_000)
-            }
+            sync()
+            awaitCancellation()
         } finally {
             active = false
         }
+    }
+
+    /** Makes sure the worker has our token, and that we have its state. */
+    private suspend fun sync() {
+        // A token that arrives on its own goes through setFcmToken, which registers without
+        // waiting for this; only a Firebase call that outright failed needs asking again.
+        if (fcmToken == null) requestFcmToken()
+        // A successful register's reply carries the state, so it stands in for the refresh.
+        if (fcmToken == null || isRegistered() || !register() || !registerCarriedStatus) refresh()
+        updateNotificationProblem()
     }
 
     fun setFcmToken(token: String) {
@@ -188,6 +202,17 @@ class QueueRepository private constructor(context: Context) {
         return when (val result = Worker.register(id, body)) {
             is Worker.Result.Ok -> {
                 registeredAs = id to token
+                _state.update { it.copy(reachable = true) }
+                val status = result.status
+                // Only while the app is on screen. In the background -- a new FCM token arriving
+                // with the app closed -- the status here is this process's default, and apply()
+                // would take the notification's linger from it and cancel a lingering one.
+                if (status != null && active && id == _state.value.pairId) {
+                    registerCarriedStatus = true
+                    apply(status, fromPush = false)
+                } else {
+                    registerCarriedStatus = false
+                }
                 updateNotificationProblem()
                 true
             }

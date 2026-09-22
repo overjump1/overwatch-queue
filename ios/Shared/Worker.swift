@@ -26,8 +26,11 @@ enum Worker {
         }
     }
 
+    /// The reply carries the current state as well, so registering doubles as a refresh.
     static func register(pairID: String, body: [String: Any]) async -> Result {
-        await send("POST", path: "/v1/pair/\(pairID)/device", body: body) { _ in nil }
+        await send("POST", path: "/v1/pair/\(pairID)/device", body: body) { data in
+            try? JSONDecoder().decode(StateResponse.self, from: data).status
+        }
     }
 
     /// Unpairing: the worker drops this phone's tokens, and the Watch's with them.
