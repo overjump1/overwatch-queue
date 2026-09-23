@@ -6,7 +6,7 @@ enum Worker {
         #if DEBUG
         if let override = UserDefaults.standard.string(forKey: "workerURL") { return URL(string: override) }
         #endif
-        // A dev build carries the dev worker's address (see .github/workflows/ios-app.yml).
+        // OverQueue Dev carries the dev worker's address, the real app the real one (project.yml).
         if let stamped = Bundle.main.object(forInfoDictionaryKey: "OWQWorkerURL") as? String {
             return URL(string: stamped)
         }
@@ -78,7 +78,7 @@ enum Pairing {
     /// The links this app answers to, straight from its Info.plist. The real app takes
     /// `overqueue://` and `owq://`, the same link under the name the app used to go by, which a PC
     /// that hasn't been updated yet still writes. OverQueue Dev takes only `overqueue-dev://`
-    /// (.github/workflows/ios-app.yml), so each PC app's code pairs only the matching phone app.
+    /// (project.yml), so each PC app's code pairs only the matching phone app.
     static let schemes: [String] = {
         let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
         return types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }

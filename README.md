@@ -46,7 +46,7 @@ Builds that aren't from a release never check: they're on a `0.x` version (`0.0.
 - **Worker**: every push to `dev` that touches `worker/` deploys `overwatch-queue-push-relay-dev.tomerady.workers.dev`, `wrangler.toml`'s `[env.dev]`. It has its own Durable Objects, so nothing done there touches a real pairing. By hand: `npx wrangler deploy --env dev`.
 - **Apps**: every push to `dev` that changes an app rebuilds it into a single prerelease, [`dev-latest`](https://github.com/overjump1/overwatch-queue/releases/tag/dev-latest), replaced each time. Those builds are versioned `2.0.<run>-dev`, talk to the dev worker, and update only from `dev-latest`. GitHub never counts a prerelease as the latest release, which is what the real apps ask for, so they never see a dev build.
 
-The dev builds are **OverQueue Dev**, separate apps that install beside the real ones rather than over them:
+Everything except the real releases is **OverQueue Dev**: the `dev` branch and `dev-latest`, pull request builds, and anything you build or run yourself — `python pc/app.py`, Xcode, Android Studio. Only `main`'s release and TestFlight are the real OverQueue. OverQueue Dev is a separate set of apps that install beside the real ones rather than over them:
 
 | | Real | Dev |
 |---|---|---|
@@ -55,12 +55,15 @@ The dev builds are **OverQueue Dev**, separate apps that install beside the real
 | Windows | `%APPDATA%\OverQueue`, installs to `OverQueue` | `%APPDATA%\OverQueue Dev`, installs to `OverQueue Dev` |
 | QR code | `overqueue://pair?id=…` | `overqueue-dev://pair?id=…` |
 
-Each PC app has its own pairing and its own QR link, and each phone app answers only to its own link, so a dev phone can only pair with the dev PC app and the other way round. Running the PC app (or `pc/test.py`) from source is OverQueue Dev too; `pc/channel.py` decides. `OVERQUEUE_WORKER_URL` still points either at another worker.
+Each PC app has its own pairing and its own QR link, and each phone app answers only to its own link, so a dev phone can only pair with the dev PC app and the other way round.
+
+The code is OverQueue Dev as it stands, and the real releases are switched over as they're built: `pc/version.py`'s `DEV` is stamped `False` (then `pc/channel.py` picks the real app), Android gets `-Pdev=false`, and `ios/make-real.sh` rewrites the Xcode project's `OWQ_*` settings — run by `main`'s IPA build and by Xcode Cloud, whichever branch it builds. `OVERQUEUE_WORKER_URL` still points the PC app at another worker.
 
 Setting up the dev phone apps, once:
 
 - **Firebase**: in the same Firebase project, add an Android app `com.tomerady.overwatchqueue.dev`, and iOS apps `com.tomerady.OverwatchQueue.dev` and `com.tomerady.OverwatchQueue.dev.watchkitapp`, each iOS app with the same APNs key as the real ones. Download `google-services.json` again (it now holds both Android apps) and replace the `GOOGLE_SERVICES_JSON` secret with it. Add the two new `GoogleService-Info.plist`s as the secrets `DEV_GOOGLE_SERVICE_INFO_PLIST` and `DEV_WATCH_GOOGLE_SERVICE_INFO_PLIST`. Until then, dev builds compile with placeholders and get no pushes.
-- **TestFlight isn't covered.** Xcode Cloud builds the real app only; OverQueue Dev on an iPhone is the sideloaded IPA from `dev-latest`.
+- **Your own builds** need the dev configs too: the new `google-services.json` in `android/app/`, and the dev `GoogleService-Info.plist`s in `ios/iOS/` and `ios/Watch/`.
+- **TestFlight is always the real app**, so OverQueue Dev on an iPhone is the sideloaded IPA from `dev-latest`, or a build from Xcode.
 - Both workers draw on the same Cloudflare account's limits.
 
 ## Windows app
@@ -123,13 +126,15 @@ npx wrangler dev --persist-to %TEMP%\owq-state
 
 ## iPhone and Watch apps
 
-1. Put `GoogleService-Info.plist` in `ios/iOS/`.
-2. Put the Watch app's `GoogleService-Info.plist` (Firebase app "OverQueue Watch", bundle ID `com.tomerady.OverQueue.watchkitapp`) in `ios/Watch/`.
+A build from Xcode is OverQueue Dev (see [Dev environment](#dev-environment)), so it takes the dev app's Firebase configs:
+
+1. Put OverQueue Dev's `GoogleService-Info.plist` (bundle ID `com.tomerady.OverwatchQueue.dev`) in `ios/iOS/`.
+2. Put its Watch app's `GoogleService-Info.plist` (bundle ID `com.tomerady.OverwatchQueue.dev.watchkitapp`) in `ios/Watch/`.
 3. Open `OverQueue.xcodeproj`. It's generated from `project.yml`: after adding or removing files, run `xcodegen` in the repo root and commit the result.
 
 ### TestFlight (Xcode Cloud)
 
-Pushes to `main` build and upload to TestFlight. `ci_scripts/ci_post_clone.sh` stamps the build as `2.0.<Xcode Cloud build number>` (the project itself ships on `0.0.0`, so a build that missed the stamp can't pass for a release) and writes both Firebase configs from the workflow's secret environment variables: `GOOGLE_SERVICE_INFO_PLIST` holds `base64 -i ios/iOS/GoogleService-Info.plist` and `WATCH_GOOGLE_SERVICE_INFO_PLIST` holds `base64 -i ios/Watch/GoogleService-Info.plist`.
+Pushes to `main` build and upload to TestFlight. `ci_scripts/ci_post_clone.sh` makes it the real OverQueue (`ios/make-real.sh`), stamps the build as `2.0.<Xcode Cloud build number>` (the project itself ships on `0.0.0`, so a build that missed the stamp can't pass for a release) and writes both Firebase configs from the workflow's secret environment variables: `GOOGLE_SERVICE_INFO_PLIST` holds `base64 -i ios/iOS/GoogleService-Info.plist` and `WATCH_GOOGLE_SERVICE_INFO_PLIST` holds `base64 -i ios/Watch/GoogleService-Info.plist`.
 
 `aps-environment` is `development` in both entitlements files, which is what a development build
 wants; automatic signing rewrites it to `production` when the archive is for distribution. Worth
@@ -143,12 +148,12 @@ codesign -d --entitlements :- <the archived .app>
 To test in the Simulator against a local worker (`npx wrangler dev`), run a Debug build with the launch argument `-workerURL http://127.0.0.1:8787`, then pair:
 
 ```
-xcrun simctl openurl booted "overqueue://pair?id=<id from the PC app>"
+xcrun simctl openurl booted "overqueue-dev://pair?id=<id from the PC app>"
 ```
 
 ### IPA (GitHub releases)
 
-The `iOS app` workflow builds an unsigned IPA for the GitHub release, for sideloading with AltStore or Sideloadly (they sign it with your Apple ID). TestFlight is still the normal way to install. For the IPA to get pushes, add the same two Firebase configs as GitHub repository secrets `GOOGLE_SERVICE_INFO_PLIST` and `WATCH_GOOGLE_SERVICE_INFO_PLIST`; without them it builds with placeholders.
+The `iOS app` workflow builds an unsigned IPA for the GitHub release, for sideloading with AltStore or Sideloadly (they sign it with your Apple ID). TestFlight is still the normal way to install. For `main`'s IPA to get pushes, add the same two Firebase configs as GitHub repository secrets `GOOGLE_SERVICE_INFO_PLIST` and `WATCH_GOOGLE_SERVICE_INFO_PLIST`; every other IPA is OverQueue Dev and takes `DEV_GOOGLE_SERVICE_INFO_PLIST` and `DEV_WATCH_GOOGLE_SERVICE_INFO_PLIST`. Without them it builds with placeholders.
 
 ## Android app
 
@@ -158,8 +163,8 @@ An iPhone and an Android phone can both be paired to the same PC.
 
 ### Setup
 
-1. In the Firebase console, add an Android app with package name `com.tomerady.overqueue` to the same Firebase project the worker uses. Download its `google-services.json`.
-2. For local builds, put it in `android/app/`. It's git-ignored.
+1. In the Firebase console, add Android apps with package names `com.tomerady.overwatchqueue` (the real app) and `com.tomerady.overwatchqueue.dev` (OverQueue Dev) to the same Firebase project the worker uses. Download `google-services.json`, which holds both.
+2. For local builds, put it in `android/app/`. It's git-ignored. A local build is OverQueue Dev (`com.tomerady.overwatchqueue.dev`), so the file has to include that app too; without it the build still runs, but gets no pushes.
 3. For CI, add it as the repository secret `GOOGLE_SERVICES_JSON`, holding `base64 -w0 google-services.json`. Without it, CI builds the APK with a placeholder config that can't get pushes.
 4. Deploy the worker (`npx wrangler deploy`) so it knows how to push to Android.
 

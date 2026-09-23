@@ -12,8 +12,9 @@ on:
       version:
         type: string
         required: true
-      # Builds OverQueue Dev, the separate app that talks to the dev worker (see pc/channel.py).
-      dev:
+      # Builds the real OverQueue, for main's release. Everything else -- pull requests, the dev
+      # branch, a manual run -- is OverQueue Dev (see pc/channel.py).
+      real:
         type: boolean
         required: false
         default: false
@@ -58,15 +59,15 @@ jobs:
         shell: bash
         run: sed -i 's/^VERSION = .*/VERSION = "${{ steps.version.outputs.version }}"/' pc/version.py
 
-      # OverQueue Dev: its own pairing, the dev worker and the dev prerelease (pc/channel.py), and an
-      # installer that goes beside the real app. Checked afterwards, because a sed that matches
-      # nothing succeeds anyway and would ship the dev build as the real app without a word.
-      - name: Make it OverQueue Dev
-        if: inputs.dev
+      # The source is OverQueue Dev: its own pairing, the dev worker and the dev prerelease
+      # (pc/channel.py). Checked afterwards, because a sed that matches nothing succeeds anyway and
+      # would ship main's release as the dev app without a word.
+      - name: Make it the real OverQueue
+        if: inputs.real
         shell: bash
         run: |
-          sed -i 's/^DEV = .*/DEV = True/' pc/version.py
-          grep -qx 'DEV = True' pc/version.py || { echo "::error::DEV didn't land in pc/version.py"; exit 1; }
+          sed -i 's/^DEV = .*/DEV = False/' pc/version.py
+          grep -qx 'DEV = False' pc/version.py || { echo "::error::DEV didn't land in pc/version.py"; exit 1; }
 
       - name: Build app
         run: pyinstaller --noconfirm pc/overqueue.spec
@@ -79,7 +80,7 @@ jobs:
             $env:Path += ";$inno"
           }
           $defines = @("/DAppVersion=${{ steps.version.outputs.version }}")
-          if ("${{ inputs.dev }}" -eq "true") { $defines += "/DDev" }
+          if ("${{ inputs.real }}" -eq "true") { $defines += "/DReal" }
           iscc @defines pc\installer.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 

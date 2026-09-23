@@ -1,18 +1,18 @@
 ; Inno Setup script for the Windows installer. Build the app with PyInstaller first, then from the repo root:
 ;   iscc /DAppVersion=1.2.3 pc\installer.iss
-; Writes dist\OverQueue-Setup-<version>.exe. Add /DDev for OverQueue Dev, which installs beside the
-; real app rather than over it (see channel.py).
+; Writes dist\OverQueue-Setup-<version>.exe for OverQueue Dev, which installs beside the real app
+; rather than over it (see channel.py). Add /DReal for the real app, as main's release does.
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
 
-#ifdef Dev
-  #define AppName "OverQueue Dev"
-  #define AppGuid "{{D221E428-A600-4EE6-BB3F-00E64DC1961A}"
-#else
+#ifdef Real
   #define AppName "OverQueue"
   #define AppGuid "{{6C1E5F3A-8B2D-4E7A-9F41-2D0B7A3C9E15}"
+#else
+  #define AppName "OverQueue Dev"
+  #define AppGuid "{{D221E428-A600-4EE6-BB3F-00E64DC1961A}"
 #endif
 
 [Setup]
@@ -48,7 +48,7 @@ Source: "..\dist\OverQueue\*"; DestDir: "{app}"; Flags: ignoreversion recursesub
 [InstallDelete]
 ; Clears out the previous version's bundled libraries so stale ones don't linger.
 Type: filesandordirs; Name: "{app}\_internal"
-#ifndef Dev
+#ifdef Real
 ; The app was called OW Queue before this, and an upgrade installs over that one: without these
 ; the old exe stays behind and its shortcuts go on launching it, so you end up running both.
 Type: files; Name: "{app}\OWQueue.exe"

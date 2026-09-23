@@ -8,6 +8,8 @@ name: Release
 # builds are OverQueue Dev: separate apps that install beside the real ones, with their own pairing,
 # talking to the dev worker and updating only from dev-latest. GitHub never counts a prerelease as
 # the latest release, which is exactly what the real apps ask for, so they never see a dev one.
+#
+# Every app builds as OverQueue Dev unless it's told otherwise, and only main's release tells it.
 on:
   push:
     branches: [main, dev]
@@ -41,9 +43,7 @@ jobs:
       version: ${{ steps.diff.outputs.version }}
       version-code: ${{ steps.diff.outputs.version-code }}
       channel: ${{ steps.diff.outputs.channel }}
-      dev: ${{ steps.diff.outputs.dev }}
-      worker-url: ${{ steps.diff.outputs.worker-url }}
-      release-api: ${{ steps.diff.outputs.release-api }}
+      real: ${{ steps.diff.outputs.real }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -88,13 +88,9 @@ jobs:
           echo "any=$any" >> "$GITHUB_OUTPUT"
           echo "previous=$previous" >> "$GITHUB_OUTPUT"
           echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
-          echo "dev=$( [ "$CHANNEL" = dev ] && echo true || echo false )" >> "$GITHUB_OUTPUT"
+          echo "real=$( [ "$CHANNEL" = main ] && echo true || echo false )" >> "$GITHUB_OUTPUT"
           if [ "$CHANNEL" = dev ]; then
             echo "version=2.0.${GITHUB_RUN_NUMBER}-dev" >> "$GITHUB_OUTPUT"
-            # Baked into the dev phone apps. main's builds get neither, and keep the real ones they
-            # ship with. The PC app knows both itself (pc/channel.py).
-            echo "worker-url=https://overwatch-queue-push-relay-dev.tomerady.workers.dev" >> "$GITHUB_OUTPUT"
-            echo "release-api=https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/dev-latest" >> "$GITHUB_OUTPUT"
           else
             echo "version=2.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           fi
@@ -110,9 +106,7 @@ jobs:
     with:
       version: ${{ needs.changes.outputs.version }}
       version-code: ${{ fromJSON(needs.changes.outputs.version-code) }}
-      dev: ${{ fromJSON(needs.changes.outputs.dev) }}
-      worker-url: ${{ needs.changes.outputs.worker-url }}
-      release-api: ${{ needs.changes.outputs.release-api }}
+      real: ${{ fromJSON(needs.changes.outputs.real) }}
 
   windows:
     needs: changes
@@ -121,7 +115,7 @@ jobs:
     secrets: inherit
     with:
       version: ${{ needs.changes.outputs.version }}
-      dev: ${{ fromJSON(needs.changes.outputs.dev) }}
+      real: ${{ fromJSON(needs.changes.outputs.real) }}
 
   ios:
     needs: changes
@@ -131,9 +125,7 @@ jobs:
     with:
       version: ${{ needs.changes.outputs.version }}
       build-number: ${{ fromJSON(github.run_number) }}
-      dev: ${{ fromJSON(needs.changes.outputs.dev) }}
-      worker-url: ${{ needs.changes.outputs.worker-url }}
-      release-api: ${{ needs.changes.outputs.release-api }}
+      real: ${{ fromJSON(needs.changes.outputs.real) }}
 
   release:
     needs: [changes, android, windows, ios]

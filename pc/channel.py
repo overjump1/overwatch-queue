@@ -4,13 +4,13 @@ The two are separate apps that sit side by side. Each has its own pairing, its o
 releases to update from and its own QR link, which only the matching phone app answers to -- so
 nothing tested on dev can land on the real app, or the other way round.
 
-A build is whichever CI stamped into version.py. Running from source is someone working on the app,
-so that's dev too, and it never touches the real app's pairing.
+Everything is OverQueue Dev -- running from source, the dev branch's builds, pull requests -- except
+main's release, which CI stamps as the real app in version.py. So working on the app never touches
+the real app's pairing.
 """
 from __future__ import annotations
 
 import os
-import sys
 from typing import NamedTuple
 
 import version
@@ -47,7 +47,6 @@ DEV = Channel(
     pair_scheme="overqueue-dev",
 )
 
-FROM_SOURCE = not getattr(sys, "frozen", False)
-CURRENT = DEV if version.DEV or FROM_SOURCE else REAL
+CURRENT = DEV if version.DEV else REAL
 # Points this copy at another worker, e.g. `npx wrangler dev` on this machine.
 WORKER_URL = (os.environ.get("OVERQUEUE_WORKER_URL") or CURRENT.worker_url).rstrip("/")

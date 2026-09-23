@@ -10,10 +10,17 @@ settings:
     DEVELOPMENT_TEAM: 56N4LCCUN2
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "5.0"
-    # Who the app is. CI's dev builds override both on the xcodebuild command line to make
-    # OverQueue Dev, a separate app that installs beside this one (.github/workflows/ios-app.yml).
-    OWQ_BUNDLE_ID: com.tomerady.OverwatchQueue
-    OWQ_APP_NAME: OverQueue
+    # Who the app is. Every build is OverQueue Dev -- a separate app that installs beside the real
+    # one, with its own pairing, the dev worker and the dev prerelease -- until ios/make-real.sh
+    # switches these to the real app, which only Xcode Cloud (TestFlight) and main's release do.
+    # The real app also answers to owq://, the name it used to go by; the dev app has nothing
+    # older, so both of its schemes are the same one.
+    OWQ_BUNDLE_ID: com.tomerady.OverwatchQueue.dev
+    OWQ_APP_NAME: OverQueue Dev
+    OWQ_PAIR_SCHEME: overqueue-dev
+    OWQ_LEGACY_PAIR_SCHEME: overqueue-dev
+    OWQ_WORKER_URL: https://overwatch-queue-push-relay-dev.tomerady.workers.dev
+    OWQ_RELEASE_API: https://api.github.com/repos/overjump1/overwatch-queue/releases/tags/dev-latest
     # CI stamps every build that goes anywhere; 0.0.0 is one nobody stamped (ios/iOS/Updates.swift).
     MARKETING_VERSION: "0.0.0"
     CURRENT_PROJECT_VERSION: "1"
@@ -55,7 +62,9 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
           - CFBundleURLName: $(OWQ_BUNDLE_ID).pair
-            CFBundleURLSchemes: [overqueue, owq]
+            CFBundleURLSchemes: [$(OWQ_PAIR_SCHEME), $(OWQ_LEGACY_PAIR_SCHEME)]
+        OWQWorkerURL: $(OWQ_WORKER_URL)
+        OWQReleaseAPI: $(OWQ_RELEASE_API)
     entitlements:
       path: ios/iOS/OverQueue.entitlements
       properties:
@@ -107,6 +116,7 @@ targets:
         WKCompanionAppBundleIdentifier: $(OWQ_BUNDLE_ID)
         WKRunsIndependentlyOfCompanionApp: true
         WKSupportsLiveActivityLaunchAttributeTypes: [QueueActivityAttributes]
+        OWQWorkerURL: $(OWQ_WORKER_URL)
         UIBackgroundModes: [remote-notification]
         FirebaseAppDelegateProxyEnabled: false
         ITSAppUsesNonExemptEncryption: false

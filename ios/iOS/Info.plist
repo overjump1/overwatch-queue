@@ -25,8 +25,8 @@
 			<string>$(OWQ_BUNDLE_ID).pair</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>overqueue</string>
-				<string>owq</string>
+				<string>$(OWQ_PAIR_SCHEME)</string>
+				<string>$(OWQ_LEGACY_PAIR_SCHEME)</string>
 			</array>
 		</dict>
 	</array>
@@ -52,6 +52,10 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
+	<key>OWQReleaseAPI</key>
+	<string>$(OWQ_RELEASE_API)</string>
+	<key>OWQWorkerURL</key>
+	<string>$(OWQ_WORKER_URL)</string>
 	<key>UIUserInterfaceStyle</key>
 	<string>Dark</string>
 </dict>
