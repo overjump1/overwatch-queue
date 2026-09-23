@@ -14,7 +14,8 @@ import time
 import urllib.error
 import urllib.request
 
-from version import RELEASE_API, VERSION
+from channel import CURRENT
+from version import VERSION
 
 ASSET = re.compile(r"^OverQueue-Setup-(.+)\.exe$", re.IGNORECASE)
 HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "OverQueue/%s" % VERSION}
@@ -132,7 +133,7 @@ class Updater:
         with self._lock:
             self._state = CHECKING
         try:
-            request = urllib.request.Request(RELEASE_API, headers=HEADERS)
+            request = urllib.request.Request(CURRENT.release_api, headers=HEADERS)
             with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
                 update = find_update(json.loads(response.read() or b"{}"))
         except (urllib.error.URLError, OSError, ValueError, AttributeError) as problem:

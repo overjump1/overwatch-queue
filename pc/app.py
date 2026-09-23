@@ -30,6 +30,7 @@ from detector import FOUND, QUEUEING, Detector
 from relay import Relay
 from roleselect import RoleSelect
 from updater import Updater
+from channel import CURRENT, REAL
 from version import VERSION
 
 POLL_SECONDS = 1.0
@@ -63,19 +64,20 @@ MODE_NAMES = {
 }
 
 _APPDATA = os.environ.get("APPDATA") or os.path.expanduser("~")
-DATA_DIR = os.path.join(_APPDATA, "OverQueue")
+DATA_DIR = CURRENT.data_dir
 # The app was called OW Queue before this. Its folder holds the pairing code every paired
 # phone was scanned against, so the folder moves across rather than leaving everyone to scan
 # a new one; after that the old name is never looked at again.
 LEGACY_DATA_DIR = os.path.join(_APPDATA, "OWQueue")
-PAIRING_FILE = os.path.join(DATA_DIR, "pairing.json")
+PAIRING_FILE = CURRENT.pairing_file
 
 log = logging.getLogger("overqueue")
 
 
 def adopt_legacy_data_dir():
     """Moves the old folder over, once, before anything reads or writes the new one."""
-    if os.path.exists(DATA_DIR) or not os.path.isdir(LEGACY_DATA_DIR):
+    # Only the real app ever went by the old name; OverQueue Dev starts a pairing of its own.
+    if CURRENT != REAL or os.path.exists(DATA_DIR) or not os.path.isdir(LEGACY_DATA_DIR):
         return
     try:
         os.rename(LEGACY_DATA_DIR, DATA_DIR)
@@ -210,7 +212,7 @@ class App(QWidget):
         self._qr_requested_with = None  # the phones paired when "Show QR code" was pressed, None when not pressed
         self._checks_updates = up.checks_for_updates()
 
-        self.setWindowTitle("OverQueue")
+        self.setWindowTitle(CURRENT.name)
         self.setStyleSheet(
             "QWidget { background: %s; color: %s; }"
             "QFrame#card { background: %s; border-radius: 12px; }"
@@ -270,7 +272,7 @@ class App(QWidget):
         layout.addSpacing(10)
         layout.addLayout(buttons)
 
-        self.version_label = QLabel("OverQueue %s" % VERSION, font=_font(9))
+        self.version_label = QLabel("%s %s" % (CURRENT.name, VERSION), font=_font(9))
         self.version_label.setStyleSheet("color: %s;" % MUTED)
         self.update_button = QPushButton(font=_font(9))
         self.update_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -352,7 +354,7 @@ class App(QWidget):
         elif paired:
             self._set(self.phone_label, "● %s paired" % " and ".join(paired), GOOD)
         else:
-            self._set(self.phone_label, "Scan this code with the OverQueue app on your phone", MUTED)
+            self._set(self.phone_label, "Scan this code with the %s app on your phone" % CURRENT.name, MUTED)
         if show_qr and self._qr_for != self.pair_id:
             self._draw_qr()
         self.qr.setVisible(show_qr)
@@ -382,7 +384,7 @@ class App(QWidget):
 
     def _draw_qr(self):
         code = qrcode.QRCode(border=2, error_correction=qrcode.constants.ERROR_CORRECT_M)
-        code.add_data("overqueue://pair?id=%s" % self.pair_id)
+        code.add_data("%s://pair?id=%s" % (CURRENT.pair_scheme, self.pair_id))
         code.make(fit=True)
         matrix = code.get_matrix()
         ratio = self.devicePixelRatioF()
@@ -456,7 +458,7 @@ class _Parser(argparse.ArgumentParser):
 
 
 def parse_args(argv=None):
-    parser = _Parser(prog="OverQueue", description=__doc__.splitlines()[0])
+    parser = _Parser(prog=CURRENT.name, description=__doc__.splitlines()[0])
     parser.add_argument("--presence-source", choices=("devmode", "auto"), default="devmode",
                         help="how to read Battle.net's presence (default: start Battle.net in "
                              "developer mode and read over its debug port; 'auto' uses a debug "

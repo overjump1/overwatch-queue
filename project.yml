@@ -10,6 +10,10 @@ settings:
     DEVELOPMENT_TEAM: 56N4LCCUN2
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "5.0"
+    # Who the app is. CI's dev builds override both on the xcodebuild command line to make
+    # OverQueue Dev, a separate app that installs beside this one (.github/workflows/ios-app.yml).
+    OWQ_BUNDLE_ID: com.tomerady.OverwatchQueue
+    OWQ_APP_NAME: OverQueue
     # CI stamps every build that goes anywhere; 0.0.0 is one nobody stamped (ios/iOS/Updates.swift).
     MARKETING_VERSION: "0.0.0"
     CURRENT_PROJECT_VERSION: "1"
@@ -31,13 +35,13 @@ targets:
         product: FirebaseMessaging
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.tomerady.OverwatchQueue
+        PRODUCT_BUNDLE_IDENTIFIER: $(OWQ_BUNDLE_ID)
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: ios/iOS/Info.plist
       properties:
-        CFBundleDisplayName: OverQueue
+        CFBundleDisplayName: $(OWQ_APP_NAME)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
@@ -50,7 +54,7 @@ targets:
         FirebaseAppDelegateProxyEnabled: false
         ITSAppUsesNonExemptEncryption: false
         CFBundleURLTypes:
-          - CFBundleURLName: com.tomerady.OverwatchQueue.pair
+          - CFBundleURLName: $(OWQ_BUNDLE_ID).pair
             CFBundleURLSchemes: [overqueue, owq]
     entitlements:
       path: ios/iOS/OverQueue.entitlements
@@ -67,12 +71,12 @@ targets:
         excludes: ["*.caf"]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.tomerady.OverwatchQueue.QueueWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: $(OWQ_BUNDLE_ID).QueueWidgets
         TARGETED_DEVICE_FAMILY: "1"
     info:
       path: ios/Widgets/Info.plist
       properties:
-        CFBundleDisplayName: OverQueue
+        CFBundleDisplayName: $(OWQ_APP_NAME)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -89,18 +93,18 @@ targets:
         product: FirebaseMessaging
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.tomerady.OverwatchQueue.watchkitapp
+        PRODUCT_BUNDLE_IDENTIFIER: $(OWQ_BUNDLE_ID).watchkitapp
         TARGETED_DEVICE_FAMILY: "4"
         SKIP_INSTALL: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: ios/Watch/Info.plist
       properties:
-        CFBundleDisplayName: OverQueue
+        CFBundleDisplayName: $(OWQ_APP_NAME)
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         WKApplication: true
-        WKCompanionAppBundleIdentifier: com.tomerady.OverwatchQueue
+        WKCompanionAppBundleIdentifier: $(OWQ_BUNDLE_ID)
         WKRunsIndependentlyOfCompanionApp: true
         WKSupportsLiveActivityLaunchAttributeTypes: [QueueActivityAttributes]
         UIBackgroundModes: [remote-notification]

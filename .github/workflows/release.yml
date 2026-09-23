@@ -5,8 +5,9 @@ name: Release
 # others are copied over from that release unchanged.
 #
 # Pushes to dev do the same into a single prerelease, dev-latest, replaced on every build. Those
-# builds talk to the dev worker and update only from dev-latest. GitHub never counts a prerelease
-# as the latest release, which is exactly what the real apps ask for, so they never see a dev one.
+# builds are OverQueue Dev: separate apps that install beside the real ones, with their own pairing,
+# talking to the dev worker and updating only from dev-latest. GitHub never counts a prerelease as
+# the latest release, which is exactly what the real apps ask for, so they never see a dev one.
 on:
   push:
     branches: [main, dev]
@@ -40,6 +41,7 @@ jobs:
       version: ${{ steps.diff.outputs.version }}
       version-code: ${{ steps.diff.outputs.version-code }}
       channel: ${{ steps.diff.outputs.channel }}
+      dev: ${{ steps.diff.outputs.dev }}
       worker-url: ${{ steps.diff.outputs.worker-url }}
       release-api: ${{ steps.diff.outputs.release-api }}
     steps:
@@ -86,16 +88,18 @@ jobs:
           echo "any=$any" >> "$GITHUB_OUTPUT"
           echo "previous=$previous" >> "$GITHUB_OUTPUT"
           echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "dev=$( [ "$CHANNEL" = dev ] && echo true || echo false )" >> "$GITHUB_OUTPUT"
           if [ "$CHANNEL" = dev ]; then
             echo "version=2.0.${GITHUB_RUN_NUMBER}-dev" >> "$GITHUB_OUTPUT"
-            # Baked into the dev builds. main's builds get neither, and keep the real ones they ship with.
+            # Baked into the dev phone apps. main's builds get neither, and keep the real ones they
+            # ship with. The PC app knows both itself (pc/channel.py).
             echo "worker-url=https://overwatch-queue-push-relay-dev.tomerady.workers.dev" >> "$GITHUB_OUTPUT"
             echo "release-api=https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/dev-latest" >> "$GITHUB_OUTPUT"
           else
             echo "version=2.0.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           fi
-          # Above the numbers earlier CI builds used, so release APKs install over them. Both branches
-          # share this workflow's run counter, so whichever build is newer installs over the other.
+          # Above the numbers earlier CI builds used, so release APKs install over them. The dev app
+          # is a separate app, so its numbers never have to beat the real one's.
           echo "version-code=$((GITHUB_RUN_NUMBER + 1000))" >> "$GITHUB_OUTPUT"
 
   android:
@@ -106,6 +110,7 @@ jobs:
     with:
       version: ${{ needs.changes.outputs.version }}
       version-code: ${{ fromJSON(needs.changes.outputs.version-code) }}
+      dev: ${{ fromJSON(needs.changes.outputs.dev) }}
       worker-url: ${{ needs.changes.outputs.worker-url }}
       release-api: ${{ needs.changes.outputs.release-api }}
 
@@ -116,8 +121,7 @@ jobs:
     secrets: inherit
     with:
       version: ${{ needs.changes.outputs.version }}
-      worker-url: ${{ needs.changes.outputs.worker-url }}
-      release-api: ${{ needs.changes.outputs.release-api }}
+      dev: ${{ fromJSON(needs.changes.outputs.dev) }}
 
   ios:
     needs: changes
@@ -127,6 +131,7 @@ jobs:
     with:
       version: ${{ needs.changes.outputs.version }}
       build-number: ${{ fromJSON(github.run_number) }}
+      dev: ${{ fromJSON(needs.changes.outputs.dev) }}
       worker-url: ${{ needs.changes.outputs.worker-url }}
       release-api: ${{ needs.changes.outputs.release-api }}
 
@@ -204,7 +209,7 @@ jobs:
           [ "${{ needs.changes.outputs.android }}" = true ] && built+=("Android")
           [ "${{ needs.changes.outputs.windows }}" = true ] && built+=("Windows")
           [ "${{ needs.changes.outputs.ios }}" = true ] && built+=("iPhone")
-          notes="Dev build of ${GITHUB_SHA::7}, talking to the dev worker. New builds: $(IFS=,; echo "${built[*]}" | sed 's/,/, /g'). The other apps are unchanged from the previous dev build."
+          notes="OverQueue Dev, built from ${GITHUB_SHA::7}: installs beside the real apps and talks to the dev worker. New builds: $(IFS=,; echo "${built[*]}" | sed 's/,/, /g'). The other apps are unchanged from the previous dev build."
           gh release delete dev-latest --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null || true
           # And the tag itself, in case it outlived its release: a new release made on a leftover tag
           # would sit on the old commit, and the next build would diff against the wrong one.

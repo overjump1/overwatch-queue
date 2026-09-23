@@ -75,20 +75,34 @@ enum Pairing {
         set { UserDefaults.standard.set(newValue, forKey: key) }
     }
 
-    /// Accepts `overqueue://pair?id=<32 hex>` (from the QR code) and returns the pairing id.
-    /// `owq://` is the same link under the name the app used to go by: a PC that hasn't been
-    /// updated yet still writes that one, and it has to keep pairing.
-    static let schemes = ["overqueue", "owq"]
+    /// The links this app answers to, straight from its Info.plist. The real app takes
+    /// `overqueue://` and `owq://`, the same link under the name the app used to go by, which a PC
+    /// that hasn't been updated yet still writes. OverQueue Dev takes only `overqueue-dev://`
+    /// (.github/workflows/ios-app.yml), so each PC app's code pairs only the matching phone app.
+    static let schemes: [String] = {
+        let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
+        return types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+    }()
 
+    /// Accepts `overqueue://pair?id=<32 hex>` (from the QR code) and returns the pairing id.
     static func parse(_ text: String) -> String? {
         guard let components = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
               let scheme = components.scheme, schemes.contains(scheme), components.host == "pair",
-              let id = components.queryItems?.first(where: { $0.name == "id" })?.value?.lowercased(),
-              id.count == 32, id.allSatisfy({ $0.isHexDigit })
+              let id = components.queryItems?.first(where: { $0.name == "id" })?.value
         else { return nil }
-        return id
+        return validID(id)
+    }
+
+    /// The id itself, lowercased, if it is one.
+    static func validID(_ id: String) -> String? {
+        let id = id.lowercased()
+        return id.count == 32 && id.allSatisfy({ $0.isHexDigit }) ? id : nil
     }
 }
+
+/// What this app is called: "OverQueue", or "OverQueue Dev" for the dev app, whose PC app is the
+/// one to open to pair it.
+let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "OverQueue"
 
 extension Data {
     var hex: String { map { String(format: "%02x", $0) }.joined() }

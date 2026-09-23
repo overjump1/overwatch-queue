@@ -16,6 +16,12 @@ on:
         type: number
         required: false
         default: 1
+      # Builds OverQueue Dev, the separate app that installs beside the real one (see
+      # android/app/build.gradle.kts), talking to the worker and updating from the release below.
+      dev:
+        type: boolean
+        required: false
+        default: false
       # A dev build's worker and the release it updates from (see release.yml). Left empty, the
       # build keeps the real ones it ships with.
       worker-url:
@@ -49,16 +55,22 @@ jobs:
         with:
           gradle-version: "8.11.1"
 
+      # One google-services.json holds every Android app in the Firebase project, so the same secret
+      # serves both apps -- once OverQueue Dev has been added to the project and the file downloaded
+      # again. Until then its build gets the placeholder.
       - name: Firebase config
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          PACKAGE: com.tomerady.overwatchqueue${{ inputs.dev && '.dev' || '' }}
         run: |
           if [ -n "$GOOGLE_SERVICES_JSON" ]; then
             echo "$GOOGLE_SERVICES_JSON" | base64 --decode > app/google-services.json
-          else
+          fi
+          query='any(.client[]; .client_info.android_client_info.package_name == $package)'
+          if ! jq -e --arg package "$PACKAGE" "$query" app/google-services.json > /dev/null 2>&1; then
             # Lets the build (and pull requests from forks) compile. That APK can't get pushes.
-            echo "::warning::GOOGLE_SERVICES_JSON secret isn't set; the APK is built with a placeholder Firebase config and won't get pushes."
-            cat > app/google-services.json <<'EOF'
+            echo "::warning::GOOGLE_SERVICES_JSON has no Firebase app for $PACKAGE; the APK is built with a placeholder Firebase config and won't get pushes."
+            cat > app/google-services.json <<EOF
           {
             "project_info": {
               "project_number": "000000000000",
@@ -68,7 +80,7 @@ jobs:
             "client": [{
               "client_info": {
                 "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
-                "android_client_info": { "package_name": "com.tomerady.overwatchqueue" }
+                "android_client_info": { "package_name": "$PACKAGE" }
               },
               "oauth_client": [],
               "api_key": [{ "current_key": "placeholder" }],
@@ -110,6 +122,7 @@ jobs:
           -PversionCode=${{ inputs.version-code || github.run_number }}
           ${WORKER_URL:+"-PworkerUrl=$WORKER_URL"}
           ${RELEASE_API:+"-PreleaseApi=$RELEASE_API"}
+          ${{ inputs.dev && '-Pdev=true' || '' }}
 
       - name: Rename APK
         run: cp app/build/outputs/apk/debug/app-debug.apk "OverQueue-${{ steps.version.outputs.version }}.apk"

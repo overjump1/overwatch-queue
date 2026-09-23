@@ -20,6 +20,12 @@ on:
         type: number
         required: false
         default: 1
+      # Builds OverQueue Dev: a separate app, com.tomerady.OverwatchQueue.dev, that installs beside
+      # the real one, talking to the worker and updating from the release below.
+      dev:
+        type: boolean
+        required: false
+        default: false
       # A dev build's worker and the release it updates from (see release.yml). Left empty, the
       # build keeps the real ones it ships with.
       worker-url:
@@ -38,6 +44,10 @@ permissions:
 jobs:
   build:
     runs-on: macos-15
+    env:
+      # Who the app is; the watch app and the widgets hang off it (project.yml).
+      BUNDLE_ID: com.tomerady.OverwatchQueue${{ inputs.dev && '.dev' || '' }}
+      APP_NAME: ${{ inputs.dev && 'OverQueue Dev' || 'OverQueue' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,10 +55,12 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      # Each Firebase iOS app is one bundle ID, so OverQueue Dev has configs of its own.
       - name: Firebase config
         env:
-          GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
-          WATCH_GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.WATCH_GOOGLE_SERVICE_INFO_PLIST }}
+          GOOGLE_SERVICE_INFO_PLIST: ${{ inputs.dev && secrets.DEV_GOOGLE_SERVICE_INFO_PLIST || secrets.GOOGLE_SERVICE_INFO_PLIST }}
+          WATCH_GOOGLE_SERVICE_INFO_PLIST: ${{ inputs.dev && secrets.DEV_WATCH_GOOGLE_SERVICE_INFO_PLIST || secrets.WATCH_GOOGLE_SERVICE_INFO_PLIST }}
+          SECRET_PREFIX: ${{ inputs.dev && 'DEV_' || '' }}
         run: |
           write_config() {
             if [ -n "$1" ]; then
@@ -70,9 +82,9 @@ jobs:
             fi
           }
           write_config "$GOOGLE_SERVICE_INFO_PLIST" ios/iOS/GoogleService-Info.plist \
-            GOOGLE_SERVICE_INFO_PLIST com.tomerady.OverwatchQueue
+            "${SECRET_PREFIX}GOOGLE_SERVICE_INFO_PLIST" "$BUNDLE_ID"
           write_config "$WATCH_GOOGLE_SERVICE_INFO_PLIST" ios/Watch/GoogleService-Info.plist \
-            WATCH_GOOGLE_SERVICE_INFO_PLIST com.tomerady.OverwatchQueue.watchkitapp
+            "${SECRET_PREFIX}WATCH_GOOGLE_SERVICE_INFO_PLIST" "$BUNDLE_ID.watchkitapp"
 
       - name: Version
         id: version
@@ -109,6 +121,18 @@ jobs:
           stamp ios/Watch/Info.plist OWQWorkerURL "$WORKER_URL"
           stamp ios/iOS/Info.plist OWQReleaseAPI "$RELEASE_API"
 
+      # OverQueue Dev answers only to the dev PC app's QR code, and the real app only to the real
+      # one's, so a phone can't be paired to the wrong PC app (ios/Shared/Worker.swift).
+      - name: Give a dev build its own pairing link
+        if: inputs.dev
+        run: |
+          plist=ios/iOS/Info.plist
+          /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes:0:CFBundleURLSchemes" "$plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$plist"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string overqueue-dev" "$plist"
+          schemes=$(/usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes:0:CFBundleURLSchemes" "$plist" | xargs)
+          [ "$schemes" = "Array { overqueue-dev }" ] || { echo "::error::the pairing link didn't land in $plist"; exit 1; }
+
       - name: Build
         run: >
           xcodebuild build
@@ -121,6 +145,8 @@ jobs:
           -skipMacroValidation
           MARKETING_VERSION=${{ steps.version.outputs.version }}
           CURRENT_PROJECT_VERSION=${{ inputs.build-number || github.run_number }}
+          OWQ_BUNDLE_ID="$BUNDLE_ID"
+          OWQ_APP_NAME="$APP_NAME"
           CODE_SIGNING_ALLOWED=NO
           CODE_SIGNING_REQUIRED=NO
           CODE_SIGN_IDENTITY=""

@@ -154,7 +154,8 @@ final class WatchModel: NSObject, ObservableObject, WCSessionDelegate {
 
     private func receive(_ context: [String: Any]) {
         if let id = context["pairID"] as? String {
-            setPairID(Pairing.parse("owq://pair?id=\(id)"))
+            // The phone already checked the link; the Watch has none of its own to check it against.
+            setPairID(Pairing.validID(id))
         }
     }
 

@@ -17,7 +17,7 @@ struct PairView: View {
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                 Text(resetNotice
                      ? "The pairing code on your PC was reset. Scan the new one."
-                     : "Open OverQueue on your PC and scan the QR code.")
+                     : "Open \(appName) on your PC and scan the QR code.")
                     .font(.body)
                     .foregroundStyle(resetNotice ? .orange : .secondary)
                     .multilineTextAlignment(.center)

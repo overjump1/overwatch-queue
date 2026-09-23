@@ -12,6 +12,15 @@ if (file("google-services.json").exists()) {
     logger.warn("android/app/google-services.json is missing; this build won't get pushes.")
 }
 
+// -Pdev=true builds OverQueue Dev: a separate app that installs beside the real one, with its own
+// pairing, answering only to the dev PC app's QR code. CI's dev builds pass it along with the dev
+// worker and the dev prerelease (see .github/workflows/android-app.yml).
+val dev = findProperty("dev") == "true"
+val appName = if (dev) "OverQueue Dev" else "OverQueue"
+// The QR code's link. Each app claims only its own, so the camera opens the right one. The real app
+// also takes owq://, the name it used to go by, which a PC that hasn't been updated still writes.
+val pairSchemes = if (dev) listOf("overqueue-dev") else listOf("overqueue", "owq")
+
 android {
     namespace = "com.tomerady.overqueue"
     compileSdk = 35
@@ -21,6 +30,7 @@ android {
         // an APK carrying a different one installs beside the old app instead of over it -- so it
         // keeps the name the app shipped with. Nothing shows it to anyone.
         applicationId = "com.tomerady.overwatchqueue"
+        if (dev) applicationIdSuffix = ".dev"
         minSdk = 26
         targetSdk = 35
         // CI passes these from the tag and run number (see .github/workflows/android-app.yml).
@@ -28,6 +38,11 @@ android {
         versionName = (findProperty("versionName") as String?) ?: "0.0.0-dev"
         buildConfigField("String", "WORKER_URL", "\"https://overwatch-queue-push-relay.tomerady.workers.dev\"")
         buildConfigField("String", "RELEASE_API", "\"https://api.github.com/repos/overjump1/overwatch-queue/releases/latest\"")
+        buildConfigField("String", "APP_NAME", "\"$appName\"")
+        buildConfigField("String", "PAIR_SCHEMES", "\"${pairSchemes.joinToString(",")}\"")
+        manifestPlaceholders["appName"] = appName
+        manifestPlaceholders["pairScheme"] = pairSchemes.first()
+        manifestPlaceholders["legacyPairScheme"] = pairSchemes.last()
     }
 
     buildTypes {

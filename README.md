@@ -46,11 +46,21 @@ Builds that aren't from a release never check: they're on a `0.x` version (`0.0.
 - **Worker**: every push to `dev` that touches `worker/` deploys `overwatch-queue-push-relay-dev.tomerady.workers.dev`, `wrangler.toml`'s `[env.dev]`. It has its own Durable Objects, so nothing done there touches a real pairing. By hand: `npx wrangler deploy --env dev`.
 - **Apps**: every push to `dev` that changes an app rebuilds it into a single prerelease, [`dev-latest`](https://github.com/overjump1/overwatch-queue/releases/tag/dev-latest), replaced each time. Those builds are versioned `2.0.<run>-dev`, talk to the dev worker, and update only from `dev-latest`. GitHub never counts a prerelease as the latest release, which is what the real apps ask for, so they never see a dev build.
 
-Worth knowing before installing one:
+The dev builds are **OverQueue Dev**, separate apps that install beside the real ones rather than over them:
 
-- **A dev build replaces the real app** rather than installing beside it. It has the same app ID, which is what lets it use the same Firebase setup. To go back, install a real build over it. On Android that only works if the real build is the newer of the two — both branches share one build counter, so a later build always installs over an earlier one — and otherwise you uninstall first and scan the QR code again.
-- **Pair everything on the same side.** A dev PC app shows the same QR code as a real one, since the pairing lives in `%APPDATA%\OverQueue` either way, but a real phone that scans it pairs on the real worker, where the dev PC reports nothing.
-- **TestFlight isn't covered.** Xcode Cloud's workflows are set up in App Store Connect rather than here, and its builds talk to the real worker. Try iPhone changes with the sideloaded IPA from `dev-latest`.
+| | Real | Dev |
+|---|---|---|
+| iPhone (Watch, widgets under it) | `com.tomerady.OverwatchQueue` | `com.tomerady.OverwatchQueue.dev` |
+| Android | `com.tomerady.overwatchqueue` | `com.tomerady.overwatchqueue.dev` |
+| Windows | `%APPDATA%\OverQueue`, installs to `OverQueue` | `%APPDATA%\OverQueue Dev`, installs to `OverQueue Dev` |
+| QR code | `overqueue://pair?id=…` | `overqueue-dev://pair?id=…` |
+
+Each PC app has its own pairing and its own QR link, and each phone app answers only to its own link, so a dev phone can only pair with the dev PC app and the other way round. Running the PC app (or `pc/test.py`) from source is OverQueue Dev too; `pc/channel.py` decides. `OVERQUEUE_WORKER_URL` still points either at another worker.
+
+Setting up the dev phone apps, once:
+
+- **Firebase**: in the same Firebase project, add an Android app `com.tomerady.overwatchqueue.dev`, and iOS apps `com.tomerady.OverwatchQueue.dev` and `com.tomerady.OverwatchQueue.dev.watchkitapp`, each iOS app with the same APNs key as the real ones. Download `google-services.json` again (it now holds both Android apps) and replace the `GOOGLE_SERVICES_JSON` secret with it. Add the two new `GoogleService-Info.plist`s as the secrets `DEV_GOOGLE_SERVICE_INFO_PLIST` and `DEV_WATCH_GOOGLE_SERVICE_INFO_PLIST`. Until then, dev builds compile with placeholders and get no pushes.
+- **TestFlight isn't covered.** Xcode Cloud builds the real app only; OverQueue Dev on an iPhone is the sideloaded IPA from `dev-latest`.
 - Both workers draw on the same Cloudflare account's limits.
 
 ## Windows app
@@ -64,11 +74,13 @@ pip install -r pc/requirements.txt
 python pc/app.py
 ```
 
+From source it runs as OverQueue Dev: its own pairing, the dev worker, and a QR code only a dev phone app answers to (see [Dev environment](#dev-environment)).
+
 On startup it puts Battle.net into developer mode: Battle.net only answers about your presence if it was started with `--remote-debugging-port`, and it rewrites its own auto-start entry and Start Menu shortcut every time it runs, so no persistent setting can arrange for that. If Battle.net isn't running, the app starts it with the flag; if it's running without it, the app closes it and starts it again with it. That happens with Overwatch open too — restarting Battle.net leaves a running game alone, and the app kills Battle.net by name rather than by process tree, so the game is never in the tree that goes. **Restart Battle.net** does the same thing on demand, for a Battle.net you restarted yourself since.
 
 `--presence-source auto` uses a debug port if Battle.net already has one open, but never starts or restarts Battle.net. `--battlenet-port` changes the port (default 9222).
 
-Scan the QR code with the iPhone or Android app. Once a phone is paired the code is hidden; **Show QR code** brings it back so you can pair another phone (it hides again once that phone pairs). **Reset QR code** makes a new code; the old one stops working right away and every paired phone has to scan again. Logs are in `%APPDATA%\OverQueue\overqueue.log`.
+Scan the QR code with the iPhone or Android app. Once a phone is paired the code is hidden; **Show QR code** brings it back so you can pair another phone (it hides again once that phone pairs). **Reset QR code** makes a new code; the old one stops working right away and every paired phone has to scan again. Logs are in `%APPDATA%\OverQueue\overqueue.log` (`OverQueue Dev` for the dev app).
 
 If Battle.net runs as administrator, the app has to run as administrator as well, or it can't restart it.
 
