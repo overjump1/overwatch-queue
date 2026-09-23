@@ -12,6 +12,12 @@ on:
       version:
         type: string
         required: true
+      # Builds the real OverQueue, for main's release. Everything else -- pull requests, the dev
+      # branch, a manual run -- is OverQueue Dev (see pc/channel.py).
+      real:
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch: {}
 
 permissions:
@@ -53,8 +59,18 @@ jobs:
         shell: bash
         run: sed -i 's/^VERSION = .*/VERSION = "${{ steps.version.outputs.version }}"/' pc/version.py
 
+      # The source is OverQueue Dev: its own pairing, the dev worker and the dev prerelease
+      # (pc/channel.py). Checked afterwards, because a sed that matches nothing succeeds anyway and
+      # would ship main's release as the dev app without a word.
+      - name: Make it the real OverQueue
+        if: inputs.real
+        shell: bash
+        run: |
+          sed -i 's/^DEV = .*/DEV = False/' pc/version.py
+          grep -qx 'DEV = False' pc/version.py || { echo "::error::DEV didn't land in pc/version.py"; exit 1; }
+
       - name: Build app
-        run: pyinstaller --noconfirm pc/owqueue.spec
+        run: pyinstaller --noconfirm pc/overqueue.spec
 
       - name: Build installer
         run: |
@@ -63,11 +79,13 @@ jobs:
             if (-not (Test-Path "$inno\ISCC.exe")) { choco install innosetup -y --no-progress }
             $env:Path += ";$inno"
           }
-          iscc /DAppVersion=${{ steps.version.outputs.version }} pc\installer.iss
+          $defines = @("/DAppVersion=${{ steps.version.outputs.version }}")
+          if ("${{ inputs.real }}" -eq "true") { $defines += "/DReal" }
+          iscc @defines pc\installer.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       - uses: actions/upload-artifact@v4
         with:
-          name: OWQueue-Setup-${{ steps.version.outputs.version }}
-          path: dist/OWQueue-Setup-*.exe
+          name: OverQueue-Setup-${{ steps.version.outputs.version }}
+          path: dist/OverQueue-Setup-*.exe
           if-no-files-found: error

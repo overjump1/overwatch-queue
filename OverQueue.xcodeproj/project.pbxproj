@@ -1,0 +1,700 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		063BC5686B2D14761D70E17A /* Worker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B434A9892332FC8CB6A5E924 /* Worker.swift */; };
+		080199AF90E9386EB16C8EB8 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 0E3A8E7D185E75AA47933EB6 /* FirebaseMessaging */; };
+		1F63141B107B6A7051E0A171 /* QueueWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3CA5107F6C77EE9B745CB3AD /* QueueWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		221E3D8BA534A385810FBF1C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3DE549A2751A23DEFD41FFC1 /* Assets.xcassets */; };
+		254062C1BD7F94DD3C0125D6 /* QueueViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53D8452B54B85C5F6773307C /* QueueViews.swift */; };
+		258F85EB834A964F610C384B /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 90D4D72EA2A04CB63C04114F /* FirebaseMessaging */; };
+		262F2EDCEA7A02731670A131 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68FE4F8DDAE02A0D2CEA52D7 /* AppModel.swift */; };
+		3017C331903E7C5C771C1789 /* QueueLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E72CEF42640090BE81BA831 /* QueueLiveActivity.swift */; };
+		31C7790AF27C010AA8B43336 /* Worker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B434A9892332FC8CB6A5E924 /* Worker.swift */; };
+		0A11PRIVACYIOSBLD000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0A11PRIVACYIOSREF000001 /* PrivacyInfo.xcprivacy */; };
+		0A11PRIVACYWCHBLD000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0A11PRIVACYWCHREF000001 /* PrivacyInfo.xcprivacy */; };
+		36A5B759DD525C59FAA9B507 /* match_found.caf in Resources */ = {isa = PBXBuildFile; fileRef = 4A67731CE8636753B80EDA5D /* match_found.caf */; };
+		37A033C95EB934B275027C1C /* WatchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE3E6E948B4A84825D4356B9 /* WatchView.swift */; };
+		3CEC0130B0F2CCE05DF31901 /* match_found.caf in Resources */ = {isa = PBXBuildFile; fileRef = 4A67731CE8636753B80EDA5D /* match_found.caf */; };
+		43388CFC7DB4C0E8A8F9530C /* QueueViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53D8452B54B85C5F6773307C /* QueueViews.swift */; };
+		4D0A20F51FF4E0975870E80D /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 13854591A8BBE967A5474E6F /* GoogleService-Info.plist */; };
+		742B6A6072AE5ADB4D3A0DAF /* OverQueue Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 5CF4172B47D45767F0DC5792 /* OverQueue Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		788583F9959C8DF5C7693C4D /* Updates.swift in Sources */ = {isa = PBXBuildFile; fileRef = B143E24BDDF20D1662331A2F /* Updates.swift */; };
+		909C40CD27E5CB513DDA1E0F /* QueueViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53D8452B54B85C5F6773307C /* QueueViews.swift */; };
+		B668E038F94433D0BD9F3612 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3B9910EFF63BA8C9C0FBAB9 /* ContentView.swift */; };
+		BD5EFEF644643719B8796693 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45118B133C188480BDE7CDCF /* App.swift */; };
+		CF98E6A7AA6D3F08F21027C7 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = A3756F43E5C290460B2422B1 /* GoogleService-Info.plist */; };
+		D2D3D6E75975615459548234 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 8B0DBC86D46BB9FA775DED79 /* Assets.xcassets */; };
+		E005C36336FCAC82F45C6903 /* Queue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D377DEDFE44A9D7C8884CED /* Queue.swift */; };
+		EB4EA9AAF7D037273AC96778 /* Queue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D377DEDFE44A9D7C8884CED /* Queue.swift */; };
+		EBDD98DF31FAE1CB89C5BE0F /* PairView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65D9297E497CB77FD3E1C383 /* PairView.swift */; };
+		F3132852A8D8C9A2A25B4469 /* WatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F34A0DC3CBADF87BDE26B18 /* WatchApp.swift */; };
+		F6C28EBD4E1B9BFC374311BF /* Worker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B434A9892332FC8CB6A5E924 /* Worker.swift */; };
+		F8F4C9CBECA68658DA885AA2 /* Queue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D377DEDFE44A9D7C8884CED /* Queue.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4ACFEE9CBDEC188B664BF5E9 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6BC969E03ACA7214828C7656 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A0B9DACEE802DDFA4CC9757B;
+			remoteInfo = QueueWidgets;
+		};
+		BB649A169AAD7E79DACC3377 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6BC969E03ACA7214828C7656 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8121C34F9F5BE16D187AF345;
+			remoteInfo = "OverQueue Watch App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		09CC51BAD48334D2715A8AB3 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				742B6A6072AE5ADB4D3A0DAF /* OverQueue Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		850E6A9926DFBEEFB84C58C2 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				1F63141B107B6A7051E0A171 /* QueueWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		01324174F0D29273802D32AC /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		0519382B477F3EE920FB409B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		13854591A8BBE967A5474E6F /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		2F34A0DC3CBADF87BDE26B18 /* WatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchApp.swift; sourceTree = "<group>"; };
+		3654B66725FC45AD40E6DF76 /* Watch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Watch.entitlements; sourceTree = "<group>"; };
+		3CA5107F6C77EE9B745CB3AD /* QueueWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = QueueWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		3DE549A2751A23DEFD41FFC1 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		3F41C4D1F5D0DAAB36741257 /* OverQueue.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OverQueue.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		45118B133C188480BDE7CDCF /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
+		0A11PRIVACYIOSREF000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		0A11PRIVACYWCHREF000001 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		4A67731CE8636753B80EDA5D /* match_found.caf */ = {isa = PBXFileReference; path = match_found.caf; sourceTree = "<group>"; };
+		4D377DEDFE44A9D7C8884CED /* Queue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Queue.swift; sourceTree = "<group>"; };
+		53D8452B54B85C5F6773307C /* QueueViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueViews.swift; sourceTree = "<group>"; };
+		5CF4172B47D45767F0DC5792 /* OverQueue Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "OverQueue Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		65D9297E497CB77FD3E1C383 /* PairView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairView.swift; sourceTree = "<group>"; };
+		68FE4F8DDAE02A0D2CEA52D7 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		8B0DBC86D46BB9FA775DED79 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		9E72CEF42640090BE81BA831 /* QueueLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueLiveActivity.swift; sourceTree = "<group>"; };
+		A3756F43E5C290460B2422B1 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
+		B143E24BDDF20D1662331A2F /* Updates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updates.swift; sourceTree = "<group>"; };
+		B434A9892332FC8CB6A5E924 /* Worker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Worker.swift; sourceTree = "<group>"; };
+		CD7B8A949F39D71DD933025E /* OverQueue.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = OverQueue.entitlements; sourceTree = "<group>"; };
+		DEA9355FDD5EBB241C46D253 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		EE3E6E948B4A84825D4356B9 /* WatchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchView.swift; sourceTree = "<group>"; };
+		F3B9910EFF63BA8C9C0FBAB9 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		7BA0C4F235BF5F6B93547647 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				080199AF90E9386EB16C8EB8 /* FirebaseMessaging in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FE2938ECBAD8D67280267FC3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				258F85EB834A964F610C384B /* FirebaseMessaging in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		36AEA90B91FDB9F50701FE9B /* Watch */ = {
+			isa = PBXGroup;
+			children = (
+				3DE549A2751A23DEFD41FFC1 /* Assets.xcassets */,
+				A3756F43E5C290460B2422B1 /* GoogleService-Info.plist */,
+				0519382B477F3EE920FB409B /* Info.plist */,
+				0A11PRIVACYWCHREF000001 /* PrivacyInfo.xcprivacy */,
+				3654B66725FC45AD40E6DF76 /* Watch.entitlements */,
+				2F34A0DC3CBADF87BDE26B18 /* WatchApp.swift */,
+				EE3E6E948B4A84825D4356B9 /* WatchView.swift */,
+			);
+			path = Watch;
+			sourceTree = "<group>";
+		};
+		5465734761327DB6D8DD20A4 = {
+			isa = PBXGroup;
+			children = (
+				81215EC941EB9F79DFEC5929 /* ios */,
+				E8A2BB71CC6FF99AAA6EC575 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		62FFD0A57223BA3C20C1725D /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				4A67731CE8636753B80EDA5D /* match_found.caf */,
+				4D377DEDFE44A9D7C8884CED /* Queue.swift */,
+				53D8452B54B85C5F6773307C /* QueueViews.swift */,
+				B434A9892332FC8CB6A5E924 /* Worker.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		66A765BA9D00B6BEAA94E612 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				45118B133C188480BDE7CDCF /* App.swift */,
+				68FE4F8DDAE02A0D2CEA52D7 /* AppModel.swift */,
+				8B0DBC86D46BB9FA775DED79 /* Assets.xcassets */,
+				F3B9910EFF63BA8C9C0FBAB9 /* ContentView.swift */,
+				13854591A8BBE967A5474E6F /* GoogleService-Info.plist */,
+				01324174F0D29273802D32AC /* Info.plist */,
+				CD7B8A949F39D71DD933025E /* OverQueue.entitlements */,
+				65D9297E497CB77FD3E1C383 /* PairView.swift */,
+				0A11PRIVACYIOSREF000001 /* PrivacyInfo.xcprivacy */,
+				B143E24BDDF20D1662331A2F /* Updates.swift */,
+			);
+			path = iOS;
+			sourceTree = "<group>";
+		};
+		81215EC941EB9F79DFEC5929 /* ios */ = {
+			isa = PBXGroup;
+			children = (
+				66A765BA9D00B6BEAA94E612 /* iOS */,
+				62FFD0A57223BA3C20C1725D /* Shared */,
+				36AEA90B91FDB9F50701FE9B /* Watch */,
+				FEA926E64D1A781CBFFB71A7 /* Widgets */,
+			);
+			path = ios;
+			sourceTree = "<group>";
+		};
+		E8A2BB71CC6FF99AAA6EC575 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				5CF4172B47D45767F0DC5792 /* OverQueue Watch App.app */,
+				3F41C4D1F5D0DAAB36741257 /* OverQueue.app */,
+				3CA5107F6C77EE9B745CB3AD /* QueueWidgets.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		FEA926E64D1A781CBFFB71A7 /* Widgets */ = {
+			isa = PBXGroup;
+			children = (
+				DEA9355FDD5EBB241C46D253 /* Info.plist */,
+				9E72CEF42640090BE81BA831 /* QueueLiveActivity.swift */,
+			);
+			path = Widgets;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		8121C34F9F5BE16D187AF345 /* OverQueue Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0CA70606BB4373AEBED87F69 /* Build configuration list for PBXNativeTarget "OverQueue Watch App" */;
+			buildPhases = (
+				51BB5BB57BA72D4A85AB7B45 /* Sources */,
+				84934D75476136E27529AE86 /* Resources */,
+				7BA0C4F235BF5F6B93547647 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "OverQueue Watch App";
+			packageProductDependencies = (
+				0E3A8E7D185E75AA47933EB6 /* FirebaseMessaging */,
+			);
+			productName = "OverQueue Watch App";
+			productReference = 5CF4172B47D45767F0DC5792 /* OverQueue Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
+		94351ACD2B2826DD5FA05838 /* OverQueue */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 257462A52E0623558FC953D4 /* Build configuration list for PBXNativeTarget "OverQueue" */;
+			buildPhases = (
+				ED4C2A01F888820365FE8128 /* Sources */,
+				24D90D23E6F5416EC11DE286 /* Resources */,
+				FE2938ECBAD8D67280267FC3 /* Frameworks */,
+				850E6A9926DFBEEFB84C58C2 /* Embed Foundation Extensions */,
+				09CC51BAD48334D2715A8AB3 /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				1400C65DCC586ECED1C0D9D6 /* PBXTargetDependency */,
+				258CAC68F001D29EDCAC8363 /* PBXTargetDependency */,
+			);
+			name = OverQueue;
+			packageProductDependencies = (
+				90D4D72EA2A04CB63C04114F /* FirebaseMessaging */,
+			);
+			productName = OverQueue;
+			productReference = 3F41C4D1F5D0DAAB36741257 /* OverQueue.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A0B9DACEE802DDFA4CC9757B /* QueueWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9100F4D8A9E3A82CE80FC3F2 /* Build configuration list for PBXNativeTarget "QueueWidgets" */;
+			buildPhases = (
+				CBDF617868A3B77C6D89D563 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = QueueWidgets;
+			packageProductDependencies = (
+			);
+			productName = QueueWidgets;
+			productReference = 3CA5107F6C77EE9B745CB3AD /* QueueWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		6BC969E03ACA7214828C7656 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					8121C34F9F5BE16D187AF345 = {
+						DevelopmentTeam = 56N4LCCUN2;
+						ProvisioningStyle = Automatic;
+					};
+					94351ACD2B2826DD5FA05838 = {
+						DevelopmentTeam = 56N4LCCUN2;
+						ProvisioningStyle = Automatic;
+					};
+					A0B9DACEE802DDFA4CC9757B = {
+						DevelopmentTeam = 56N4LCCUN2;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 84AB3C546917171165BC01DC /* Build configuration list for PBXProject "OverQueue" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 5465734761327DB6D8DD20A4;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A35E6D775BFEA28E346196E1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = E8A2BB71CC6FF99AAA6EC575 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				94351ACD2B2826DD5FA05838 /* OverQueue */,
+				A0B9DACEE802DDFA4CC9757B /* QueueWidgets */,
+				8121C34F9F5BE16D187AF345 /* OverQueue Watch App */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		24D90D23E6F5416EC11DE286 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D2D3D6E75975615459548234 /* Assets.xcassets in Resources */,
+				4D0A20F51FF4E0975870E80D /* GoogleService-Info.plist in Resources */,
+				0A11PRIVACYIOSBLD000001 /* PrivacyInfo.xcprivacy in Resources */,
+				3CEC0130B0F2CCE05DF31901 /* match_found.caf in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		84934D75476136E27529AE86 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				221E3D8BA534A385810FBF1C /* Assets.xcassets in Resources */,
+				CF98E6A7AA6D3F08F21027C7 /* GoogleService-Info.plist in Resources */,
+				0A11PRIVACYWCHBLD000001 /* PrivacyInfo.xcprivacy in Resources */,
+				36A5B759DD525C59FAA9B507 /* match_found.caf in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		51BB5BB57BA72D4A85AB7B45 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F8F4C9CBECA68658DA885AA2 /* Queue.swift in Sources */,
+				909C40CD27E5CB513DDA1E0F /* QueueViews.swift in Sources */,
+				F3132852A8D8C9A2A25B4469 /* WatchApp.swift in Sources */,
+				37A033C95EB934B275027C1C /* WatchView.swift in Sources */,
+				31C7790AF27C010AA8B43336 /* Worker.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CBDF617868A3B77C6D89D563 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EB4EA9AAF7D037273AC96778 /* Queue.swift in Sources */,
+				3017C331903E7C5C771C1789 /* QueueLiveActivity.swift in Sources */,
+				43388CFC7DB4C0E8A8F9530C /* QueueViews.swift in Sources */,
+				F6C28EBD4E1B9BFC374311BF /* Worker.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ED4C2A01F888820365FE8128 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BD5EFEF644643719B8796693 /* App.swift in Sources */,
+				262F2EDCEA7A02731670A131 /* AppModel.swift in Sources */,
+				B668E038F94433D0BD9F3612 /* ContentView.swift in Sources */,
+				EBDD98DF31FAE1CB89C5BE0F /* PairView.swift in Sources */,
+				E005C36336FCAC82F45C6903 /* Queue.swift in Sources */,
+				254062C1BD7F94DD3C0125D6 /* QueueViews.swift in Sources */,
+				788583F9959C8DF5C7693C4D /* Updates.swift in Sources */,
+				063BC5686B2D14761D70E17A /* Worker.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		1400C65DCC586ECED1C0D9D6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A0B9DACEE802DDFA4CC9757B /* QueueWidgets */;
+			targetProxy = 4ACFEE9CBDEC188B664BF5E9 /* PBXContainerItemProxy */;
+		};
+		258CAC68F001D29EDCAC8363 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8121C34F9F5BE16D187AF345 /* OverQueue Watch App */;
+			targetProxy = BB649A169AAD7E79DACC3377 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		064EA7F1707550554A4E3ECF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(OWQ_APP_ICON)";
+				CODE_SIGN_ENTITLEMENTS = ios/Watch/Watch.entitlements;
+				INFOPLIST_FILE = ios/Watch/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID).watchkitapp";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+			};
+			name = Debug;
+		};
+		1E880DAB154BB0FCF1BBE304 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = ios/Widgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID).QueueWidgets";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		51FE547DE1D8BA354ECA6ADA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 56N4LCCUN2;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 0.0.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				OWQ_APP_ICON = "AppIcon-Dev";
+				OWQ_APP_NAME = "OverQueue Dev";
+				OWQ_BUNDLE_ID = com.tomerady.OverwatchQueue.dev;
+				OWQ_LEGACY_PAIR_SCHEME = "overqueue-dev";
+				OWQ_PAIR_SCHEME = "overqueue-dev";
+				OWQ_RELEASE_API = "https://api.github.com/repos/overjump1/overwatch-queue/releases/tags/dev-latest";
+				OWQ_WORKER_URL = "https://overwatch-queue-push-relay-dev.tomerady.workers.dev";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug;
+		};
+		669AF7C27881BAEE7E3F2932 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(OWQ_APP_ICON)";
+				CODE_SIGN_ENTITLEMENTS = ios/iOS/OverQueue.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = ios/iOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID)";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		70DE290A6E0917853DC8BDBD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = ios/Widgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID).QueueWidgets";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		7E669F9C1943C79B5CC8A229 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(OWQ_APP_ICON)";
+				CODE_SIGN_ENTITLEMENTS = ios/iOS/OverQueue.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = ios/iOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID)";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		D9FFFA8AF186A4A35C6756BE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 56N4LCCUN2;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 0.0.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				OWQ_APP_ICON = "AppIcon-Dev";
+				OWQ_APP_NAME = "OverQueue Dev";
+				OWQ_BUNDLE_ID = com.tomerady.OverwatchQueue.dev;
+				OWQ_LEGACY_PAIR_SCHEME = "overqueue-dev";
+				OWQ_PAIR_SCHEME = "overqueue-dev";
+				OWQ_RELEASE_API = "https://api.github.com/repos/overjump1/overwatch-queue/releases/tags/dev-latest";
+				OWQ_WORKER_URL = "https://overwatch-queue-push-relay-dev.tomerady.workers.dev";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Release;
+		};
+		F466E0727F53A019CEE4E63B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(OWQ_APP_ICON)";
+				CODE_SIGN_ENTITLEMENTS = ios/Watch/Watch.entitlements;
+				INFOPLIST_FILE = ios/Watch/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID).watchkitapp";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0CA70606BB4373AEBED87F69 /* Build configuration list for PBXNativeTarget "OverQueue Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				064EA7F1707550554A4E3ECF /* Debug */,
+				F466E0727F53A019CEE4E63B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		257462A52E0623558FC953D4 /* Build configuration list for PBXNativeTarget "OverQueue" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E669F9C1943C79B5CC8A229 /* Debug */,
+				669AF7C27881BAEE7E3F2932 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		84AB3C546917171165BC01DC /* Build configuration list for PBXProject "OverQueue" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				51FE547DE1D8BA354ECA6ADA /* Debug */,
+				D9FFFA8AF186A4A35C6756BE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9100F4D8A9E3A82CE80FC3F2 /* Build configuration list for PBXNativeTarget "QueueWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				70DE290A6E0917853DC8BDBD /* Debug */,
+				1E880DAB154BB0FCF1BBE304 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A35E6D775BFEA28E346196E1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0E3A8E7D185E75AA47933EB6 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A35E6D775BFEA28E346196E1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
+		90D4D72EA2A04CB63C04114F /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A35E6D775BFEA28E346196E1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 6BC969E03ACA7214828C7656 /* Project object */;
+}

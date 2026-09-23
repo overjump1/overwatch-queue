@@ -3,6 +3,10 @@
 set -e
 cd "$CI_PRIMARY_REPOSITORY_PATH"
 
+# TestFlight is the real app, whichever branch it was built from. The project on its own is
+# OverQueue Dev (project.yml).
+sh ios/make-real.sh
+
 write_config() {
   if [ -z "$1" ]; then
     echo "error: add the secret $2 (base64 of $3) to the Xcode Cloud workflow"
@@ -23,16 +27,11 @@ version="2.0.$CI_BUILD_NUMBER"
 sed -i '' \
   -e "s/MARKETING_VERSION = [^;]*;/MARKETING_VERSION = $version;/g" \
   -e "s/CURRENT_PROJECT_VERSION = [^;]*;/CURRENT_PROJECT_VERSION = $CI_BUILD_NUMBER;/g" \
-  OverwatchQueue.xcodeproj/project.pbxproj
-grep -q "MARKETING_VERSION = $version;" OverwatchQueue.xcodeproj/project.pbxproj \
+  OverQueue.xcodeproj/project.pbxproj
+grep -q "MARKETING_VERSION = $version;" OverQueue.xcodeproj/project.pbxproj \
   || { echo "error: couldn't stamp the version into the Xcode project"; exit 1; }
 echo "Building $version ($CI_BUILD_NUMBER)"
 
-# TestFlight hands out its own updates, so these builds don't check GitHub. PlistBuddy writes a
-# file of its own when the path is wrong, hence the checks either side of the write.
-plist=ios/iOS/Info.plist
-[ -f "$plist" ] || { echo "error: $plist isn't there; has the app's Info.plist moved?"; exit 1; }
-/usr/libexec/PlistBuddy -c "Delete :OWQTestFlightBuild" "$plist" 2>/dev/null || true
-/usr/libexec/PlistBuddy -c "Add :OWQTestFlightBuild bool true" "$plist"
-marked=$(/usr/libexec/PlistBuddy -c "Print :OWQTestFlightBuild" "$plist" 2>/dev/null || true)
-[ "$marked" = true ] || { echo "error: couldn't mark the build as TestFlight's"; exit 1; }
+# Xcode Cloud builds go to TestFlight and on to the App Store, and neither of those wants to hear
+# about a GitHub release, so this script marks nothing: the update check is off unless
+# .github/workflows/ios-app.yml turns it on (ios/iOS/Updates.swift).

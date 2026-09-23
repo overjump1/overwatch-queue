@@ -5,7 +5,7 @@ enum QueueState: String, Codable, Hashable {
     case idle, queueing, found, playing
 }
 
-enum GameMode: String, Codable, Hashable {
+enum GameMode: String, Codable, Hashable, CaseIterable {
     case quickPlay, competitive, arcade, stadium, mysteryHeroes, custom
 
     var name: String {
@@ -42,6 +42,11 @@ enum GameMode: String, Codable, Hashable {
     }
 }
 
+/// A match counts as under way a minute after it's found. The worker works to the same minute
+/// (`PLAYING_AFTER_SECONDS` in worker/src/logic.ts), so a queue the phone times on its own reads
+/// exactly like one a PC is driving.
+let playingAfterFoundSeconds: TimeInterval = 60
+
 /// The queue as the worker reports it. Also the Live Activity's content state.
 struct QueueStatus: Codable, Hashable {
     var state: QueueState
@@ -50,6 +55,11 @@ struct QueueStatus: Codable, Hashable {
     var foundAt: Double?
 
     static let idle = QueueStatus(state: .idle)
+
+    /// How long an activity goes without hearing from the worker before it says so rather than
+    /// keep counting. Matches STALE_AFTER_SECONDS in the worker: long enough that no real queue
+    /// or match reaches it, since nothing is sent to hold it off while one is quietly running.
+    static let staleAfter: TimeInterval = 3 * 3600
 
     init(state: QueueState, mode: GameMode? = nil, startedAt: Double? = nil, foundAt: Double? = nil) {
         self.state = state

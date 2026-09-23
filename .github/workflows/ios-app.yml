@@ -8,7 +8,7 @@ on:
     paths:
       - "ios/**"
       - "project.yml"
-      - "OverwatchQueue.xcodeproj/**"
+      - "OverQueue.xcodeproj/**"
       - ".github/workflows/ios-app.yml"
   # The Release workflow calls this when the app changed since the last release.
   workflow_call:
@@ -20,6 +20,13 @@ on:
         type: number
         required: false
         default: 1
+      # Builds the real OverQueue, for main's release. Everything else -- pull requests, the dev
+      # branch, a manual run -- is OverQueue Dev (project.yml). TestFlight is real too, but that's
+      # Xcode Cloud's (ci_scripts/ci_post_clone.sh).
+      real:
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch: {}
 
 permissions:
@@ -28,6 +35,9 @@ permissions:
 jobs:
   build:
     runs-on: macos-15
+    env:
+      # Who the app is; the watch app and the widgets hang off it (project.yml).
+      BUNDLE_ID: com.tomerady.OverwatchQueue${{ !inputs.real && '.dev' || '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,10 +45,16 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      # Each Firebase iOS app is one bundle ID, so OverQueue Dev has configs of its own.
       - name: Firebase config
         env:
           GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
           WATCH_GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.WATCH_GOOGLE_SERVICE_INFO_PLIST }}
+          DEV_GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.DEV_GOOGLE_SERVICE_INFO_PLIST }}
+          DEV_WATCH_GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.DEV_WATCH_GOOGLE_SERVICE_INFO_PLIST }}
+          # Picked here rather than with `real && a || b`, which falls through to b whenever a is
+          # empty -- a real build missing its secret would quietly get the dev app's config.
+          SECRET_PREFIX: ${{ !inputs.real && 'DEV_' || '' }}
         run: |
           write_config() {
             if [ -n "$1" ]; then
@@ -53,16 +69,16 @@ jobs:
             <key>API_KEY</key><string>placeholder</string>
             <key>GCM_SENDER_ID</key><string>000000000000</string>
             <key>BUNDLE_ID</key><string>$4</string>
-            <key>PROJECT_ID</key><string>owqueue-placeholder</string>
+            <key>PROJECT_ID</key><string>overqueue-placeholder</string>
             <key>GOOGLE_APP_ID</key><string>1:000000000000:ios:0000000000000000</string>
           </dict></plist>
           EOF
             fi
           }
-          write_config "$GOOGLE_SERVICE_INFO_PLIST" ios/iOS/GoogleService-Info.plist \
-            GOOGLE_SERVICE_INFO_PLIST com.tomerady.OverwatchQueue
-          write_config "$WATCH_GOOGLE_SERVICE_INFO_PLIST" ios/Watch/GoogleService-Info.plist \
-            WATCH_GOOGLE_SERVICE_INFO_PLIST com.tomerady.OverwatchQueue.watchkitapp
+          phone="${SECRET_PREFIX}GOOGLE_SERVICE_INFO_PLIST"
+          watch="${SECRET_PREFIX}WATCH_GOOGLE_SERVICE_INFO_PLIST"
+          write_config "$(printenv "$phone" || true)" ios/iOS/GoogleService-Info.plist "$phone" "$BUNDLE_ID"
+          write_config "$(printenv "$watch" || true)" ios/Watch/GoogleService-Info.plist "$watch" "$BUNDLE_ID.watchkitapp"
 
       - name: Version
         id: version
@@ -73,11 +89,24 @@ jobs:
             echo "version=0.0.0-dev.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           fi
 
+      # Only this build's updates live on GitHub, so only this build looks there
+      # (ios/iOS/Updates.swift). TestFlight and the App Store hand out their own.
+      - name: Mark as a GitHub release build
+        run: |
+          plist=ios/iOS/Info.plist
+          /usr/libexec/PlistBuddy -c "Delete :OWQGitHubBuild" "$plist" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :OWQGitHubBuild bool true" "$plist"
+
+      # The project is OverQueue Dev on its own; main's release is the real app.
+      - name: Make it the real OverQueue
+        if: inputs.real
+        run: sh ios/make-real.sh
+
       - name: Build
         run: >
           xcodebuild build
-          -project OverwatchQueue.xcodeproj
-          -scheme OverwatchQueue
+          -project OverQueue.xcodeproj
+          -scheme OverQueue
           -configuration Release
           -destination generic/platform=iOS
           -derivedDataPath build
@@ -92,11 +121,11 @@ jobs:
       - name: Package IPA
         run: |
           mkdir Payload
-          cp -R build/Build/Products/Release-iphoneos/OverwatchQueue.app Payload/
-          zip -qry "OWQueue-${{ steps.version.outputs.version }}.ipa" Payload
+          cp -R build/Build/Products/Release-iphoneos/OverQueue.app Payload/
+          zip -qry "OverQueue-${{ steps.version.outputs.version }}.ipa" Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: OWQueue-${{ steps.version.outputs.version }}-ios
-          path: OWQueue-*.ipa
+          name: OverQueue-${{ steps.version.outputs.version }}-ios
+          path: OverQueue-*.ipa
           if-no-files-found: error

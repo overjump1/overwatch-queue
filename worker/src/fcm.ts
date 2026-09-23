@@ -117,14 +117,17 @@ export function alertMessage(token: string, title: string, body: string): object
   };
 }
 
-/** A silent push that wakes the app in the background so it re-registers its current tokens. */
-export function wakeMessage(token: string): object {
+/**
+ * A silent push that wakes the app in the background: the phone to re-register its current tokens,
+ * the Watch with `data` carrying the state. Apple only takes priority 5 for these.
+ */
+export function wakeMessage(token: string, data: object = {}): object {
   return {
     message: {
       token,
       apns: {
         headers: { "apns-priority": "5", "apns-push-type": "background" },
-        payload: { aps: { "content-available": 1 } },
+        payload: { aps: { "content-available": 1 }, ...data },
       },
     },
   };

@@ -5,7 +5,7 @@ import FirebaseCore
 import FirebaseMessaging
 
 @main
-struct OverwatchQueueApp: App {
+struct OverQueueApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = AppModel.shared
     @Environment(\.scenePhase) private var scenePhase
@@ -18,6 +18,9 @@ struct OverwatchQueueApp: App {
                 .onOpenURL { model.pair(with: $0.absoluteString) }
         }
         .onChange(of: scenePhase) { _, phase in
+            // .inactive is Control Center or a notification pulled down over the app, not leaving
+            // it; only coming back from the background is worth another sync.
+            guard phase != .inactive else { return }
             model.setActive(phase == .active)
         }
     }

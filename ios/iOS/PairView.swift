@@ -5,6 +5,8 @@ import VisionKit
 struct PairView: View {
     let resetNotice: Bool
     let onCode: (String) -> Void
+    /// Offered on the first screen, not in the sheet you reach from a queue that's already paired.
+    var onTimeItHere: (() -> Void)?
 
     @State private var cameraAllowed = AVCaptureDevice.authorizationStatus(for: .video) != .denied
 
@@ -15,7 +17,7 @@ struct PairView: View {
                     .font(.system(size: 30, weight: .bold, design: .rounded))
                 Text(resetNotice
                      ? "The pairing code on your PC was reset. Scan the new one."
-                     : "Open OW Queue on your PC and scan the QR code.")
+                     : "Open \(appName) on your PC and scan the QR code.")
                     .font(.body)
                     .foregroundStyle(resetNotice ? .orange : .secondary)
                     .multilineTextAlignment(.center)
@@ -46,7 +48,21 @@ struct PairView: View {
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
             .padding(.horizontal, 24)
 
+            if let onTimeItHere {
+                Button(action: onTimeItHere) {
+                    Label("No PC? Time a queue here", systemImage: "stopwatch")
+                }
+                .buttonStyle(.bordered)
+            }
+
             Spacer()
+
+            Text("Not affiliated with Overwatch or Blizzard Entertainment.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+                .padding(.bottom, 8)
         }
         .task {
             if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined {

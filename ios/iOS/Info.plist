@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>OW Queue</string>
+	<string>$(OWQ_APP_NAME)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -22,10 +22,11 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>com.tomerady.OverwatchQueue.pair</string>
+			<string>$(OWQ_BUNDLE_ID).pair</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>owq</string>
+				<string>$(OWQ_PAIR_SCHEME)</string>
+				<string>$(OWQ_LEGACY_PAIR_SCHEME)</string>
 			</array>
 		</dict>
 	</array>
@@ -51,6 +52,10 @@
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 	</array>
+	<key>OWQReleaseAPI</key>
+	<string>$(OWQ_RELEASE_API)</string>
+	<key>OWQWorkerURL</key>
+	<string>$(OWQ_WORKER_URL)</string>
 	<key>UIUserInterfaceStyle</key>
 	<string>Dark</string>
 </dict>

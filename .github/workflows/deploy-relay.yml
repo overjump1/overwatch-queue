@@ -5,8 +5,9 @@ on:
     paths:
       - "worker/**"
       - ".github/workflows/deploy-relay.yml"
+  # main deploys the real worker; dev deploys the dev one (wrangler.toml's [env.dev]).
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - "worker/**"
       - ".github/workflows/deploy-relay.yml"
@@ -39,11 +40,21 @@ jobs:
 
   deploy:
     needs: test
-    if: github.event_name != 'pull_request'
+    # Only main and dev have a worker of their own. A manual run from any other branch would
+    # otherwise put that branch on the real worker.
+    if: github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_name == 'dev')
     runs-on: ubuntu-latest
+    # Two deploys of the same worker never overlap, so the secret lands on the version it follows.
+    concurrency:
+      group: deploy-relay-${{ github.ref_name }}
+      cancel-in-progress: false
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Empty means the top of wrangler.toml, the real worker. Passed even then: with more than one
+      # environment defined, wrangler warns about a deploy that doesn't say which it means.
+      WORKER_ENV: ${{ github.ref_name == 'dev' && 'dev' || '' }}
+      WORKER_URL: ${{ github.ref_name == 'dev' && 'https://overwatch-queue-push-relay-dev.tomerady.workers.dev' || 'https://overwatch-queue-push-relay.tomerady.workers.dev' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -74,20 +85,19 @@ jobs:
             }'
 
       - name: Deploy
-        run: npx wrangler deploy
+        run: npx wrangler deploy --env "$WORKER_ENV"
 
       # After the deploy, so the secret lands on the Worker version that reads it.
       - name: Sync the Firebase secret
         env:
           FCM_SERVICE_ACCOUNT: ${{ secrets.FCM_SERVICE_ACCOUNT }}
-        run: printf '%s' "$FCM_SERVICE_ACCOUNT" | npx wrangler secret put FCM_SERVICE_ACCOUNT
+        run: printf '%s' "$FCM_SERVICE_ACCOUNT" | npx wrangler secret put FCM_SERVICE_ACCOUNT --env "$WORKER_ENV"
 
       - name: Smoke test
         working-directory: .
         run: |
           for attempt in 1 2 3 4 5 6; do
-            body=$(curl -s -H "User-Agent: OWQueue/2.0" \
-              https://overwatch-queue-push-relay.tomerady.workers.dev/v1/pair/not-a-pair/state)
+            body=$(curl -s -H "User-Agent: OverQueue/2.0" "$WORKER_URL/v1/pair/not-a-pair/state")
             echo "$body"
             echo "$body" | grep -q "bad_pair_id" && exit 0
             sleep 10

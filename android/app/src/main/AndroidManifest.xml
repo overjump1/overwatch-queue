@@ -12,9 +12,9 @@
         android:name=".OwqApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="OW Queue"
+        android:label="${appName}"
         android:supportsRtl="true"
-        android:theme="@style/Theme.OWQueue">
+        android:theme="@style/Theme.OverQueue">
 
         <activity
             android:name=".MainActivity"
@@ -24,12 +24,16 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Scanning the PC's QR code with the camera app opens owq://pair?id=... here. -->
+            <!-- Scanning the PC's QR code with the camera app opens overqueue://pair?id=... here.
+                 owq:// is the same link under the name the app used to go by, and a PC that
+                 hasn't been updated yet still writes that one. OverQueue Dev has only
+                 overqueue-dev://, in both (see build.gradle.kts). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="owq" android:host="pair" />
+                <data android:scheme="${pairScheme}" android:host="pair" />
+                <data android:scheme="${legacyPairScheme}" android:host="pair" />
             </intent-filter>
         </activity>
 

@@ -14,11 +14,11 @@ import time
 import urllib.error
 import urllib.request
 
+from channel import CURRENT
 from version import VERSION
 
-RELEASE_API = "https://api.github.com/repos/overjump1/overwatch-queue/releases/latest"
-ASSET = re.compile(r"^OWQueue-Setup-(.+)\.exe$", re.IGNORECASE)
-HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "OWQueue/%s" % VERSION}
+ASSET = re.compile(r"^OverQueue-Setup-(.+)\.exe$", re.IGNORECASE)
+HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "OverQueue/%s" % VERSION}
 TIMEOUT_SECONDS = 20
 CHECK_SECONDS = 6 * 3600
 RETRY_SECONDS = 30 * 60
@@ -60,7 +60,7 @@ def find_update(release):
     than this build.
 
     The version is the one in the asset's filename, not the release tag: release.yml only rebuilds
-    the apps that changed and copies the rest forward, so v2.0.3 holds OWQueue-Setup-2.0.2.exe and
+    the apps that changed and copies the rest forward, so v2.0.3 holds OverQueue-Setup-2.0.2.exe and
     going by the tag would have this build reinstalling itself forever."""
     for asset in release.get("assets") or []:
         found = ASSET.match(asset.get("name") or "")
@@ -133,7 +133,7 @@ class Updater:
         with self._lock:
             self._state = CHECKING
         try:
-            request = urllib.request.Request(RELEASE_API, headers=HEADERS)
+            request = urllib.request.Request(CURRENT.release_api, headers=HEADERS)
             with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
                 update = find_update(json.loads(response.read() or b"{}"))
         except (urllib.error.URLError, OSError, ValueError, AttributeError) as problem:
@@ -173,7 +173,7 @@ class Updater:
 
     def _download(self, url, size, version, stop):
         """The installer on disk, or None if `stop` was set part way through."""
-        target = os.path.join(self._dir, "OWQueue-Setup-%s.exe" % version)
+        target = os.path.join(self._dir, "OverQueue-Setup-%s.exe" % version)
         if size and os.path.exists(target) and os.path.getsize(target) == size:
             return target
         # Whatever else is in there is an older release's installer, and 50MB apiece.
