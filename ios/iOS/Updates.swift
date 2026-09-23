@@ -15,8 +15,8 @@ enum UpdateNotice: Equatable {
 /// iOS can't install an app on itself, so this only reports the version; getting the build onto the
 /// phone is still AltStore or Sideloadly with the IPA from the release page.
 enum Updates {
-    /// A dev build carries the dev prerelease's address (see .github/workflows/ios-app.yml), so it only
-    /// ever updates to another dev build. Every other build asks for the latest release.
+    /// OverQueue Dev carries the dev prerelease's address (project.yml), so it only ever updates to
+    /// another dev build. The real app asks for the latest release.
     static let releaseAPI: URL = {
         if let stamped = Bundle.main.object(forInfoDictionaryKey: "OWQReleaseAPI") as? String,
            let url = URL(string: stamped) {

@@ -15,15 +15,17 @@ object Pairing {
     }
 
     /**
+     * The links this app answers to; the app sets its own at startup (see build.gradle.kts).
      * `owq://` is the same link under the name the app used to go by: a PC that hasn't been
-     * updated yet still writes that one, and it has to keep pairing.
+     * updated yet still writes that one, and it has to keep pairing. OverQueue Dev has only
+     * `overqueue-dev://`, so it never pairs with the real PC app, or the real app with the dev one.
      */
-    private val SCHEMES = setOf("overqueue", "owq")
+    var schemes: Set<String> = setOf("overqueue", "owq")
 
     /** Accepts `overqueue://pair?id=<32 hex>` (from the QR code) and returns the pairing id. */
     fun parse(text: String): String? {
         val uri = runCatching { URI(text.trim()) }.getOrNull() ?: return null
-        if (uri.scheme !in SCHEMES || uri.host != "pair") return null
+        if (uri.scheme !in schemes || uri.host != "pair") return null
         val id = uri.rawQuery.orEmpty()
             .split("&")
             .map { it.split("=", limit = 2) }

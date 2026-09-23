@@ -12,7 +12,21 @@ class PairingTest {
 
     @Test fun parsesTheQrCode() = assertEquals(id, Pairing.parse("owq://pair?id=$id"))
 
-    @Test fun lowercasesAndTrims() = assertEquals(id, Pairing.parse("  owq://pair?id=${id.uppercase()}\n"))
+    @Test fun theRealAppIgnoresTheDevAppsCode() = assertNull(Pairing.parse("overqueue-dev://pair?id=$id"))
+
+    @Test fun theDevAppOnlyTakesItsOwnCode() {
+        val real = Pairing.schemes
+        Pairing.schemes = setOf("overqueue-dev")
+        try {
+            assertEquals(id, Pairing.parse("overqueue-dev://pair?id=$id"))
+            assertNull(Pairing.parse("overqueue://pair?id=$id"))
+            assertNull(Pairing.parse("owq://pair?id=$id"))
+        } finally {
+            Pairing.schemes = real
+        }
+    }
+
+    @Test fun lowercasesAndTrims() =assertEquals(id, Pairing.parse("  owq://pair?id=${id.uppercase()}\n"))
 
     @Test fun findsIdAmongOtherParameters() = assertEquals(id, Pairing.parse("owq://pair?v=1&id=$id"))
 

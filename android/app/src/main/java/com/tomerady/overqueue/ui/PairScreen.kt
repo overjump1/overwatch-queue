@@ -64,6 +64,7 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.tomerady.overqueue.BuildConfig
 import com.tomerady.overqueue.shared.Pairing
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -103,7 +104,7 @@ fun PairScreen(resetNotice: Boolean, onCode: (String) -> Unit, onClose: (() -> U
         Spacer(Modifier.height(8.dp))
         Text(
             if (resetNotice) "The pairing code on your PC was reset. Scan the new one."
-            else "Open OverQueue on your PC and scan the QR code.",
+            else "Open ${BuildConfig.APP_NAME} on your PC and scan the QR code.",
             fontSize = 17.sp,
             color = if (resetNotice) Orange else Secondary,
             textAlign = TextAlign.Center,

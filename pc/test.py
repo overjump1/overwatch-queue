@@ -19,18 +19,19 @@ from PyQt6.QtWidgets import (
     QPushButton, QSpinBox, QVBoxLayout, QWidget,
 )
 
-import version
+import channel
 
-# The same worker and pairing the app itself uses (see relay.py and app.py).
-WORKER_URL = os.environ.get("OVERQUEUE_WORKER_URL", version.WORKER_URL).rstrip("/")
-PAIRING_FILE = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "OverQueue", "pairing.json")
+# Which app to test, with that app's worker and pairing. Dev first: it's what running the PC app
+# from source is, and what a dev build on the phone talks to. OVERQUEUE_WORKER_URL points either
+# at another worker, the way it does for the app itself.
+APPS = [channel.DEV, channel.REAL]
 MODES = ["competitive", "quickPlay", "arcade", "stadium", "mysteryHeroes", "custom"]
 HEARTBEAT_SECONDS = 30  # the worker ends everything after 180s without a report
 
 
-def saved_pair_id():
+def saved_pair_id(app):
     try:
-        with open(PAIRING_FILE, encoding="utf-8") as handle:
+        with open(app.pairing_file, encoding="utf-8") as handle:
             return json.load(handle).get("id", "")
     except (OSError, ValueError, AttributeError):
         return ""
@@ -66,8 +67,13 @@ class Tester(QWidget):
         self.found_at = None   # monotonic time the match was found
         self.wait = 0.0        # final queue wait once found
 
-        self.pair = QLineEdit(saved_pair_id())
+        self.pair = QLineEdit()
         self.pair.setPlaceholderText("32-character pairing id")
+        self.app = QComboBox()
+        for app in APPS:
+            self.app.addItem(app.name, app)
+        self.app.setToolTip("The phone app you're testing, and the PC app it's paired with.")
+        self.app.currentIndexChanged.connect(lambda _: self._switch_app())
         self.mode = QComboBox()
         self.mode.addItems(MODES)
         self.late = QSpinBox()
@@ -88,12 +94,14 @@ class Tester(QWidget):
             buttons.addWidget(button)
 
         form = QGridLayout()
-        form.addWidget(QLabel("Pair id"), 0, 0)
-        form.addWidget(self.pair, 0, 1)
-        form.addWidget(QLabel("Mode"), 1, 0)
-        form.addWidget(self.mode, 1, 1)
-        form.addWidget(QLabel("Match found"), 2, 0)
-        form.addWidget(self.late, 2, 1)
+        form.addWidget(QLabel("App"), 0, 0)
+        form.addWidget(self.app, 0, 1)
+        form.addWidget(QLabel("Pair id"), 1, 0)
+        form.addWidget(self.pair, 1, 1)
+        form.addWidget(QLabel("Mode"), 2, 0)
+        form.addWidget(self.mode, 2, 1)
+        form.addWidget(QLabel("Match found"), 3, 0)
+        form.addWidget(self.late, 3, 1)
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Close the real OverQueue app first. Lock your phone, then press a button."))
@@ -107,9 +115,7 @@ class Tester(QWidget):
         self.timer.timeout.connect(self._beat)
         self.timer.start(HEARTBEAT_SECONDS * 1000)
         self._show_state()
-        if not self.pair.text():
-            self._append("No pairing found at %s. Paste the pair id." % PAIRING_FILE)
-        self.check()
+        self._switch_app()
 
     # Buttons
 
@@ -133,6 +139,17 @@ class Tester(QWidget):
             self._async("GET", "/v1/pair/%s/state" % pair_id, None, "status")
 
     # Plumbing
+
+    def _switch_app(self):
+        app = self.app.currentData()
+        self.pair.setText(saved_pair_id(app))
+        self._append("%s, on %s" % (app.name, self._worker_url()))
+        if not self.pair.text():
+            self._append("No pairing found at %s. Paste the pair id." % app.pairing_file)
+        self.check()
+
+    def _worker_url(self):
+        return (os.environ.get("OVERQUEUE_WORKER_URL") or self.app.currentData().worker_url).rstrip("/")
 
     def _body(self):
         now = time.monotonic()
@@ -163,8 +180,10 @@ class Tester(QWidget):
         return pair_id
 
     def _async(self, method, path, body, label):
+        url = self._worker_url() + path
+
         def work():
-            status, text = request(method, WORKER_URL + path, body)
+            status, text = request(method, url, body)
             sent = " %s" % json.dumps(body) if body else ""
             self.signals.line.emit("%s %s%s\n  -> %s %s" % (time.strftime("%H:%M:%S"), label, sent, status, text))
         threading.Thread(target=work, daemon=True).start()

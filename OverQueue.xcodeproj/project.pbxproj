@@ -403,10 +403,10 @@
 		064EA7F1707550554A4E3ECF /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(OWQ_APP_ICON)";
 				CODE_SIGN_ENTITLEMENTS = ios/Watch/Watch.entitlements;
 				INFOPLIST_FILE = ios/Watch/Info.plist;
-				PRODUCT_BUNDLE_IDENTIFIER = com.tomerady.OverwatchQueue.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID).watchkitapp";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = 4;
@@ -422,7 +422,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.tomerady.OverwatchQueue.QueueWidgets;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID).QueueWidgets";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -487,6 +487,13 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				OWQ_APP_ICON = "AppIcon-Dev";
+				OWQ_APP_NAME = "OverQueue Dev";
+				OWQ_BUNDLE_ID = com.tomerady.OverwatchQueue.dev;
+				OWQ_LEGACY_PAIR_SCHEME = "overqueue-dev";
+				OWQ_PAIR_SCHEME = "overqueue-dev";
+				OWQ_RELEASE_API = "https://api.github.com/repos/overjump1/overwatch-queue/releases/tags/dev-latest";
+				OWQ_WORKER_URL = "https://overwatch-queue-push-relay-dev.tomerady.workers.dev";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -498,7 +505,7 @@
 		669AF7C27881BAEE7E3F2932 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(OWQ_APP_ICON)";
 				CODE_SIGN_ENTITLEMENTS = ios/iOS/OverQueue.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = ios/iOS/Info.plist;
@@ -506,7 +513,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.tomerady.OverwatchQueue;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID)";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -521,7 +528,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.tomerady.OverwatchQueue.QueueWidgets;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID).QueueWidgets";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -530,7 +537,7 @@
 		7E669F9C1943C79B5CC8A229 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(OWQ_APP_ICON)";
 				CODE_SIGN_ENTITLEMENTS = ios/iOS/OverQueue.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = ios/iOS/Info.plist;
@@ -538,7 +545,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.tomerady.OverwatchQueue;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID)";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -596,6 +603,13 @@
 				MARKETING_VERSION = 0.0.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				OWQ_APP_ICON = "AppIcon-Dev";
+				OWQ_APP_NAME = "OverQueue Dev";
+				OWQ_BUNDLE_ID = com.tomerady.OverwatchQueue.dev;
+				OWQ_LEGACY_PAIR_SCHEME = "overqueue-dev";
+				OWQ_PAIR_SCHEME = "overqueue-dev";
+				OWQ_RELEASE_API = "https://api.github.com/repos/overjump1/overwatch-queue/releases/tags/dev-latest";
+				OWQ_WORKER_URL = "https://overwatch-queue-push-relay-dev.tomerady.workers.dev";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
@@ -607,10 +621,10 @@
 		F466E0727F53A019CEE4E63B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(OWQ_APP_ICON)";
 				CODE_SIGN_ENTITLEMENTS = ios/Watch/Watch.entitlements;
 				INFOPLIST_FILE = ios/Watch/Info.plist;
-				PRODUCT_BUNDLE_IDENTIFIER = com.tomerady.OverwatchQueue.watchkitapp;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID).watchkitapp";
 				SDKROOT = watchos;
 				SKIP_INSTALL = YES;
 				TARGETED_DEVICE_FAMILY = 4;

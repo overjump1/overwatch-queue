@@ -3,6 +3,10 @@
 set -e
 cd "$CI_PRIMARY_REPOSITORY_PATH"
 
+# TestFlight is the real app, whichever branch it was built from. The project on its own is
+# OverQueue Dev (project.yml).
+sh ios/make-real.sh
+
 write_config() {
   if [ -z "$1" ]; then
     echo "error: add the secret $2 (base64 of $3) to the Xcode Cloud workflow"

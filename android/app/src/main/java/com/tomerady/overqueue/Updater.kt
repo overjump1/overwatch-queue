@@ -93,7 +93,7 @@ class Updater private constructor(context: Context) {
                 Uri.parse("package:${context.packageName}"),
             ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             runCatching { context.startActivity(settings) }.onFailure {
-                _state.value = State.Failed("Allow installing apps for OverQueue in Settings")
+                _state.value = State.Failed("Allow installing apps for ${BuildConfig.APP_NAME} in Settings")
             }
             return
         }
