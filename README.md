@@ -54,6 +54,7 @@ Everything except the real releases is **OverQueue Dev**: the `dev` branch and `
 | Android | `com.tomerady.overwatchqueue` | `com.tomerady.overwatchqueue.dev` |
 | Windows | `%APPDATA%\OverQueue`, installs to `OverQueue` | `%APPDATA%\OverQueue Dev`, installs to `OverQueue Dev` |
 | QR code | `overqueue://pair?id=…` | `overqueue-dev://pair?id=…` |
+| Icon | orange | purple |
 
 Each PC app has its own pairing and its own QR link, and each phone app answers only to its own link, so a dev phone can only pair with the dev PC app and the other way round.
 

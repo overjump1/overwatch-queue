@@ -32,6 +32,11 @@ ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
 OutputBaseFilename=OverQueue-Setup-{#AppVersion}
 UninstallDisplayIcon={app}\OverQueue.exe
+#ifdef Real
+SetupIconFile=icons\overqueue.ico
+#else
+SetupIconFile=icons\overqueue-dev.ico
+#endif
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern

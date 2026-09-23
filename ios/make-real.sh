@@ -22,6 +22,7 @@ real() {
 
 real OWQ_BUNDLE_ID com.tomerady.OverwatchQueue
 real OWQ_APP_NAME OverQueue
+real OWQ_APP_ICON AppIcon
 real OWQ_PAIR_SCHEME overqueue
 real OWQ_LEGACY_PAIR_SCHEME owq
 real OWQ_WORKER_URL https://overwatch-queue-push-relay.tomerady.workers.dev

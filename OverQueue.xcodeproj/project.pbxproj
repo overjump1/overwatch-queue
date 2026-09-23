@@ -403,7 +403,7 @@
 		064EA7F1707550554A4E3ECF /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(OWQ_APP_ICON)";
 				CODE_SIGN_ENTITLEMENTS = ios/Watch/Watch.entitlements;
 				INFOPLIST_FILE = ios/Watch/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID).watchkitapp";
@@ -487,6 +487,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				OWQ_APP_ICON = "AppIcon-Dev";
 				OWQ_APP_NAME = "OverQueue Dev";
 				OWQ_BUNDLE_ID = com.tomerady.OverwatchQueue.dev;
 				OWQ_LEGACY_PAIR_SCHEME = "overqueue-dev";
@@ -504,7 +505,7 @@
 		669AF7C27881BAEE7E3F2932 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(OWQ_APP_ICON)";
 				CODE_SIGN_ENTITLEMENTS = ios/iOS/OverQueue.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = ios/iOS/Info.plist;
@@ -536,7 +537,7 @@
 		7E669F9C1943C79B5CC8A229 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(OWQ_APP_ICON)";
 				CODE_SIGN_ENTITLEMENTS = ios/iOS/OverQueue.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = ios/iOS/Info.plist;
@@ -602,6 +603,7 @@
 				MARKETING_VERSION = 0.0.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				OWQ_APP_ICON = "AppIcon-Dev";
 				OWQ_APP_NAME = "OverQueue Dev";
 				OWQ_BUNDLE_ID = com.tomerady.OverwatchQueue.dev;
 				OWQ_LEGACY_PAIR_SCHEME = "overqueue-dev";
@@ -619,7 +621,7 @@
 		F466E0727F53A019CEE4E63B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(OWQ_APP_ICON)";
 				CODE_SIGN_ENTITLEMENTS = ios/Watch/Watch.entitlements;
 				INFOPLIST_FILE = ios/Watch/Info.plist;
 				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID).watchkitapp";

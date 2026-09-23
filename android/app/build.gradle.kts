@@ -14,6 +14,8 @@ val dev = findProperty("dev") != "false"
 // the name it shipped with. Nothing shows it to anyone.
 val appId = if (dev) "com.tomerady.overwatchqueue.dev" else "com.tomerady.overwatchqueue"
 val appName = if (dev) "OverQueue Dev" else "OverQueue"
+// The launcher icon's accent: the real app's orange, or purple so the dev app stands out beside it.
+val iconAccent = if (dev) "#BF5AF2" else "#FF9F0A"
 // The QR code's link. Each app claims only its own, so the camera opens the right one. The real app
 // also takes owq://, the name it used to go by, which a PC that hasn't been updated still writes.
 val pairSchemes = if (dev) listOf("overqueue-dev") else listOf("overqueue", "owq")
@@ -47,6 +49,7 @@ android {
         buildConfigField("String", "RELEASE_API", "\"$releaseApi\"")
         buildConfigField("String", "APP_NAME", "\"$appName\"")
         buildConfigField("String", "PAIR_SCHEMES", "\"${pairSchemes.joinToString(",")}\"")
+        resValue("color", "ic_launcher_accent", iconAccent)
         manifestPlaceholders["appName"] = appName
         manifestPlaceholders["pairScheme"] = pairSchemes.first()
         manifestPlaceholders["legacyPairScheme"] = pairSchemes.last()
@@ -66,6 +69,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
 
     compileOptions {
