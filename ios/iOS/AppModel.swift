@@ -27,9 +27,9 @@ final class AppModel: ObservableObject {
     private var active = false
     private var launched = false
     private var syncTask: Task<Void, Never>?
-    /// Whether the last register's reply carried the state. A worker too old to send one back
-    /// must not read as "already refreshed", or the screen would open empty.
-    private var registerCarriedStatus = false
+    /// The register in flight, and whether another call landed while it was.
+    private var registering: Task<Void, Never>?
+    private var registerAgain = false
     private var observedActivities = Set<String>()
     /// The match we already alerted for, so the same match never alerts twice.
     private var alertedFoundAt: Double?
@@ -86,14 +86,23 @@ final class AppModel: ObservableObject {
             reconcileManual()
             return
         }
-        // One request on the way in, and no poll after it. The register's reply carries the state,
-        // and from then on the Live Activity's pushes carry every change -- coming back to the app
-        // is what catches one that never arrived.
-        syncTask = Task {
-            await register()
-            // An older worker answers a register with nothing; ask outright rather than open empty.
-            if !registerCarriedStatus { await refresh() }
+        // No poll: the Live Activity's pushes carry every change, and reach the screen through
+        // contentUpdates while it's open. A running activity is already what the worker would say,
+        // so coming back to one costs nothing. Without one there's nothing here to go by -- a start
+        // that never arrived, activities turned off -- and one request covers it. Only a pushed
+        // activity counts: a manual one left behind by a killed app would never be corrected.
+        if reachable, let running = runningActivity, running.pushToken != nil {
+            apply(running.content.state)
+        } else {
+            syncTask = Task { await register() }
         }
+    }
+
+    /// Pull to refresh, for a push the user suspects never came: one request, whose reply carries
+    /// the state. A register already on its way brings that back anyway, so it's waited for instead.
+    func sync() async {
+        guard !manual else { return }
+        if let registering { await registering.value } else { await register() }
     }
 
     func setFCMToken(_ token: String) {
@@ -109,10 +118,7 @@ final class AppModel: ObservableObject {
         pairingWasReset = false
         status = .idle
         watch.send(pairID: id)
-        Task {
-            await register()
-            await refresh()
-        }
+        Task { await register() }
     }
 
     /// The user unpairing. The worker is told to forget this phone as well, so its push tokens
@@ -230,20 +236,27 @@ final class AppModel: ObservableObject {
 
     // MARK: - Worker
 
-    private func refresh() async {
-        guard let id = pairID, !manual else { return }
-        switch await Worker.fetchStatus(pairID: id) {
-        case .ok(let fetched):
-            reachable = true
-            if let fetched, id == pairID { apply(fetched) }
-        case .reset:
-            handleReset(id)
-        case .failed:
-            reachable = false
+    /// A launch or a wake turns up several reasons to register at once -- the FCM token, the
+    /// push-to-start token, an activity's token, the wake itself -- so calls that land while one is
+    /// in flight share a single follow-up instead of each sending its own.
+    private func register() async {
+        if let registering {
+            registerAgain = true
+            await registering.value
+            return
         }
+        let task = Task {
+            repeat {
+                registerAgain = false
+                await sendRegistration()
+            } while registerAgain
+            registering = nil
+        }
+        registering = task
+        await task.value
     }
 
-    private func register() async {
+    private func sendRegistration() async {
         guard let id = pairID else { return }
         // Often called while iOS has only briefly woken the app; don't get suspended mid-request.
         let task = UIApplication.shared.beginBackgroundTask(withName: "register")
@@ -277,15 +290,9 @@ final class AppModel: ObservableObject {
             // (the match alert, starting an activity) guards on `active` itself. A manual queue
             // stays the phone's own either way: nothing from the worker lands on top of it, and
             // register() is reached from paths that don't check that for themselves.
-            if let fetched, id == pairID, !manual {
-                registerCarriedStatus = true
-                apply(fetched)
-            } else {
-                registerCarriedStatus = false
-            }
+            if let fetched, id == pairID, !manual { apply(fetched) }
         case .failed:
             reachable = false
-            registerCarriedStatus = false
         }
     }
 
@@ -314,7 +321,6 @@ final class AppModel: ObservableObject {
             matchAlerts += 1
             // A running Live Activity already plays the match sound from its push.
             alerts.play(sound: !hasRunningActivity)
-            watch.sendMatchFound()
         }
         startActivityIfMissing(for: new)
     }
@@ -451,7 +457,7 @@ final class MatchAlert {
     }
 }
 
-/// Hands the pairing to the watch and pokes it when a match is found.
+/// Hands the pairing to the watch. Everything else reaches it from the worker.
 final class WatchBridge: NSObject, WCSessionDelegate {
     private var pendingPairID: String??
 
@@ -469,11 +475,6 @@ final class WatchBridge: NSObject, WCSessionDelegate {
             return
         }
         try? WCSession.default.updateApplicationContext(["pairID": pairID ?? ""])
-    }
-
-    func sendMatchFound() {
-        guard WCSession.isSupported(), WCSession.default.isReachable else { return }
-        WCSession.default.sendMessage(["matchFound": true], replyHandler: nil, errorHandler: nil)
     }
 
     func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {

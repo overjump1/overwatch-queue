@@ -16,6 +16,9 @@ struct OverQueueWatchApp: App {
             WatchView().environmentObject(model)
         }
         .onChange(of: scenePhase) { _, phase in
+            // .inactive is the wrist going down with the app still up; pushes still land then, so
+            // only coming back from the background is worth asking the worker.
+            guard phase != .inactive else { return }
             model.setActive(phase == .active)
         }
     }
@@ -49,6 +52,16 @@ final class WatchDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCe
         }
     }
 
+    /// The worker's silent push with the state in it, sent on every change.
+    func didReceiveRemoteNotification(_ userInfo: [AnyHashable: Any]) async -> WKBackgroundFetchResult {
+        guard let pushed = userInfo["status"],
+              let data = try? JSONSerialization.data(withJSONObject: pushed),
+              let status = try? JSONDecoder().decode(QueueStatus.self, from: data)
+        else { return .noData }
+        await WatchModel.shared.applyPushed(status)
+        return .newData
+    }
+
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
         guard let fcmToken else { return }
         Task { @MainActor in WatchModel.shared.setFCMToken(fcmToken) }
@@ -59,11 +72,6 @@ final class WatchDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCe
         [.banner, .sound, .list]
     }
 }
-
-/// The watch gets a "Match found!" banner and nothing else -- no Live Activity, no state push --
-/// so unlike the phone its screen *is* this poll. Short is affordable because watchOS puts the
-/// app away after a couple of minutes, making a session a handful of requests.
-private let pollSeconds = 10.0
 
 @MainActor
 final class WatchModel: NSObject, ObservableObject, WCSessionDelegate {
@@ -76,7 +84,6 @@ final class WatchModel: NSObject, ObservableObject, WCSessionDelegate {
     private var fcmToken: String?
     private var active = false
     private var launched = false
-    private var pollTask: Task<Void, Never>?
     private var alertedFoundAt: Double?
 
     func launch() {
@@ -86,21 +93,24 @@ final class WatchModel: NSObject, ObservableObject, WCSessionDelegate {
         WCSession.default.activate()
     }
 
+    /// No poll: the worker pushes every change here (`applyPushed`). The one request is on the way in,
+    /// since watchOS holds back silent pushes to an app that isn't open and some may not have landed.
     func setActive(_ isActive: Bool) {
         active = isActive
-        pollTask?.cancel()
-        pollTask = nil
         guard isActive else { return }
         launch()
-        pollTask = Task {
-            while !Task.isCancelled {
-                await refresh()
-                try? await Task.sleep(for: .seconds(pollSeconds))
-            }
-        }
+        Task { await refresh() }
+    }
+
+    /// A state push from the worker.
+    func applyPushed(_ pushed: QueueStatus) {
+        guard pairID != nil else { return }
+        apply(pushed)
     }
 
     func setFCMToken(_ token: String) {
+        // Launch hands over the same token twice: once asked for, once from the delegate.
+        guard token != fcmToken else { return }
         fcmToken = token
         Task { await register() }
     }
@@ -111,19 +121,24 @@ final class WatchModel: NSObject, ObservableObject, WCSessionDelegate {
         pairID = id
         status = .idle
         Task {
-            await register()
-            await refresh()
+            // The register's reply carries the state; only with no token to register is there
+            // nothing to bring it back.
+            if fcmToken != nil { await register() } else { await refresh() }
         }
     }
 
     private func register() async {
         guard let id = pairID, let fcmToken else { return }
-        _ = await Worker.register(pairID: id, body: ["kind": "watch", "fcm": fcmToken])
+        handle(await Worker.register(pairID: id, body: ["kind": "watch", "fcm": fcmToken]), for: id)
     }
 
     private func refresh() async {
         guard let id = pairID else { return }
-        switch await Worker.fetchStatus(pairID: id) {
+        handle(await Worker.fetchStatus(pairID: id), for: id)
+    }
+
+    private func handle(_ result: Worker.Result, for id: String) {
+        switch result {
         case .ok(let fetched):
             reachable = true
             if let fetched, id == pairID { apply(fetched) }
@@ -166,10 +181,5 @@ final class WatchModel: NSObject, ObservableObject, WCSessionDelegate {
 
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext context: [String: Any]) {
         Task { @MainActor in self.receive(context) }
-    }
-
-    nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        guard message["matchFound"] as? Bool == true else { return }
-        Task { @MainActor in await self.refresh() }
     }
 }

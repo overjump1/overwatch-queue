@@ -102,6 +102,7 @@ private fun App(repository: QueueRepository, updater: Updater) {
                 canUpdate = updater.enabled,
                 onScan = { scanning = true },
                 onUnpair = { repository.unpair() },
+                onRefresh = { repository.sync() },
                 onCheckForUpdates = { updater.check(force = true) },
                 onUpdateTap = { updater.tap() },
             )

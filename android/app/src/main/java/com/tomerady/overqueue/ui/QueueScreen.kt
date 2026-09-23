@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,7 +19,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Bedtime
@@ -38,9 +41,11 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,6 +53,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -72,11 +78,13 @@ import com.tomerady.overqueue.shared.QueueStatus
 import com.tomerady.overqueue.shared.clockString
 import com.tomerady.overqueue.shared.nowSeconds
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 val Secondary = Color(0x99EBEBF5)
 val Orange = Color(0xFFFF9F0A)
 private val FlashGreen = Color(QueueStatus.GREEN)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QueueScreen(
     state: QueueRepository.UiState,
@@ -84,6 +92,7 @@ fun QueueScreen(
     canUpdate: Boolean,
     onScan: () -> Unit,
     onUnpair: () -> Unit,
+    onRefresh: suspend () -> Unit,
     onCheckForUpdates: () -> Unit,
     onUpdateTap: () -> Unit,
 ) {
@@ -105,6 +114,8 @@ fun QueueScreen(
         flash.animateTo(0f, tween(900))
     }
     val glowRadius = with(LocalDensity.current) { 420.dp.toPx() }
+    val scope = rememberCoroutineScope()
+    var refreshing by remember { mutableStateOf(false) }
 
     Box(
         Modifier
@@ -113,57 +124,76 @@ fun QueueScreen(
     )
     Box(Modifier.fillMaxSize().background(FlashGreen.copy(alpha = flash.value)))
 
-    Column(
-        Modifier.fillMaxSize().systemBarsPadding().padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+    // For the rare push that never came: pull down and the worker is asked outright.
+    PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = {
+            scope.launch {
+                refreshing = true
+                try {
+                    onRefresh()
+                } finally {
+                    refreshing = false
+                }
+            }
+        },
+        modifier = Modifier.fillMaxSize().systemBarsPadding(),
     ) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            SettingsMenu(onScan, onUnpair, canUpdate, onCheckForUpdates)
-        }
-        Spacer(Modifier.weight(1f))
-        ModeBadge(status, 132.dp, Modifier.scale(1f + flash.value * 0.27f))
-        Spacer(Modifier.height(18.dp))
-        Text(
-            status.title,
-            fontSize = 34.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (status.state == QueueState.IDLE) Color.White else accent,
-        )
-        Text(status.subtitle, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = Secondary)
-        if (status.state != QueueState.IDLE) {
-            Spacer(Modifier.height(18.dp))
-            ElapsedText(
-                status,
-                TextStyle(
-                    fontSize = 76.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    fontFeatureSettings = "tnum",
-                    color = if (status.state == QueueState.FOUND) Secondary else Color.White,
-                ),
-            )
-        }
-        when (status.state) {
-            QueueState.FOUND -> Text("Head back to your PC", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Secondary)
-            QueueState.PLAYING -> Text("${status.modeName} · in match", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Secondary)
-            else -> Unit
-        }
-        Spacer(Modifier.weight(1f))
-        UpdateRow(update, onUpdateTap)
-        if (!state.reachable) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.WifiOff, contentDescription = null, tint = Orange, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Can't reach the server — retrying", fontSize = 13.sp, color = Orange)
-            }
-        } else if (state.notificationProblem != null) {
-            val text = when (state.notificationProblem) {
-                QueueRepository.NotificationProblem.DISABLED -> "Notifications are off — turn them on in Settings"
-                QueueRepository.NotificationProblem.NOT_REGISTERED -> "Signing up for notifications — retrying"
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.NotificationsOff, contentDescription = null, tint = Orange, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(text, fontSize = 13.sp, color = Orange)
+        // Scrolls only so it can be pulled down: the layout itself is one fixed screen.
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()).height(maxHeight).fillMaxWidth().padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    SettingsMenu(onScan, onUnpair, canUpdate, onCheckForUpdates)
+                }
+                Spacer(Modifier.weight(1f))
+                ModeBadge(status, 132.dp, Modifier.scale(1f + flash.value * 0.27f))
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    status.title,
+                    fontSize = 34.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (status.state == QueueState.IDLE) Color.White else accent,
+                )
+                Text(status.subtitle, fontSize = 20.sp, fontWeight = FontWeight.Medium, color = Secondary)
+                if (status.state != QueueState.IDLE) {
+                    Spacer(Modifier.height(18.dp))
+                    ElapsedText(
+                        status,
+                        TextStyle(
+                            fontSize = 76.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFeatureSettings = "tnum",
+                            color = if (status.state == QueueState.FOUND) Secondary else Color.White,
+                        ),
+                    )
+                }
+                when (status.state) {
+                    QueueState.FOUND -> Text("Head back to your PC", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Secondary)
+                    QueueState.PLAYING -> Text("${status.modeName} · in match", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = Secondary)
+                    else -> Unit
+                }
+                Spacer(Modifier.weight(1f))
+                UpdateRow(update, onUpdateTap)
+                if (!state.reachable) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.WifiOff, contentDescription = null, tint = Orange, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Can't reach the server — pull down to try again", fontSize = 13.sp, color = Orange)
+                    }
+                } else if (state.notificationProblem != null) {
+                    val text = when (state.notificationProblem) {
+                        QueueRepository.NotificationProblem.DISABLED -> "Notifications are off — turn them on in Settings"
+                        QueueRepository.NotificationProblem.NOT_REGISTERED -> "Signing up for notifications — retrying"
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.NotificationsOff, contentDescription = null, tint = Orange, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(text, fontSize = 13.sp, color = Orange)
+                    }
+                }
             }
         }
     }

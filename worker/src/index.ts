@@ -223,10 +223,28 @@ export class Pair extends DurableObject<Env> {
     };
   }
 
-  /** Sends a push to every paired device. */
+  /** Sends a push to every paired device. `status` is always the state after the change. */
   private async deliver(push: Push, status: Status, now: number): Promise<void> {
     await this.deliverAndroid(push, status, now);
     await this.deliverApple(push, status, now);
+    await this.deliverWatch(push, status);
+  }
+
+  /**
+   * The Watch has no Live Activity, so it's sent the state itself, silently, and its app shows
+   * that instead of polling for it. An end that a start follows carries the same state the start
+   * does, so only the start goes; a match alert reaches the Watch from the phone's own alert.
+   */
+  private async deliverWatch(push: Push, status: Status): Promise<void> {
+    if (push.kind === "matchAlert" || (push.kind === "end" && status.state !== "idle")) return;
+    try {
+      const watch = await this.ctx.storage.get<Watch>("watch");
+      if (!watch?.fcm) return;
+      const result = await this.fcm(wakeMessage(watch.fcm, { status }));
+      if (result && dead(result)) await this.ctx.storage.delete("watch");
+    } catch (error) {
+      console.log(`deliver ${push.kind} to watch failed: ${String(error)}`);
+    }
   }
 
   private async deliverAndroid(push: Push, status: Status, now: number): Promise<void> {
@@ -252,7 +270,9 @@ export class Pair extends DurableObject<Env> {
     const phone = await this.phone();
     try {
       if (push.kind === "matchAlert") {
-        const watch = await this.ctx.storage.get<Watch>("watch");
+        // Whatever alerts the phone -- the Live Activity's alert, or the banner below -- shows on
+        // the Watch as well, so the Watch's own banner is only for a phone that can't be reached.
+        const watch = phone.fcm ? undefined : await this.ctx.storage.get<Watch>("watch");
         if (watch?.fcm) {
           const result = await this.fcm(alertMessage(watch.fcm, "Match found!", foundBody(status)));
           if (result && dead(result)) await this.ctx.storage.delete("watch");

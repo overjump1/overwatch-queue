@@ -18,6 +18,9 @@ struct OverQueueApp: App {
                 .onOpenURL { model.pair(with: $0.absoluteString) }
         }
         .onChange(of: scenePhase) { _, phase in
+            // .inactive is Control Center or a notification pulled down over the app, not leaving
+            // it; only coming back from the background is worth another sync.
+            guard phase != .inactive else { return }
             model.setActive(phase == .active)
         }
     }
