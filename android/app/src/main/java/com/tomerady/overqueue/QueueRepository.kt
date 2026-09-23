@@ -56,9 +56,6 @@ class QueueRepository private constructor(context: Context) {
     /** The pairing and token the worker last accepted; anything else still needs registering. */
     @Volatile private var registeredAs: Pair<String, String>? = null
     private var registerJob: Job? = null
-    /** Whether the last register's reply carried the state. A worker too old to send one back
-     *  must not read as "already refreshed", or the screen would open empty. */
-    @Volatile private var registerCarriedStatus = false
     private var active = false
     private var lastPushAt = 0L
     /** The match the screen already flashed for, so the same match never flashes twice. */
@@ -95,13 +92,17 @@ class QueueRepository private constructor(context: Context) {
         }
     }
 
-    /** Makes sure the worker has our token, and that we have its state. */
-    private suspend fun sync() {
+    /**
+     * Makes sure the worker has our token, and that we have its state, in one request. Also the
+     * pull to refresh, for a push the user suspects never came.
+     */
+    suspend fun sync() {
         // A token that arrives on its own goes through setFcmToken, which registers without
         // waiting for this; only a Firebase call that outright failed needs asking again.
         if (fcmToken == null) requestFcmToken()
-        // A successful register's reply carries the state, so it stands in for the refresh.
-        if (fcmToken == null || isRegistered() || !register() || !registerCarriedStatus) refresh()
+        // A register's reply carries the state, so it stands in for the refresh.
+        if (fcmToken == null || isRegistered()) refresh()
+        else if (!register()) _state.update { it.copy(reachable = false) }
         updateNotificationProblem()
     }
 
@@ -116,8 +117,12 @@ class QueueRepository private constructor(context: Context) {
         val id = Pairing.parse(text) ?: return false
         Pairing.save(context, id)
         _state.update { it.copy(pairId = id, pairingWasReset = false, status = QueueStatus.Idle) }
+        // Registers even when rescanning the same code: the reply carries the state, which is
+        // what this needs now that the status above was reset. Only with no token to register
+        // does it take a request of its own.
+        registeredAs = null
         registerSoon()
-        scope.launch { refresh() }
+        if (fcmToken == null) scope.launch { refresh() }
         return true
     }
 
@@ -207,12 +212,7 @@ class QueueRepository private constructor(context: Context) {
                 // Only while the app is on screen. In the background -- a new FCM token arriving
                 // with the app closed -- the status here is this process's default, and apply()
                 // would take the notification's linger from it and cancel a lingering one.
-                if (status != null && active && id == _state.value.pairId) {
-                    registerCarriedStatus = true
-                    apply(status, fromPush = false)
-                } else {
-                    registerCarriedStatus = false
-                }
+                if (status != null && active && id == _state.value.pairId) apply(status, fromPush = false)
                 updateNotificationProblem()
                 true
             }

@@ -52,72 +52,83 @@ struct ContentView: View {
 
             Color.green.opacity(flash ? 0.45 : 0).ignoresSafeArea().allowsHitTesting(false)
 
-            VStack(spacing: 18) {
-                HStack {
-                    Spacer()
-                    Menu {
-                        if !model.manual && status.state == .idle {
-                            Button("Time a queue here", systemImage: "stopwatch") { pickingMode = true }
-                        }
-                        if Updates.checksForUpdates {
-                            Button("Check for updates", systemImage: "arrow.down.circle") {
-                                model.checkForUpdate(force: true)
-                            }
-                        }
-                        Button("Scan new code", systemImage: "qrcode.viewfinder") { showScanner = true }
-                        if model.pairID != nil {
-                            Button("Unpair", systemImage: "xmark.circle", role: .destructive) { model.unpair() }
-                        }
-                        Button("About", systemImage: "info.circle") { showAbout = true }
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-                            .padding(12)
-                    }
+            // Scrolls only so it can be pulled down: the layout itself is one fixed screen.
+            GeometryReader { geometry in
+                ScrollView {
+                    content(status)
+                        .padding()
+                        .frame(height: geometry.size.height)
                 }
-                Spacer()
-                ModeBadge(status: status, size: 132)
-                    .scaleEffect(flash ? 1.12 : 1)
-                VStack(spacing: 6) {
-                    Text(status.title)
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(status.state == .idle ? .white : status.accent)
-                    Text(status.subtitle)
-                        .font(.title3.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-                if status.state != .idle {
-                    ElapsedText(status: status)
-                        .font(.system(size: 76, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(status.state == .found ? .secondary : .primary)
-                }
-                if status.state == .found {
-                    Text(model.manual ? "Good luck out there" : "Head back to your PC")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                } else if status.state == .playing, let mode = status.mode {
-                    Text("\(mode.name) · in match")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if model.manual {
-                    manualControls(status)
-                }
-                updateLine
-                if !model.reachable && !model.manual {
-                    Label("Can't reach the server — retrying", systemImage: "wifi.exclamationmark")
-                        .font(.footnote)
-                        .foregroundStyle(.orange)
-                }
+                .refreshable { await model.sync() }
             }
-            .padding()
         }
         .onChange(of: model.matchAlerts) { _, _ in
             withAnimation(.easeOut(duration: 0.15)) { flash = true }
             withAnimation(.easeIn(duration: 0.9).delay(0.25)) { flash = false }
+        }
+    }
+
+    private func content(_ status: QueueStatus) -> some View {
+        VStack(spacing: 18) {
+            HStack {
+                Spacer()
+                Menu {
+                    if !model.manual && status.state == .idle {
+                        Button("Time a queue here", systemImage: "stopwatch") { pickingMode = true }
+                    }
+                    if Updates.checksForUpdates {
+                        Button("Check for updates", systemImage: "arrow.down.circle") {
+                            model.checkForUpdate(force: true)
+                        }
+                    }
+                    Button("Scan new code", systemImage: "qrcode.viewfinder") { showScanner = true }
+                    if model.pairID != nil {
+                        Button("Unpair", systemImage: "xmark.circle", role: .destructive) { model.unpair() }
+                    }
+                    Button("About", systemImage: "info.circle") { showAbout = true }
+                } label: {
+                    Image(systemName: "gearshape.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        .padding(12)
+                }
+            }
+            Spacer()
+            ModeBadge(status: status, size: 132)
+                .scaleEffect(flash ? 1.12 : 1)
+            VStack(spacing: 6) {
+                Text(status.title)
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundStyle(status.state == .idle ? .white : status.accent)
+                Text(status.subtitle)
+                    .font(.title3.weight(.medium))
+                    .foregroundStyle(.secondary)
+            }
+            if status.state != .idle {
+                ElapsedText(status: status)
+                    .font(.system(size: 76, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(status.state == .found ? .secondary : .primary)
+            }
+            if status.state == .found {
+                Text(model.manual ? "Good luck out there" : "Head back to your PC")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+            } else if status.state == .playing, let mode = status.mode {
+                Text("\(mode.name) · in match")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if model.manual {
+                manualControls(status)
+            }
+            updateLine
+            if !model.reachable && !model.manual {
+                Label("Can't reach the server — pull down to try again", systemImage: "wifi.exclamationmark")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+            }
         }
     }
 

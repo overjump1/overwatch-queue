@@ -360,7 +360,9 @@ class App(QWidget):
         self.qr.setVisible(show_qr)
         self.show_button.setText("Hide QR code" if show_qr else "Show QR code")
         self.show_button.setVisible(bool(paired))
-        self.relay.expect_phone(show_qr)
+        # Only while the window is in front: nobody scans a code that's behind a game, and
+        # coming back to the window asks straight away.
+        self.relay.expect_phone(show_qr and self.isActiveWindow())
 
         self._set(self.server_label, "Can't reach the notification server — retrying", WARN)
         self.server_label.setVisible(not self.relay.reachable)

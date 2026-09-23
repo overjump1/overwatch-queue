@@ -120,18 +120,8 @@ class PairingTests(unittest.TestCase):
         self.assertEqual(self.relay.paired, ["iPhone"])
         self.assertEqual(self.methods(), ["POST"])
 
-    def test_a_worker_too_old_to_answer_falls_back_to_asking(self):
-        """Reading a silent reply as "nobody's paired" would leave the QR code up for good."""
-        self.answer = {"status": {}}  # no pairing keys at all
-        self.relay.publish("queueing", "competitive", 5.0)
-        self.assertTrue(self.relay._send_pending())
-        self.assertEqual(self.relay.paired, [])
-        self.answer = {"status": {}, "phonePaired": True}
-        self.relay._check_paired()
-        self.assertEqual(self.relay.paired, ["iPhone"])
-        self.assertEqual(self.methods(), ["POST", "GET"])
-
-    def test_a_pc_nobody_scanned_yet_does_ask(self):
+    def run_briefly(self):
+        """Runs the relay until its first request, or two seconds if none comes."""
         stop = threading.Event()
         thread = threading.Thread(target=self.relay.run, args=(stop,), daemon=True)
         thread.start()
@@ -141,7 +131,16 @@ class PairingTests(unittest.TestCase):
         stop.set()
         self.relay._wake.set()
         thread.join(timeout=2)
+
+    def test_a_pc_showing_its_code_asks(self):
+        self.relay.expect_phone(True)
+        self.run_briefly()
         self.assertEqual(self.methods(), ["GET"])
+
+    def test_a_pc_nobody_is_scanning_does_not_ask(self):
+        """Nothing paired, but the code isn't in front of anyone: no polling all day."""
+        self.run_briefly()
+        self.assertEqual(self.methods(), [])
 
 
 if __name__ == "__main__":

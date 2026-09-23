@@ -36,13 +36,6 @@ def _paired_names(body):
     return [name for name, key in PAIRED_KEYS if body.get(key)]
 
 
-def _says_paired(body):
-    """Whether `body` answers the pairing question at all. A worker too old to put it in a
-    report's reply must not read as "nobody's paired" -- that would leave the QR code up for
-    good. Saying nothing just leaves the check to `_check_paired`, the way it used to be."""
-    return isinstance(body, dict) and any(key in body for _, key in PAIRED_KEYS)
-
-
 def _report(pending):
     """The body for `pending`, with its times aged to now: a report can sit in the queue
     (retries, a pairing reset) and the worker dates the queue and the match from them."""
@@ -87,7 +80,9 @@ class Relay:
         self._wake.set()
 
     def expect_phone(self, expecting):
-        """While the QR code is on screen, check often so a newly scanned phone shows up quickly."""
+        """While someone could be scanning the QR code, check often so a newly scanned phone
+        shows up quickly. Otherwise nothing is asked at all: every report brings the answer back
+        with it anyway."""
         with self._lock:
             changed = expecting != self._expecting_phone
             if expecting and changed:
@@ -108,13 +103,12 @@ class Relay:
                 self._delete_stale()
                 if not self._send_pending():
                     raise ConnectionError("state not delivered")
-                # Only worth asking while the QR code is up or nothing has paired yet: a
-                # pairing the worker knows about never goes away on its own, and every report
-                # brings the answer back with it anyway.
+                # Only worth asking while someone could be scanning the code: a PC left open with
+                # nothing paired would otherwise poll all day, too often for the worker's Durable
+                # Object to ever hibernate.
                 with self._lock:
-                    asking = self._expecting_phone or not self.paired
-                    due = time.monotonic() >= self._next_check
-                if asking and due:
+                    due = self._expecting_phone and time.monotonic() >= self._next_check
+                if due:
                     self._check_paired()
                     with self._lock:
                         self._next_check = time.monotonic() + UNPAIRED_CHECK_SECONDS
@@ -142,7 +136,7 @@ class Relay:
             return False
         if status != 200:
             self.log("Worker rejected state %s: HTTP %d" % (pending, status))
-        elif _says_paired(body):
+        else:
             # The reply carries who's paired, so a report doubles as the pairing check.
             self._set_paired(pair_id, _paired_names(body))
         with self._lock:
