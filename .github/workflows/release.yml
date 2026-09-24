@@ -155,21 +155,6 @@ jobs:
           copy "${{ needs.changes.outputs.ios }}" '*.ipa'
           ls -l release
 
-      # Apps installed before the rename look for the old filenames, and a release without one
-      # tells them they are up to date forever. Both names ship until those installs have had
-      # a few releases to catch up, and then this step can go. Nothing was ever installed from dev
-      # under the old name.
-      - name: Keep the pre-rename filenames alive
-        if: needs.changes.outputs.channel == 'main'
-        run: |
-          cd release
-          for file in OverQueue-*; do
-            [ -e "$file" ] || continue
-            legacy="OWQueue-${file#OverQueue-}"
-            [ -e "$legacy" ] || cp "$file" "$legacy"
-          done
-          ls -l
-
       - name: Publish release
         if: needs.changes.outputs.channel == 'main'
         env:
