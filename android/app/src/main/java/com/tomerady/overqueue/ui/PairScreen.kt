@@ -76,6 +76,8 @@ fun PairScreen(resetNotice: Boolean, onCode: (String) -> Unit, onClose: (() -> U
         mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
     }
     var asked by rememberSaveable { mutableStateOf(false) }
+    // Why the last code scanned won't pair, shown in place of the instructions.
+    var rejection by remember { mutableStateOf<String?>(null) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
         cameraAllowed = it
         asked = true
@@ -103,10 +105,11 @@ fun PairScreen(resetNotice: Boolean, onCode: (String) -> Unit, onClose: (() -> U
         Text("Pair with your PC", fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Color.White)
         Spacer(Modifier.height(8.dp))
         Text(
-            if (resetNotice) "The pairing code on your PC was reset. Scan the new one."
-            else "Open ${BuildConfig.APP_NAME} on your PC and scan the QR code.",
+            rejection
+                ?: if (resetNotice) "The pairing code on your PC was reset. Scan the new one."
+                else "Open ${BuildConfig.APP_NAME} on your PC and scan the QR code.",
             fontSize = 17.sp,
-            color = if (resetNotice) Orange else Secondary,
+            color = if (rejection != null || resetNotice) Orange else Secondary,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(20.dp))
@@ -119,7 +122,7 @@ fun PairScreen(resetNotice: Boolean, onCode: (String) -> Unit, onClose: (() -> U
             contentAlignment = Alignment.Center,
         ) {
             if (cameraAllowed) {
-                QrScanner(onCode)
+                QrScanner(onCode, onRejected = { rejection = it })
             } else {
                 Column(
                     Modifier.padding(16.dp),
@@ -156,14 +159,18 @@ fun PairScreen(resetNotice: Boolean, onCode: (String) -> Unit, onClose: (() -> U
     }
 }
 
-/** The camera preview, reporting the first QR code that is a pairing code. */
+/**
+ * The camera preview, reporting the first QR code that is a pairing code. One that isn't is
+ * reported too, once, since a camera looking at a code with nothing happening looks broken.
+ */
 @OptIn(ExperimentalGetImage::class)
 @Composable
-private fun QrScanner(onCode: (String) -> Unit) {
+private fun QrScanner(onCode: (String) -> Unit, onRejected: (String) -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val haptics = LocalHapticFeedback.current
     val currentOnCode by rememberUpdatedState(onCode)
+    val currentOnRejected by rememberUpdatedState(onRejected)
     val previewView = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
 
     DisposableEffect(lifecycleOwner) {
@@ -172,6 +179,7 @@ private fun QrScanner(onCode: (String) -> Unit) {
             BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build(),
         )
         val done = AtomicBoolean(false)
+        var lastRejection: String? = null
         val providerFuture = ProcessCameraProvider.getInstance(context)
         var disposed = false
 
@@ -193,9 +201,21 @@ private fun QrScanner(onCode: (String) -> Unit) {
                         val code = codes.firstNotNullOfOrNull { barcode ->
                             barcode.rawValue?.takeIf { Pairing.parse(it) != null }
                         }
-                        if (code != null && done.compareAndSet(false, true)) {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                            currentOnCode(code)
+                        if (code != null) {
+                            if (done.compareAndSet(false, true)) {
+                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                currentOnCode(code)
+                            }
+                            return@addOnSuccessListener
+                        }
+                        // Success listeners run on the main thread, so this needs no lock.
+                        val said = codes.firstNotNullOfOrNull { barcode ->
+                            barcode.rawValue?.let { Pairing.rejection(it, BuildConfig.APP_NAME) }
+                        }
+                        if (said != null && said != lastRejection && !done.get()) {
+                            lastRejection = said
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            currentOnRejected(said)
                         }
                     }
                     .addOnCompleteListener { proxy.close() }
