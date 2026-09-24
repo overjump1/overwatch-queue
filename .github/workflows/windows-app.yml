@@ -35,10 +35,18 @@ jobs:
           cache: pip
           cache-dependency-path: pc/requirements.txt
 
+      # PyInstaller is built from source so it compiles its own bootloader (the stub OverQueue.exe
+      # starts from) instead of using the prebuilt one in the wheel. Malware ships that exact prebuilt
+      # stub too, so Defender's machine-learning scan learned to flag it: our releases were getting
+      # quarantined as Trojan:Win32/Bearfoos!ml. Pinned, so a new PyInstaller can't change the stub
+      # under a release unannounced.
       - name: Install dependencies
+        env:
+          PYINSTALLER_COMPILE_BOOTLOADER: "1"
         run: |
           python -m pip install --upgrade pip
-          pip install -r pc/requirements.txt pyinstaller
+          pip install -r pc/requirements.txt
+          pip install --no-binary pyinstaller pyinstaller==6.22.3
 
       - name: Test
         run: python -m unittest discover -s pc/tests
