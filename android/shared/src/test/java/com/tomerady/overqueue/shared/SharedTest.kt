@@ -35,6 +35,31 @@ class PairingTest {
         assertNull(Pairing.parse("owq://other?id=$id"))
     }
 
+    @Test fun saysNothingAgainstACodeThatPairs() = assertNull(Pairing.rejection("owq://pair?id=$id", "OverQueue"))
+
+    @Test fun saysWhichAppACodeIsFrom() {
+        val said = Pairing.rejection("overqueue-dev://pair?id=$id", "OverQueue")
+        assertTrue(said!!.contains("OverQueue Dev"))
+    }
+
+    @Test fun namesTheLinksWhenTheAppIsBuiltWithTheWrongOnes() {
+        val real = Pairing.schemes
+        Pairing.schemes = setOf("overqueue-dev")
+        try {
+            val said = Pairing.rejection("overqueue://pair?id=$id", "OverQueue")!!
+            assertTrue(said.contains("overqueue://"))
+            assertTrue(said.contains("overqueue-dev://"))
+        } finally {
+            Pairing.schemes = real
+        }
+    }
+
+    @Test fun saysADamagedCodeIsDamaged() =
+        assertTrue(Pairing.rejection("owq://pair?id=nope", "OverQueue")!!.contains("damaged"))
+
+    @Test fun saysAnythingElseIsntAPairingCode() =
+        assertTrue(Pairing.rejection("https://example.com", "OverQueue")!!.contains("isn't a pairing code"))
+
     @Test fun rejectsBadIds() {
         assertNull(Pairing.parse("owq://pair?id=${id.dropLast(1)}"))
         assertNull(Pairing.parse("owq://pair?id=${id.dropLast(1)}g"))

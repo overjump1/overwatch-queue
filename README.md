@@ -84,7 +84,7 @@ On startup it puts Battle.net into developer mode: Battle.net only answers about
 
 `--presence-source auto` uses a debug port if Battle.net already has one open, but never starts or restarts Battle.net. `--battlenet-port` changes the port (default 9222).
 
-Scan the QR code with the iPhone or Android app. Once a phone is paired the code is hidden; **Show QR code** brings it back so you can pair another phone (it hides again once that phone pairs). **Reset QR code** makes a new code; the old one stops working right away and every paired phone has to scan again. Logs are in `%APPDATA%\OverQueue\overqueue.log` (`OverQueue Dev` for the dev app).
+Scan the QR code with the iPhone or Android app. Once a phone is paired the code is hidden; **Show QR code** brings it back so you can pair another phone (it hides again once that phone pairs). The code also hides itself after 5 minutes, which stops the app checking for a newly scanned phone; **Show QR code** brings it back for another 5. It only checks while its window is in front, so click the window if a phone you just scanned doesn't show up. **Reset QR code** makes a new code; the old one stops working right away and every paired phone has to scan again. Logs are in `%APPDATA%\OverQueue\overqueue.log` (`OverQueue Dev` for the dev app).
 
 If Battle.net runs as administrator, the app has to run as administrator as well, or it can't restart it.
 

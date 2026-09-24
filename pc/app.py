@@ -38,6 +38,9 @@ GUI_REFRESH_MS = 500
 # Matches the worker: "Match found!" becomes "In a match" this long after the match is found.
 PLAYING_AFTER_SECONDS = 60
 QR_SIZE = 232
+# How long the pairing code stays up before it hides itself -- and with it the checks for a newly
+# scanned phone, which only run while it's up.
+QR_TIMEOUT_SECONDS = 5 * 60
 WINDOW_WIDTH = 360
 
 BG = "#0f1115"
@@ -200,6 +203,46 @@ def _update_button(state, version, percent):
     return "Check for updates", MUTED, True
 
 
+class QrCode:
+    """Whether the pairing code is up. It comes up on its own while nothing is paired, and on
+    "Show QR code" to add another phone; either way it hides itself after QR_TIMEOUT_SECONDS, so a
+    PC left open with its code up doesn't keep asking the worker who's paired."""
+
+    def __init__(self, clock=time.monotonic):
+        self._clock = clock
+        self._requested_with = None  # the phones paired when "Show QR code" was pressed, None when not pressed
+        self._hides_at = None
+        self._timed_out = False
+        self.showing = False
+
+    def update(self, paired):
+        """Whether the code should be up now, with `paired` the phones paired so far."""
+        if self._requested_with is not None and not set(paired) <= set(self._requested_with):
+            self._requested_with = None  # another phone just paired, so the code has done its job
+        wanted = not paired or self._requested_with is not None
+        if not wanted:
+            self._hides_at, self._timed_out = None, False
+        elif not self._timed_out:
+            if self._hides_at is None:
+                self._hides_at = self._clock() + QR_TIMEOUT_SECONDS
+            elif self._clock() >= self._hides_at:
+                self._requested_with, self._hides_at, self._timed_out = None, None, True
+        self.showing = wanted and not self._timed_out
+        return self.showing
+
+    def toggle(self, paired):
+        """The "Show QR code" / "Hide QR code" button."""
+        if self.showing:
+            self._requested_with = None
+        else:
+            self.restart()
+            self._requested_with = list(paired)
+
+    def restart(self):
+        """Up again for another QR_TIMEOUT_SECONDS: a new code, or the user asking for it."""
+        self._requested_with, self._hides_at, self._timed_out = None, None, False
+
+
 class App(QWidget):
     def __init__(self, pair_id, relay, watcher, updater):
         super().__init__()
@@ -209,7 +252,7 @@ class App(QWidget):
         self.updater = updater
         self._qr_for = None
         self._restarting = False
-        self._qr_requested_with = None  # the phones paired when "Show QR code" was pressed, None when not pressed
+        self.qr_code = QrCode()
         self._checks_updates = up.checks_for_updates()
 
         self.setWindowTitle(CURRENT.name)
@@ -345,21 +388,21 @@ class App(QWidget):
                                     else "Restart Battle.net")
 
         paired = list(self.relay.paired)
-        if self._qr_requested_with is not None and not set(paired) <= set(self._qr_requested_with):
-            self._qr_requested_with = None  # another phone just paired, so the code has done its job
-        show_qr = not paired or self._qr_requested_with is not None
+        show_qr = self.qr_code.update(paired)
         if paired and show_qr:
             self._set(self.phone_label, "● %s paired — scan this code with another phone to add it"
                       % " and ".join(paired), GOOD)
         elif paired:
             self._set(self.phone_label, "● %s paired" % " and ".join(paired), GOOD)
-        else:
+        elif show_qr:
             self._set(self.phone_label, "Scan this code with the %s app on your phone" % CURRENT.name, MUTED)
+        else:
+            self._set(self.phone_label, "No phone paired — press Show QR code to pair one", MUTED)
         if show_qr and self._qr_for != self.pair_id:
             self._draw_qr()
         self.qr.setVisible(show_qr)
         self.show_button.setText("Hide QR code" if show_qr else "Show QR code")
-        self.show_button.setVisible(bool(paired))
+        self.show_button.setVisible(bool(paired) or not show_qr)
         # Only while the window is in front: nobody scans a code that's behind a game, and
         # coming back to the window asks straight away.
         self.relay.expect_phone(show_qr and self.isActiveWindow())
@@ -424,7 +467,7 @@ class App(QWidget):
             self._restarting = False
 
     def toggle_qr(self):
-        self._qr_requested_with = None if self._qr_requested_with is not None else list(self.relay.paired)
+        self.qr_code.toggle(list(self.relay.paired))
         self.refresh()
 
     def reset(self):
@@ -438,7 +481,7 @@ class App(QWidget):
             QMessageBox.critical(self, "Reset QR code", "Couldn't save the new code: %s" % problem)
             return
         log.info("Pairing reset")
-        self._qr_requested_with = None
+        self.qr_code.restart()
         self.relay.change_pair(self.pair_id)
         self.refresh()
 

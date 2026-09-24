@@ -79,18 +79,53 @@ enum Pairing {
     /// `overqueue://` and `owq://`, the same link under the name the app used to go by, which a PC
     /// that hasn't been updated yet still writes. OverQueue Dev takes only `overqueue-dev://`
     /// (project.yml), so each PC app's code pairs only the matching phone app.
+    ///
+    /// Should that ever come back empty, the app would ignore every code it scanned, so it falls
+    /// back to the links this app is known by instead, told apart by the dev app's bundle ID.
     static let schemes: [String] = {
         let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
-        return types.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        // The dev app lists its one link twice (OWQ_LEGACY_PAIR_SCHEME), so each is kept once.
+        var declared: [String] = []
+        for scheme in types.flatMap({ $0["CFBundleURLSchemes"] as? [String] ?? [] })
+        where !scheme.isEmpty && !declared.contains(scheme.lowercased()) {
+            declared.append(scheme.lowercased())
+        }
+        if !declared.isEmpty { return declared }
+        return Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true ? Pairing.devSchemes : Pairing.realSchemes
     }()
+
+    private static let realSchemes = ["overqueue", "owq"]
+    private static let devSchemes = ["overqueue-dev"]
 
     /// Accepts `overqueue://pair?id=<32 hex>` (from the QR code) and returns the pairing id.
     static func parse(_ text: String) -> String? {
         guard let components = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let scheme = components.scheme, schemes.contains(scheme), components.host == "pair",
+              let scheme = components.scheme?.lowercased(), schemes.contains(scheme), components.host == "pair",
               let id = components.queryItems?.first(where: { $0.name == "id" })?.value
         else { return nil }
         return validID(id)
+    }
+
+    /// Why a scanned code won't pair, to say so on screen rather than ignore it. nil for one that
+    /// does. Names the link it saw when it's some other app's, so a screenshot shows the mismatch.
+    static func rejection(_ text: String) -> String? {
+        guard parse(text) == nil else { return nil }
+        guard let components = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = components.scheme?.lowercased(), components.host == "pair"
+        else { return "That isn't a pairing code. Scan the QR code in \(appName) on your PC." }
+        if schemes.contains(scheme) {
+            return "That pairing code is damaged. Press Reset QR code on your PC and scan the new one."
+        }
+        // The other app's code. Unless this app goes by that name itself, which only a build with
+        // the wrong links would, and is exactly what the last message is there to show.
+        if devSchemes.contains(scheme), appName != "OverQueue Dev" {
+            return "That code is from OverQueue Dev. Scan the one in \(appName) on your PC instead."
+        }
+        if realSchemes.contains(scheme), appName != "OverQueue" {
+            return "That code is from OverQueue. Scan the one in \(appName) on your PC instead."
+        }
+        return "That code (\(scheme)://) isn't one \(appName) can pair with. "
+            + "It takes \(schemes.map { "\($0)://" }.joined(separator: " or "))."
     }
 
     /// The id itself, lowercased, if it is one.

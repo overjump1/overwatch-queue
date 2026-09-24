@@ -9,24 +9,27 @@ struct PairView: View {
     var onTimeItHere: (() -> Void)?
 
     @State private var cameraAllowed = AVCaptureDevice.authorizationStatus(for: .video) != .denied
+    /// Why the last code scanned won't pair, shown in place of the instructions.
+    @State private var rejection: String?
 
     var body: some View {
         VStack(spacing: 20) {
             VStack(spacing: 8) {
                 Text("Pair with your PC")
                     .font(.system(size: 30, weight: .bold, design: .rounded))
-                Text(resetNotice
-                     ? "The pairing code on your PC was reset. Scan the new one."
-                     : "Open \(appName) on your PC and scan the QR code.")
+                Text(rejection
+                     ?? (resetNotice
+                         ? "The pairing code on your PC was reset. Scan the new one."
+                         : "Open \(appName) on your PC and scan the QR code."))
                     .font(.body)
-                    .foregroundStyle(resetNotice ? .orange : .secondary)
+                    .foregroundStyle(rejection != nil || resetNotice ? .orange : .secondary)
                     .multilineTextAlignment(.center)
             }
             .padding(.top, 32)
 
             Group {
                 if DataScannerViewController.isSupported && cameraAllowed {
-                    QRScanner(onCode: onCode)
+                    QRScanner(onCode: onCode, onRejected: { rejection = $0 })
                 } else {
                     VStack(spacing: 14) {
                         Image(systemName: "camera.fill").font(.largeTitle)
@@ -74,6 +77,7 @@ struct PairView: View {
 
 private struct QRScanner: UIViewControllerRepresentable {
     let onCode: (String) -> Void
+    let onRejected: (String) -> Void
 
     func makeUIViewController(context: Context) -> DataScannerViewController {
         let scanner = DataScannerViewController(recognizedDataTypes: [.barcode(symbologies: [.qr])],
@@ -92,21 +96,46 @@ private struct QRScanner: UIViewControllerRepresentable {
         scanner.stopScanning()
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(onCode: onCode) }
+    func makeCoordinator() -> Coordinator { Coordinator(onCode: onCode, onRejected: onRejected) }
 
     final class Coordinator: NSObject, DataScannerViewControllerDelegate {
         let onCode: (String) -> Void
+        let onRejected: (String) -> Void
         private var done = false
+        /// Said once, not on every frame the same code stays in view.
+        private var lastRejection: String?
 
-        init(onCode: @escaping (String) -> Void) { self.onCode = onCode }
+        init(onCode: @escaping (String) -> Void, onRejected: @escaping (String) -> Void) {
+            self.onCode = onCode
+            self.onRejected = onRejected
+        }
 
         func dataScanner(_ scanner: DataScannerViewController, didAdd items: [RecognizedItem], allItems: [RecognizedItem]) {
+            look(at: items)
+        }
+
+        /// A code can be recognized before its text can be read, and only be readable on a later
+        /// update; waiting for the next add would leave it ignored for as long as it stays in view.
+        func dataScanner(_ scanner: DataScannerViewController, didUpdate items: [RecognizedItem], allItems: [RecognizedItem]) {
+            look(at: items)
+        }
+
+        /// A code that won't pair is said on screen rather than ignored: a camera outlining the
+        /// code with nothing else happening looks the same as the app being broken.
+        private func look(at items: [RecognizedItem]) {
             for item in items {
-                guard !done, case .barcode(let code) = item, let value = code.payloadStringValue,
-                      Pairing.parse(value) != nil else { continue }
-                done = true
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                onCode(value)
+                guard !done, case .barcode(let code) = item, let value = code.payloadStringValue else { continue }
+                if Pairing.parse(value) != nil {
+                    done = true
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    onCode(value)
+                    return
+                }
+                if let rejection = Pairing.rejection(value), rejection != lastRejection {
+                    lastRejection = rejection
+                    UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                    onRejected(rejection)
+                }
             }
         }
     }
