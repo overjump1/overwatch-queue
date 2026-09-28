@@ -37,8 +37,11 @@ struct PairView: View {
                             .multilineTextAlignment(.center)
                             .foregroundStyle(.secondary)
                         if !cameraAllowed, let url = URL(string: UIApplication.openSettingsURLString) {
-                            Button("Open Settings") { UIApplication.shared.open(url) }
-                                .buttonStyle(.borderedProminent)
+                            // Black on the white fill the app's white tint gives a prominent button.
+                            Button { UIApplication.shared.open(url) } label: {
+                                Text("Open Settings").foregroundStyle(.black)
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
                     }
                     .padding()
