@@ -16,8 +16,9 @@ struct OverQueueWatchApp: App {
             WatchView().environmentObject(model)
         }
         .onChange(of: scenePhase) { _, phase in
-            // .inactive is the wrist going down with the app still up; pushes still land then, so
-            // only coming back from the background is worth asking the worker.
+            // .inactive is the wrist going down with the app still up. watchOS holds the silent state
+            // pushes until it comes back up, and coming back to .active asks the worker for what they
+            // missed; the match alert isn't held, and carries the state itself.
             guard phase != .inactive else { return }
             model.setActive(phase == .active)
         }
@@ -54,12 +55,17 @@ final class WatchDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCe
 
     /// The worker's silent push with the state in it, sent on every change.
     func didReceiveRemoteNotification(_ userInfo: [AnyHashable: Any]) async -> WKBackgroundFetchResult {
-        guard let pushed = userInfo["status"],
-              let data = try? JSONSerialization.data(withJSONObject: pushed),
-              let status = try? JSONDecoder().decode(QueueStatus.self, from: data)
-        else { return .noData }
+        guard let status = Self.status(in: userInfo) else { return .noData }
         await WatchModel.shared.applyPushed(status)
         return .newData
+    }
+
+    /// The state a push carries: the silent ones, and the "Match found!" alert.
+    private static func status(in userInfo: [AnyHashable: Any]) -> QueueStatus? {
+        guard let pushed = userInfo["status"],
+              let data = try? JSONSerialization.data(withJSONObject: pushed)
+        else { return nil }
+        return try? JSONDecoder().decode(QueueStatus.self, from: data)
     }
 
     func messaging(_ messaging: Messaging, didReceiveRegistrationToken fcmToken: String?) {
@@ -67,9 +73,14 @@ final class WatchDelegate: NSObject, WKApplicationDelegate, UNUserNotificationCe
         Task { @MainActor in WatchModel.shared.setFCMToken(fcmToken) }
     }
 
+    /// With the app in front. The match alert carries the state, which lands here well before the
+    /// silent push with the same state would; the alert buzzes, so the app doesn't as well.
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .sound, .list]
+        if let status = Self.status(in: notification.request.content.userInfo) {
+            await WatchModel.shared.applyPushed(status, alerted: true)
+        }
+        return [.banner, .sound, .list]
     }
 }
 
@@ -94,7 +105,8 @@ final class WatchModel: NSObject, ObservableObject, WCSessionDelegate {
     }
 
     /// No poll: the worker pushes every change here (`applyPushed`). The one request is on the way in,
-    /// since watchOS holds back silent pushes to an app that isn't open and some may not have landed.
+    /// since watchOS holds back silent pushes to an app that isn't in front -- wrist down included --
+    /// and some may not have landed.
     func setActive(_ isActive: Bool) {
         active = isActive
         guard isActive else { return }
@@ -102,9 +114,10 @@ final class WatchModel: NSObject, ObservableObject, WCSessionDelegate {
         Task { await refresh() }
     }
 
-    /// A state push from the worker.
-    func applyPushed(_ pushed: QueueStatus) {
+    /// A state push from the worker. `alerted`: it came with the system's own alert, which buzzed.
+    func applyPushed(_ pushed: QueueStatus, alerted: Bool = false) {
         guard pairID != nil else { return }
+        if alerted { alertedFoundAt = pushed.foundAt }
         apply(pushed)
     }
 

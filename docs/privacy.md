@@ -1,12 +1,13 @@
 # OverQueue — Privacy Policy
 
-Last updated: 22 September 2026
+Last updated: 28 September 2026
 
 OverQueue has no accounts, no sign-in, no ads and no analytics. Here is everything it stores.
 
 | What | Where | How to remove it |
 | --- | --- | --- |
 | A random pairing ID, the state of your queue (mode and times), and the push tokens that let us notify your devices | Our server, on Cloudflare | **Unpair** in the phone app removes that phone's tokens. **Reset QR code** in the Windows app deletes the whole pairing. Otherwise it stays until you do one of these. |
+| The timings of your last notification test (**Test notifications** in the Windows app) | Our server, on Cloudflare | Replaced by your next test, and deleted with the pairing. |
 | Server logs of each request, which include the pairing ID, part of a push token and network details such as your IP address | Cloudflare | Deleted automatically after 3 days. They can't be removed sooner. |
 | The pairing ID, the role icons and a log file | Your PC, in `%APPDATA%\OverQueue` | Delete the folder, or uninstall the app. |
 | The pairing ID | Your phone | Unpair, or uninstall the app. |

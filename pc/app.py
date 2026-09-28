@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QMessage
                              QVBoxLayout, QWidget)
 
 import devmode
+import speedtest
 import updater as up
 from detector import FOUND, QUEUEING, Detector
 from relay import Relay
@@ -49,6 +50,7 @@ TEXT = "#f2f3f5"
 MUTED = "#8a8f98"
 GOOD = "#34c759"
 WARN = "#ff9f0a"
+BAD = "#ff453a"
 MODE_COLORS = {
     "quickPlay": "#3b94f6",
     "competitive": "#ec477e",
@@ -252,6 +254,7 @@ class App(QWidget):
         self.updater = updater
         self._qr_for = None
         self._restarting = False
+        self._speed_test = None
         self.qr_code = QrCode()
         self._checks_updates = up.checks_for_updates()
 
@@ -284,6 +287,17 @@ class App(QWidget):
         self.server_label = QLabel(font=_font(10), wordWrap=True)
         for label in (self.bnet_label, self.phone_label, self.server_label):
             layout.addWidget(label)
+
+        self.test_button = QPushButton("Test notifications", font=_font(10))
+        self.test_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.test_button.setToolTip("Send a test alert to your paired devices and see how long it takes")
+        self.test_button.clicked.connect(self.test_notifications)
+        test_row = QHBoxLayout()
+        test_row.addStretch()
+        test_row.addWidget(self.test_button)
+        test_row.addStretch()
+        layout.addSpacing(8)
+        layout.addLayout(test_row)
 
         self.restart_button = QPushButton("Restart Battle.net", font=_font(10))
         self.restart_button.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -403,6 +417,9 @@ class App(QWidget):
         self.qr.setVisible(show_qr)
         self.show_button.setText("Hide QR code" if show_qr else "Show QR code")
         self.show_button.setVisible(bool(paired) or not show_qr)
+        self.test_button.setVisible(bool(paired))
+        if self._speed_test and self._speed_test.isVisible():
+            self._speed_test.refresh()
         # Only while the window is in front: nobody scans a code that's behind a game, and
         # coming back to the window asks straight away.
         self.relay.expect_phone(show_qr and self.isActiveWindow())
@@ -466,6 +483,18 @@ class App(QWidget):
         finally:
             self._restarting = False
 
+    def test_notifications(self):
+        """Opens the speed test, which starts one straight away. The same window comes back to
+        the front if it's already open, rather than a second test piling onto the first."""
+        if self._speed_test and self._speed_test.isVisible():
+            self._speed_test.raise_()
+            self._speed_test.activateWindow()
+            return
+        self._speed_test = speedtest.SpeedTestDialog(self, self.pair_id, {
+            "text": TEXT, "muted": MUTED, "good": GOOD, "warn": WARN, "bad": BAD}, log=log.info)
+        self._speed_test.show()
+        self._speed_test.run()
+
     def toggle_qr(self):
         self.qr_code.toggle(list(self.relay.paired))
         self.refresh()
@@ -481,6 +510,8 @@ class App(QWidget):
             QMessageBox.critical(self, "Reset QR code", "Couldn't save the new code: %s" % problem)
             return
         log.info("Pairing reset")
+        if self._speed_test:
+            self._speed_test.close()  # it was testing the old pairing
         self.qr_code.restart()
         self.relay.change_pair(self.pair_id)
         self.refresh()

@@ -38,3 +38,20 @@ data class QueuePush(
         }
     }
 }
+
+/**
+ * The PC's notification speed test (`startTest` in worker/src/index.ts): shown like a match alert,
+ * and answered straight away so the PC can time how long it took to get here.
+ */
+data class TestPush(val testId: String, val pairId: String) {
+    companion object {
+        private val ID = Regex("^[0-9a-f]{32}$")
+
+        fun parse(data: Map<String, String>): TestPush? {
+            if (data["event"] != "test") return null
+            val testId = data["test"]?.takeIf(ID::matches) ?: return null
+            val pairId = data["pair"]?.takeIf(ID::matches) ?: return null
+            return TestPush(testId, pairId)
+        }
+    }
+}

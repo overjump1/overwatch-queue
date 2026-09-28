@@ -203,3 +203,73 @@ export function androidPayload(push: Push, status: Status, now: number): Record<
   else if (push.alert) data.alert = push.alert;
   return data;
 }
+
+/**
+ * What the phone's and the Watch's "Match found!" share: one ID, so the Watch can tell they're the
+ * same alert and show its own straight away, and an expiry, so a phone that was off doesn't hear
+ * about the match once it's already being played -- the same minute Android's alert lives for.
+ */
+export function matchAlertOptions(status: Status): { collapseId: string; expiresAt: number } {
+  const foundAt = status.foundAt ?? 0;
+  return { collapseId: `found-${foundAt}`, expiresAt: foundAt + PLAYING_AFTER_SECONDS };
+}
+
+/**
+ * The notification speed test: the PC asks for one, the worker pushes a test alert to every paired
+ * device at once, and each device says when it got it. Every time here is the worker's own clock,
+ * in milliseconds, so it doesn't matter how far off the devices' clocks are.
+ */
+export const TEST_KINDS = ["phone", "watch", "android"] as const;
+export type TestKind = (typeof TEST_KINDS)[number];
+/** A device that hasn't answered by then isn't going to. */
+export const TEST_TIMEOUT_SECONDS = 60;
+/** Tests are for people, not scripts: one at a time, and not too many of them. */
+export const TEST_INTERVAL_SECONDS = 15;
+
+export interface TestDevice {
+  /** When Firebase took the push. */
+  sentAt?: number;
+  /** Firebase's or Apple's reason, when it didn't. */
+  error?: string;
+  /** When the device said it had the push. */
+  arrivedAt?: number;
+}
+
+export interface SpeedTest {
+  id: string;
+  /** When the PC's request reached the worker. */
+  startedAt: number;
+  devices: Partial<Record<TestKind, TestDevice>>;
+}
+
+export interface TestDeviceView {
+  /** Worker to Firebase taking it. */
+  toServiceMs: number | null;
+  /** Firebase and Apple (or Google) to the device, including the device's short reply. */
+  toDeviceMs: number | null;
+  error: string | null;
+}
+
+/**
+ * The durations the PC shows. Apple can deliver a push before Firebase has even answered the
+ * worker, so the split point is whichever came first; the two steps always add up to the total.
+ */
+export function testView(test: SpeedTest, now: number): Record<string, unknown> {
+  const devices: Partial<Record<TestKind, TestDeviceView>> = {};
+  for (const kind of TEST_KINDS) {
+    const device = test.devices[kind];
+    if (!device) continue;
+    const split = device.sentAt !== undefined && device.arrivedAt !== undefined
+      ? Math.min(device.sentAt, device.arrivedAt)
+      : device.sentAt;
+    devices[kind] = {
+      toServiceMs: split !== undefined ? split - test.startedAt : null,
+      toDeviceMs: split !== undefined && device.arrivedAt !== undefined ? device.arrivedAt - split : null,
+      error: device.error ?? null,
+    };
+  }
+  return { testId: test.id, elapsedMs: now - test.startedAt, timeoutSeconds: TEST_TIMEOUT_SECONDS, devices };
+}
+
+export const TEST_TITLE = "Test notification";
+export const TEST_BODY = "Checking how fast alerts reach you";

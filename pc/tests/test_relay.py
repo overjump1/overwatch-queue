@@ -143,5 +143,41 @@ class PairingTests(unittest.TestCase):
         self.assertEqual(self.methods(), [])
 
 
+class RetryTests(unittest.TestCase):
+    """A match found just after the worker couldn't be reached goes out as soon as it's found,
+    not when the back-off from the failure runs out."""
+
+    def setUp(self):
+        self.calls = []
+        real = r._request
+        r._request = self.request
+        self.addCleanup(setattr, r, "_request", real)
+        self.relay = r.Relay(PAIR_ID, log=lambda *args: None)
+
+    def request(self, method, path, body=None):
+        self.calls.append((time.monotonic(), body["state"] if body else None))
+        if len(self.calls) == 1:
+            raise OSError("network down")
+        return 200, {"status": {}}
+
+    def test_a_new_state_cuts_the_back_off_short(self):
+        self.relay.publish("queueing", "competitive", 5.0)
+        stop = threading.Event()
+        thread = threading.Thread(target=self.relay.run, args=(stop,), daemon=True)
+        thread.start()
+        deadline = time.monotonic() + 2
+        while not self.calls and time.monotonic() < deadline:
+            time.sleep(0.01)
+        found_at = time.monotonic()
+        self.relay.publish("found", "competitive", 60.0)
+        while len(self.calls) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        stop.set()
+        self.relay._wake.set()
+        thread.join(timeout=2)
+        self.assertEqual([state for _, state in self.calls[:2]], ["queueing", "found"])
+        self.assertLess(self.calls[1][0] - found_at, 0.5)
+
+
 if __name__ == "__main__":
     unittest.main()

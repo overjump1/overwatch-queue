@@ -119,6 +119,18 @@ class QueuePushTest {
         assertNull(QueuePush.parse(emptyMap()))
         assertNull(QueuePush.parse(mapOf("event" to "somethingElse", "status" to "{}")))
     }
+
+    @Test fun aSpeedTestIsNotAQueuePush() {
+        val test = mapOf("event" to "test", "test" to "b".repeat(32), "pair" to "a".repeat(32), "alert" to "test")
+        assertNull(QueuePush.parse(test))
+        assertEquals(TestPush("b".repeat(32), "a".repeat(32)), TestPush.parse(test))
+    }
+
+    @Test fun aSpeedTestOnlyAnswersWellFormedIds() {
+        assertNull(TestPush.parse(mapOf("event" to "test", "test" to "../../evil", "pair" to "a".repeat(32))))
+        assertNull(TestPush.parse(mapOf("event" to "test", "test" to "b".repeat(32))))
+        assertNull(TestPush.parse(mapOf("event" to "update", "test" to "b".repeat(32), "pair" to "a".repeat(32))))
+    }
 }
 
 class UpdatesTest {

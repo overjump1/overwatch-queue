@@ -16,7 +16,25 @@ const SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
 const DEFAULT_TOKEN_URI = "https://oauth2.googleapis.com/token";
 const REFRESH_MARGIN_MS = 5 * 60 * 1000;
 
-let cachedToken: { token: string; expiresAt: number; email: string } | null = null;
+export interface AccessToken {
+  token: string;
+  /** Milliseconds. */
+  expiresAt: number;
+  email: string;
+}
+
+/**
+ * Somewhere to keep the access token that outlives this isolate. A Durable Object that sat out a
+ * long, quiet queue has usually been evicted by the time the match is found, and without this the
+ * match-found push would first have to sign a JWT and trade it with Google for a new token.
+ */
+export interface TokenStore {
+  get(): Promise<AccessToken | undefined>;
+  put(token: AccessToken): Promise<void>;
+}
+
+let cachedToken: AccessToken | null = null;
+let pendingToken: Promise<AccessToken> | null = null;
 let cachedKey: { pem: string; key: CryptoKey } | null = null;
 
 export function parseServiceAccount(json: string): ServiceAccount {
@@ -62,12 +80,29 @@ async function signedAssertion(account: ServiceAccount, now: number): Promise<st
   return `${signingInput}.${base64url(signature)}`;
 }
 
-async function accessToken(account: ServiceAccount): Promise<string> {
+function usable(token: AccessToken | null | undefined, account: ServiceAccount, now: number): token is AccessToken {
+  return !!token && token.email === account.client_email && now < token.expiresAt - REFRESH_MARGIN_MS;
+}
+
+async function accessToken(account: ServiceAccount, store?: TokenStore): Promise<string> {
   const now = Date.now();
-  if (cachedToken && cachedToken.email === account.client_email
-      && now < cachedToken.expiresAt - REFRESH_MARGIN_MS) {
-    return cachedToken.token;
+  if (usable(cachedToken, account, now)) return cachedToken.token;
+  const stored = await store?.get().catch(() => undefined);
+  if (usable(stored, account, now)) {
+    cachedToken = stored;
+    return stored.token;
   }
+  // Pushes go out several at once, and on a cold start they'd each trade for a token of their own.
+  pendingToken ??= exchange(account, now).finally(() => {
+    pendingToken = null;
+  });
+  const fresh = await pendingToken;
+  cachedToken = fresh;
+  await store?.put(fresh).catch(() => undefined);
+  return fresh.token;
+}
+
+async function exchange(account: ServiceAccount, now: number): Promise<AccessToken> {
   const response = await fetch(account.token_uri ?? DEFAULT_TOKEN_URI, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -80,8 +115,7 @@ async function accessToken(account: ServiceAccount): Promise<string> {
     throw new Error(`token exchange failed: ${response.status} ${await response.text()}`);
   }
   const { access_token, expires_in } = await response.json() as { access_token: string; expires_in: number };
-  cachedToken = { token: access_token, expiresAt: now + expires_in * 1000, email: account.client_email };
-  return access_token;
+  return { token: access_token, expiresAt: now + expires_in * 1000, email: account.client_email };
 }
 
 /** A Live Activity push. `token` is the device's FCM token, `activityToken` the ActivityKit one. */
@@ -98,23 +132,34 @@ export function liveActivityMessage(token: string, activityToken: string, aps: o
   };
 }
 
+export interface AlertOptions {
+  /**
+   * `apns-collapse-id`, which iOS and watchOS also take as the notification's identifier. The phone
+   * and the Watch getting the same one is what lets the Watch alert at once: with an app of its own
+   * on the Watch, watchOS holds an alert until the phone's copy shows up, to tell whether they're
+   * the same notification, and with no matching copy it only alerts after a timeout.
+   */
+  collapseId?: string;
+  /** Unix seconds after which Apple drops the alert instead of delivering it late. */
+  expiresAt?: number;
+  /** Sets `mutable-content`, so the Notification Service Extension sees the alert before it shows. */
+  mutable?: boolean;
+  /** Custom keys next to `aps`, for the app to read. */
+  data?: Record<string, unknown>;
+}
+
 /** A regular, time-sensitive alert notification. */
-export function alertMessage(token: string, title: string, body: string): object {
-  return {
-    message: {
-      token,
-      apns: {
-        headers: { "apns-priority": "10", "apns-push-type": "alert" },
-        payload: {
-          aps: {
-            alert: { title, body },
-            sound: "match_found.caf",
-            "interruption-level": "time-sensitive",
-          },
-        },
-      },
-    },
+export function alertMessage(token: string, title: string, body: string, options: AlertOptions = {}): object {
+  const headers: Record<string, string> = { "apns-priority": "10", "apns-push-type": "alert" };
+  if (options.collapseId) headers["apns-collapse-id"] = options.collapseId;
+  if (options.expiresAt !== undefined) headers["apns-expiration"] = String(Math.floor(options.expiresAt));
+  const aps: Record<string, unknown> = {
+    alert: { title, body },
+    sound: "match_found.caf",
+    "interruption-level": "time-sensitive",
   };
+  if (options.mutable) aps["mutable-content"] = 1;
+  return { message: { token, apns: { headers, payload: { ...options.data, aps } } } };
 }
 
 /**
@@ -143,8 +188,8 @@ export function androidMessage(token: string, data: Record<string, string>): obj
   return { message: { token, android: { priority: "HIGH", ttl }, data } };
 }
 
-export async function send(account: ServiceAccount, message: object): Promise<FcmResult> {
-  const token = await accessToken(account);
+export async function send(account: ServiceAccount, message: object, store?: TokenStore): Promise<FcmResult> {
+  const token = await accessToken(account, store);
   const response = await fetch(`https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`, {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
