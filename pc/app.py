@@ -364,7 +364,11 @@ class App(QWidget):
     @staticmethod
     def _set(label, text, color):
         label.setText(text)
-        label.setStyleSheet("color: %s;" % color)
+        # Twice a second otherwise: a new style sheet restyles the label and lays the window out
+        # again, even when it's the same colour.
+        style = "color: %s;" % color
+        if label.styleSheet() != style:
+            label.setStyleSheet(style)
 
     def _render(self):
         state, mode, elapsed, since_found, holding, connected = self.watcher.snapshot()
@@ -491,7 +495,7 @@ class App(QWidget):
             self._speed_test.activateWindow()
             return
         self._speed_test = speedtest.SpeedTestDialog(self, self.pair_id, {
-            "text": TEXT, "muted": MUTED, "good": GOOD, "warn": WARN, "bad": BAD}, log=log.info)
+            "text": TEXT, "muted": MUTED, "good": GOOD, "warn": WARN, "bad": BAD, "card": CARD}, log=log.info)
         self._speed_test.show()
         self._speed_test.run()
 

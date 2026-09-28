@@ -2,6 +2,7 @@
 import os
 import sys
 import threading
+import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -37,8 +38,10 @@ class ResultTests(unittest.TestCase):
         self.assertEqual(phone["name"], "iPhone")
         self.assertEqual(phone["total_ms"], 1300)
         self.assertEqual(phone["verdict"], st.FAST)
-        self.assertEqual([ms for _, ms in phone["steps"]], [100, 300, 900])
-        self.assertEqual(phone["steps"][2][0], "Apple → your iPhone")
+        self.assertEqual(phone["times"], [100, 300, 900])
+        self.assertEqual(phone["stage"], st.ARRIVED)
+        self.assertIsNone(phone["failed_at"])
+        self.assertEqual(phone["stops"], ["Your PC", "OverQueue server", "Apple push service", "iPhone"])
         self.assertIsNone(phone["note"])
 
     def test_the_watch_says_what_its_time_leaves_out(self):
@@ -57,8 +60,12 @@ class ResultTests(unittest.TestCase):
         devices = {"android": {"toServiceMs": 200, "toDeviceMs": None, "error": None}}
         [waiting] = st.device_results(view(devices), pc_ms=0, finished=False)
         self.assertEqual(waiting["verdict"], st.WAITING)
+        self.assertEqual(waiting["stage"], st.PUSH_SERVICE)
+        self.assertEqual(waiting["times"], [0, 200, None])
+        self.assertEqual(waiting["stops"][2], "Google push service")
         [late] = st.device_results(view(devices, timeout=60), pc_ms=0, finished=True)
         self.assertEqual(late["verdict"], st.FAILED)
+        self.assertEqual(late["failed_at"], st.PUSH_SERVICE)
         self.assertTrue(late["note"].startswith("Didn't arrive within 60 s."))
         self.assertIn(st.TIPS["android"], late["note"])
 
@@ -66,6 +73,7 @@ class ResultTests(unittest.TestCase):
         [phone] = st.device_results(view({"phone": {"toServiceMs": None, "toDeviceMs": None,
                                                     "error": "UNREGISTERED"}}), pc_ms=0, finished=False)
         self.assertEqual(phone["verdict"], st.FAILED)
+        self.assertEqual(phone["failed_at"], st.SERVER)
         self.assertIn("open OverQueue on it", phone["note"])
 
     def test_the_log_line_has_every_step(self):
@@ -75,6 +83,59 @@ class ResultTests(unittest.TestCase):
         }), pc_ms=100, finished=True)
         self.assertEqual(st.summary(results),
                          "Notification test: iPhone 1.30 s (0.10 s, 0.30 s, 0.90 s); Apple Watch failed")
+
+
+class HeadlineTests(unittest.TestCase):
+    def results(self, devices):
+        return st.device_results(view(devices), pc_ms=100, finished=True)
+
+    def test_names_the_slowest_when_every_device_got_it(self):
+        self.assertEqual(st.headline(self.results({
+            "phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None},
+            "watch": {"toServiceMs": 300, "toDeviceMs": 2000, "error": None},
+        })), "All your devices got it. The slowest, your Apple Watch, took 2.40 s.")
+
+    def test_one_device(self):
+        self.assertEqual(st.headline(self.results({"phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None}})),
+                         "Your iPhone got it in 1.30 s.")
+
+    def test_counts_the_ones_that_didnt(self):
+        self.assertEqual(st.headline(self.results({
+            "phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None},
+            "watch": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
+        })), "1 of your 2 devices got it.")
+        self.assertEqual(st.headline(self.results({"watch": {"toServiceMs": 300, "toDeviceMs": None, "error": None}})),
+                         "None of your devices got it.")
+
+
+class TimelineTests(unittest.TestCase):
+    """The cards are painted by hand, so paint one in every state there is and check nothing raises."""
+
+    @classmethod
+    def setUpClass(cls):
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        from PyQt6.QtWidgets import QApplication
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_paints_every_state(self):
+        from PyQt6.QtGui import QImage
+        colors = {"text": "#fff", "muted": "#888", "good": "#0f0", "warn": "#fa0", "bad": "#f00", "card": "#222"}
+        devices = {
+            "phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None},
+            "watch": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
+            "android": {"toServiceMs": None, "toDeviceMs": None, "error": "UNREGISTERED"},
+        }
+        results = [st.sending()]
+        for finished in (False, True):
+            results += st.device_results(view(devices), pc_ms=100, finished=finished)
+        for result in results:
+            timeline = st.Timeline(colors)
+            timeline.set_result(result)
+            for age in (0.2, 60):  # mid-animation, then settled
+                timeline.created = time.monotonic() - age
+                timeline._filled_from = {step: timeline.created for step in timeline._filled_from}
+                timeline.render(QImage(timeline.size(), QImage.Format.Format_ARGB32))
+            self.assertGreater(timeline.height(), 0)
 
 
 class RunTests(unittest.TestCase):
