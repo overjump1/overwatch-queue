@@ -32,15 +32,15 @@ DEVICES = (
 )
 
 TIPS = {
-    "phone": "Check Settings → Notifications → OverQueue is allowed and no Focus is hiding it, "
-             "then open OverQueue on the iPhone once.",
-    "watch": "Wear the Watch unlocked, check the Watch app on your iPhone → Notifications → "
-             "OverQueue is on, and open OverQueue on the Watch once.",
-    "android": "Allow OverQueue's notifications, turn off battery optimisation for it, and open "
-               "it once.",
+    "phone": "Check OverQueue's notifications are on and no Focus hides them, then open it once.",
+    "watch": "Wear the Watch unlocked, check OverQueue's notifications are on, and open it once.",
+    "android": "Allow OverQueue's notifications, turn off battery optimisation for it, and open it once.",
 }
-WATCH_NOTE = ("With your iPhone nearby, Apple hands the Watch its alerts through the iPhone, and the "
-              "Watch answers back the same way, so its time runs a little longer than the iPhone's.")
+# The rest is on the cards' tooltips, so the window itself stays to the timelines.
+ABOUT = ("Under %d s is fast, under %d s is OK. Each time includes the device's short reply saying it "
+         "got the alert." % (FAST_MS // 1000, OK_MS // 1000))
+WATCH_NOTE = ("With your iPhone nearby, the Watch gets its alerts through the iPhone and answers back the "
+              "same way, so it's a little slower than the iPhone.")
 STALE_ERRORS = ("UNREGISTERED", "NOT_FOUND", "INVALID_ARGUMENT", "BadDeviceToken", "Unregistered")
 
 FAST, OK, SLOW, WAITING, FAILED = "fast", "ok", "slow", "waiting", "failed"
@@ -80,13 +80,13 @@ def device_results(view, pc_ms, finished):
         if error:
             stale = any(code in error for code in STALE_ERRORS)
             result.update(verdict=FAILED, failed_at=SERVER, times=[pc_ms, None, None], note=(
-                "This device's registration is out of date: open OverQueue on it, then test again."
-                if stale else "%s's push service turned it away (%s)." % (service, error)))
+                "Out of date on this device: open OverQueue on it, then test again."
+                if stale else "%s turned it away (%s)." % (service, error)))
         elif to_device is not None:
             total = pc_ms + to_service + to_device
             result.update(total_ms=total, verdict=verdict(total), stage=ARRIVED)
         elif finished:
-            result.update(verdict=FAILED, failed_at=PUSH_SERVICE, note="Didn't arrive within %d s. %s" % (
+            result.update(verdict=FAILED, failed_at=PUSH_SERVICE, note="Didn't arrive in %d s. %s" % (
                 view.get("timeoutSeconds", 60), TIPS[kind]))
         results.append(result)
     return results
@@ -95,10 +95,8 @@ def device_results(view, pc_ms, finished):
 def _card(kind, name, service):
     """A device's card before anything is known about the trip."""
     return {"kind": kind, "name": name, "total_ms": None, "failed_at": None, "verdict": WAITING,
-            "stops": ["Your PC", "OverQueue server", "%s push service" % service, name],
-            "times": [None, None, None], "stage": YOUR_PC,
-            # Up from the start, not once the Watch answers, so its card doesn't grow then.
-            "note": WATCH_NOTE if kind == "watch" else None}
+            "stops": ["Your PC", "Server", service, name], "times": [None, None, None], "stage": YOUR_PC,
+            "note": None}
 
 
 def sending(kinds=()):
@@ -110,6 +108,11 @@ def sending(kinds=()):
         cards = [_card(SENDING, "Your devices", "")]
         cards[0]["stops"][PUSH_SERVICE] = "Push service"
     return cards
+
+
+def about(result):
+    """A card's tooltip."""
+    return ABOUT + ("\n\n" + WATCH_NOTE if result["kind"] == "watch" else "")
 
 
 def summary(results):
@@ -125,17 +128,13 @@ def summary(results):
 
 
 def headline(results):
-    """The line under the cards once a test is over."""
-    arrived = [result for result in results if result["total_ms"] is not None]
+    """The line next to the buttons once a test is over."""
+    arrived = sum(result["total_ms"] is not None for result in results)
+    if arrived == len(results):
+        return "Your %s got it." % results[0]["name"] if arrived == 1 else "All your devices got it."
     if not arrived:
         return "None of your devices got it."
-    if len(arrived) < len(results):
-        return "%d of your %d devices got it." % (len(arrived), len(results))
-    if len(arrived) == 1:
-        return "Your %s got it in %s." % (arrived[0]["name"], seconds(arrived[0]["total_ms"]))
-    slowest = max(arrived, key=lambda result: result["total_ms"])
-    return "All your devices got it. The slowest, your %s, took %s." % (
-        slowest["name"], seconds(slowest["total_ms"]))
+    return "%d of your %d devices got it." % (arrived, len(results))
 
 
 class Test:
@@ -206,7 +205,7 @@ CARD_WIDTH = 480
 PAD = 16
 NODE_RADIUS = 18
 NODES_Y = 88
-NOTE_Y = 152
+NOTE_Y = 140
 ACCENT = "#3b94f6"
 TRACK = "#2a2f39"
 NODE_FILL = "#1f232b"
@@ -246,6 +245,7 @@ class Timeline(QWidget):
             if step not in self._filled_from:
                 self._filled_from[step] = max(now, self._reached(step))
         self.result = result
+        self.setToolTip(about(result))
         self.setFixedHeight(self._height())
         self.update()
 
@@ -528,31 +528,26 @@ class SpeedTestDialog(QDialog):
         self.setWindowTitle("Notification speed test")
         self.setFixedWidth(CARD_WIDTH + 40)
         self.setStyleSheet(parent.styleSheet() if parent else "")
+        # No heading: the title bar already says what this is.
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setContentsMargins(20, 20, 20, 18)
         layout.setSpacing(10)
-        title = QLabel("Notification speed test", font=_font(14, QFont.Weight.DemiBold))
-        intro = QLabel("Sends a test alert to your paired devices and follows it all the way there.",
-                       font=_font(9), wordWrap=True)
-        intro.setStyleSheet("color: %s;" % colors["muted"])
-        layout.addWidget(title)
-        layout.addWidget(intro)
         self.cards = QVBoxLayout()
         self.cards.setSpacing(10)
         layout.addLayout(self.cards)
-        self.status = QLabel(font=_font(9), wordWrap=True, textFormat=Qt.TextFormat.RichText)
-        layout.addWidget(self.status)
-        layout.addStretch()  # whatever the window has over, below the text rather than between cards
+        layout.addStretch()  # whatever the window has over, below the cards rather than between them
 
+        self.status = QLabel(font=_font(9), wordWrap=True, textFormat=Qt.TextFormat.RichText)
         self.again = QPushButton("Test again", font=_font(10))
         self.again.clicked.connect(self.run)
         close = QPushButton("Close", font=_font(10))
         close.clicked.connect(self.close)
-        buttons = QHBoxLayout()
-        buttons.addStretch()
-        buttons.addWidget(self.again)
-        buttons.addWidget(close)
-        layout.addLayout(buttons)
+        bottom = QHBoxLayout()
+        bottom.setSpacing(8)
+        bottom.addWidget(self.status, 1)
+        bottom.addWidget(self.again)
+        bottom.addWidget(close)
+        layout.addLayout(bottom)
 
     def run(self):
         if self.test:
@@ -608,21 +603,16 @@ class SpeedTestDialog(QDialog):
             self.frames.stop()
 
     def _status(self):
-        """A line on how it's going, over the same small print throughout, so the text keeps its
-        height from start to finish."""
         snapshot, colors = self.snapshot, self.colors
         if snapshot["error"]:
             line, color = snapshot["error"], colors["warn"]
         elif not snapshot["results"]:
-            line, color = "Sending the test…", colors["muted"]
+            line, color = "Sending…", colors["muted"]
         elif not snapshot["finished"]:
-            line, color = "Waiting for your devices to say they got it…", colors["muted"]
+            line, color = "Waiting for your devices…", colors["muted"]
         else:
             line, color = headline(snapshot["results"]), colors["text"]
-        self.status.setText(
-            '<span style="color: %s;">%s</span><br><span style="color: %s;">Under %d s is fast, under %d s is '
-            'OK. Each time includes the device\'s short reply saying it got the alert.</span>'
-            % (color, line, colors["muted"], FAST_MS // 1000, OK_MS // 1000))
+        self.status.setText('<span style="color: %s;">%s</span>' % (color, line))
 
     def refresh(self):
         """Also called on the app's own timer, for the "Test again" countdown. Only text that has

@@ -41,13 +41,15 @@ class ResultTests(unittest.TestCase):
         self.assertEqual(phone["times"], [100, 300, 900])
         self.assertEqual(phone["stage"], st.ARRIVED)
         self.assertIsNone(phone["failed_at"])
-        self.assertEqual(phone["stops"], ["Your PC", "OverQueue server", "Apple push service", "iPhone"])
+        self.assertEqual(phone["stops"], ["Your PC", "Server", "Apple", "iPhone"])
         self.assertIsNone(phone["note"])
 
-    def test_the_watch_says_what_its_time_leaves_out(self):
+    def test_the_watch_says_what_its_time_leaves_out_on_hover(self):
         [watch] = st.device_results(view({"watch": {"toServiceMs": 300, "toDeviceMs": 900, "error": None}}),
                                     pc_ms=100, finished=True)
-        self.assertEqual(watch["note"], st.WATCH_NOTE)
+        self.assertIsNone(watch["note"])
+        self.assertIn(st.WATCH_NOTE, st.about(watch))
+        self.assertNotIn(st.WATCH_NOTE, st.about(st.sending(["phone"])[0]))
 
     def test_devices_come_in_a_fixed_order_and_only_if_paired(self):
         results = st.device_results(view({
@@ -62,17 +64,12 @@ class ResultTests(unittest.TestCase):
         self.assertEqual(waiting["verdict"], st.WAITING)
         self.assertEqual(waiting["stage"], st.PUSH_SERVICE)
         self.assertEqual(waiting["times"], [0, 200, None])
-        self.assertEqual(waiting["stops"][2], "Google push service")
+        self.assertEqual(waiting["stops"][2], "Google")
         [late] = st.device_results(view(devices, timeout=60), pc_ms=0, finished=True)
         self.assertEqual(late["verdict"], st.FAILED)
         self.assertEqual(late["failed_at"], st.PUSH_SERVICE)
-        self.assertTrue(late["note"].startswith("Didn't arrive within 60 s."))
+        self.assertTrue(late["note"].startswith("Didn't arrive in 60 s."))
         self.assertIn(st.TIPS["android"], late["note"])
-
-    def test_the_watch_note_is_up_while_it_waits_too(self):
-        [watch] = st.device_results(view({"watch": {"toServiceMs": 300, "toDeviceMs": None, "error": None}}),
-                                    pc_ms=100, finished=False)
-        self.assertEqual(watch["note"], st.WATCH_NOTE)
 
     def test_testing_again_starts_the_last_devices_over(self):
         phone, watch = st.sending(["watch", "phone"])
@@ -80,12 +77,11 @@ class ResultTests(unittest.TestCase):
         self.assertEqual(phone["stage"], st.YOUR_PC)
         self.assertEqual(phone["times"], [None, None, None])
         self.assertEqual(phone["verdict"], st.WAITING)
-        self.assertEqual(watch["note"], st.WATCH_NOTE)
 
     def test_the_first_test_has_one_card_for_every_device(self):
         [card] = st.sending()
         self.assertEqual(card["kind"], st.SENDING)
-        self.assertEqual(card["stops"], ["Your PC", "OverQueue server", "Push service", "Your devices"])
+        self.assertEqual(card["stops"], ["Your PC", "Server", "Push service", "Your devices"])
 
     def test_a_stale_registration_says_how_to_fix_it(self):
         [phone] = st.device_results(view({"phone": {"toServiceMs": None, "toDeviceMs": None,
@@ -107,15 +103,15 @@ class HeadlineTests(unittest.TestCase):
     def results(self, devices):
         return st.device_results(view(devices), pc_ms=100, finished=True)
 
-    def test_names_the_slowest_when_every_device_got_it(self):
+    def test_every_device_got_it(self):
         self.assertEqual(st.headline(self.results({
             "phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None},
             "watch": {"toServiceMs": 300, "toDeviceMs": 2000, "error": None},
-        })), "All your devices got it. The slowest, your Apple Watch, took 2.40 s.")
+        })), "All your devices got it.")
 
     def test_one_device(self):
         self.assertEqual(st.headline(self.results({"phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None}})),
-                         "Your iPhone got it in 1.30 s.")
+                         "Your iPhone got it.")
 
     def test_counts_the_ones_that_didnt(self):
         self.assertEqual(st.headline(self.results({
