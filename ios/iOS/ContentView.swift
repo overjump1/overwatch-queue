@@ -141,6 +141,9 @@ struct ContentView: View {
                 } label: {
                     Label("Match found", systemImage: "checkmark.circle.fill")
                         .frame(maxWidth: .infinity)
+                        // The app's tint is white, which fills a prominent button white; its label
+                        // stays white on top unless it's told otherwise.
+                        .foregroundStyle(.black)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
