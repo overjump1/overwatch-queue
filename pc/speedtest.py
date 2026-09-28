@@ -75,9 +75,8 @@ def device_results(view, pc_ms, finished):
         if device is None:
             continue
         to_service, to_device, error = device.get("toServiceMs"), device.get("toDeviceMs"), device.get("error")
-        result = {"kind": kind, "name": name, "total_ms": None, "note": None, "failed_at": None,
-                  "stops": ["Your PC", "OverQueue server", "%s push service" % service, name],
-                  "times": [pc_ms, to_service, to_device], "stage": PUSH_SERVICE}
+        result = _card(kind, name, service)
+        result.update(times=[pc_ms, to_service, to_device], stage=PUSH_SERVICE)
         if error:
             stale = any(code in error for code in STALE_ERRORS)
             result.update(verdict=FAILED, failed_at=SERVER, times=[pc_ms, None, None], note=(
@@ -85,22 +84,32 @@ def device_results(view, pc_ms, finished):
                 if stale else "%s's push service turned it away (%s)." % (service, error)))
         elif to_device is not None:
             total = pc_ms + to_service + to_device
-            result.update(total_ms=total, verdict=verdict(total), stage=ARRIVED,
-                          note=WATCH_NOTE if kind == "watch" else None)
+            result.update(total_ms=total, verdict=verdict(total), stage=ARRIVED)
         elif finished:
             result.update(verdict=FAILED, failed_at=PUSH_SERVICE, note="Didn't arrive within %d s. %s" % (
                 view.get("timeoutSeconds", 60), TIPS[kind]))
-        else:
-            result.update(verdict=WAITING)
         results.append(result)
     return results
 
 
-def sending():
-    """The one card up while the PC's request is still on its way to the worker."""
-    return {"kind": SENDING, "name": "Your devices", "total_ms": None, "note": None, "failed_at": None,
-            "stops": ["Your PC", "OverQueue server", "Push service", "Your devices"],
-            "times": [None, None, None], "stage": YOUR_PC, "verdict": WAITING}
+def _card(kind, name, service):
+    """A device's card before anything is known about the trip."""
+    return {"kind": kind, "name": name, "total_ms": None, "failed_at": None, "verdict": WAITING,
+            "stops": ["Your PC", "OverQueue server", "%s push service" % service, name],
+            "times": [None, None, None], "stage": YOUR_PC,
+            # Up from the start, not once the Watch answers, so its card doesn't grow then.
+            "note": WATCH_NOTE if kind == "watch" else None}
+
+
+def sending(kinds=()):
+    """The cards up while the PC's request is still on its way to the worker: the devices the
+    last test went to, back at the start, so testing again doesn't reshuffle the window. The
+    first test doesn't know them yet, and has one card for them all."""
+    cards = [_card(kind, name, service) for kind, name, service in DEVICES if kind in kinds]
+    if not cards:
+        cards = [_card(SENDING, "Your devices", "")]
+        cards[0]["stops"][PUSH_SERVICE] = "Push service"
+    return cards
 
 
 def summary(results):
@@ -209,6 +218,7 @@ PULSE_SECONDS = 0.6
 CROSSING_SECONDS = 1.1
 FRAME_MS = 16
 ICONS = {SENDING: "phone", "phone": "phone", "watch": "watch", "android": "android"}
+FAILED_STEPS = {YOUR_PC: "failed", SERVER: "turned away", PUSH_SERVICE: "no reply"}
 VERDICTS = {FAST: "Fast", OK: "OK", SLOW: "Slow", FAILED: "Didn't arrive", WAITING: "On its way"}
 
 
@@ -344,7 +354,7 @@ class Timeline(QWidget):
                 bad = QColor(colors["bad"])
                 painter.setPen(_pen(bad, 3, Qt.PenStyle.DashLine))
                 painter.drawLine(start, end)
-                self._step_label(painter, label_rect, "turned away" if step == SERVER else "no reply", bad)
+                self._step_label(painter, label_rect, FAILED_STEPS[step], bad)
             elif filled_from is not None:
                 progress = min(1.0, max(0.0, (now - filled_from) / FILL_SECONDS))
                 if progress > 0:
@@ -509,6 +519,8 @@ class SpeedTestDialog(QDialog):
         self.started_at = None
         self.snapshot = {"results": [], "finished": False, "error": None}
         self.timelines = {}
+        self.kinds = ()  # the devices the last test went to
+        self.tallest = 0
         self.signals = _Signals()
         self.signals.update.connect(self._show)
         self.frames = QTimer(self, interval=FRAME_MS, timeout=self._animate)
@@ -530,6 +542,7 @@ class SpeedTestDialog(QDialog):
         layout.addLayout(self.cards)
         self.status = QLabel(font=_font(9), wordWrap=True, textFormat=Qt.TextFormat.RichText)
         layout.addWidget(self.status)
+        layout.addStretch()  # whatever the window has over, below the text rather than between cards
 
         self.again = QPushButton("Test again", font=_font(10))
         self.again.clicked.connect(self.run)
@@ -560,8 +573,12 @@ class SpeedTestDialog(QDialog):
         device does. The cards are only made again when the devices on them change."""
         self.snapshot = snapshot
         results = snapshot["results"]
-        if not results and not snapshot["finished"]:
-            results = [sending()]
+        if results:
+            self.kinds = [result["kind"] for result in results]
+        elif snapshot["error"]:
+            results = [dict(card, failed_at=YOUR_PC, verdict=FAILED) for card in sending(self.kinds)]
+        elif not snapshot["finished"]:
+            results = sending(self.kinds)
         kinds = [result["kind"] for result in results]
         if restart or kinds != list(self.timelines):
             for timeline in self.timelines.values():
@@ -575,8 +592,11 @@ class SpeedTestDialog(QDialog):
         self._status()
         self.refresh()
         # Like the main window: the width is fixed, and the height is whatever the cards and the
-        # wrapped text under them need at that width. adjustSize() comes up short of the wrapping.
-        self.setFixedHeight(self.layout().totalHeightForWidth(self.width()))
+        # wrapped text under them need at that width (adjustSize() comes up short of the wrapping).
+        # It only ever grows while it's open: shrinking as a test starts over would pull the
+        # buttons out from under the pointer.
+        self.tallest = max(self.tallest, self.layout().totalHeightForWidth(self.width()))
+        self.setFixedHeight(self.tallest)
         if not self.frames.isActive():
             self.frames.start()
 
@@ -588,19 +608,21 @@ class SpeedTestDialog(QDialog):
             self.frames.stop()
 
     def _status(self):
+        """A line on how it's going, over the same small print throughout, so the text keeps its
+        height from start to finish."""
         snapshot, colors = self.snapshot, self.colors
         if snapshot["error"]:
-            text = '<span style="color: %s;">%s</span>' % (colors["warn"], snapshot["error"])
+            line, color = snapshot["error"], colors["warn"]
         elif not snapshot["results"]:
-            text = '<span style="color: %s;">Sending the test…</span>' % colors["muted"]
+            line, color = "Sending the test…", colors["muted"]
         elif not snapshot["finished"]:
-            text = '<span style="color: %s;">Waiting for your devices to say they got it…</span>' % colors["muted"]
+            line, color = "Waiting for your devices to say they got it…", colors["muted"]
         else:
-            text = ('<span style="color: %s;">%s</span><br><span style="color: %s;">Under %d s is fast, under %d s '
-                    'is OK. Each time includes the device\'s short reply saying it got the alert.</span>'
-                    % (colors["text"], headline(snapshot["results"]), colors["muted"], FAST_MS // 1000,
-                       OK_MS // 1000))
-        self.status.setText(text)
+            line, color = headline(snapshot["results"]), colors["text"]
+        self.status.setText(
+            '<span style="color: %s;">%s</span><br><span style="color: %s;">Under %d s is fast, under %d s is '
+            'OK. Each time includes the device\'s short reply saying it got the alert.</span>'
+            % (color, line, colors["muted"], FAST_MS // 1000, OK_MS // 1000))
 
     def refresh(self):
         """Also called on the app's own timer, for the "Test again" countdown. Only text that has

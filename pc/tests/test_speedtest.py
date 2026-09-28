@@ -69,6 +69,24 @@ class ResultTests(unittest.TestCase):
         self.assertTrue(late["note"].startswith("Didn't arrive within 60 s."))
         self.assertIn(st.TIPS["android"], late["note"])
 
+    def test_the_watch_note_is_up_while_it_waits_too(self):
+        [watch] = st.device_results(view({"watch": {"toServiceMs": 300, "toDeviceMs": None, "error": None}}),
+                                    pc_ms=100, finished=False)
+        self.assertEqual(watch["note"], st.WATCH_NOTE)
+
+    def test_testing_again_starts_the_last_devices_over(self):
+        phone, watch = st.sending(["watch", "phone"])
+        self.assertEqual([phone["kind"], watch["kind"]], ["phone", "watch"])
+        self.assertEqual(phone["stage"], st.YOUR_PC)
+        self.assertEqual(phone["times"], [None, None, None])
+        self.assertEqual(phone["verdict"], st.WAITING)
+        self.assertEqual(watch["note"], st.WATCH_NOTE)
+
+    def test_the_first_test_has_one_card_for_every_device(self):
+        [card] = st.sending()
+        self.assertEqual(card["kind"], st.SENDING)
+        self.assertEqual(card["stops"], ["Your PC", "OverQueue server", "Push service", "Your devices"])
+
     def test_a_stale_registration_says_how_to_fix_it(self):
         [phone] = st.device_results(view({"phone": {"toServiceMs": None, "toDeviceMs": None,
                                                     "error": "UNREGISTERED"}}), pc_ms=0, finished=False)
@@ -111,6 +129,8 @@ class HeadlineTests(unittest.TestCase):
 class TimelineTests(unittest.TestCase):
     """The cards are painted by hand, so paint one in every state there is and check nothing raises."""
 
+    COLORS = {"text": "#fff", "muted": "#888", "good": "#0f0", "warn": "#fa0", "bad": "#f00", "card": "#222"}
+
     @classmethod
     def setUpClass(cls):
         os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -119,13 +139,13 @@ class TimelineTests(unittest.TestCase):
 
     def test_paints_every_state(self):
         from PyQt6.QtGui import QImage
-        colors = {"text": "#fff", "muted": "#888", "good": "#0f0", "warn": "#fa0", "bad": "#f00", "card": "#222"}
+        colors = self.COLORS
         devices = {
             "phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None},
             "watch": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
             "android": {"toServiceMs": None, "toDeviceMs": None, "error": "UNREGISTERED"},
         }
-        results = [st.sending()]
+        results = st.sending() + st.sending(["phone", "watch"])
         for finished in (False, True):
             results += st.device_results(view(devices), pc_ms=100, finished=finished)
         for result in results:
@@ -136,6 +156,21 @@ class TimelineTests(unittest.TestCase):
                 timeline._filled_from = {step: timeline.created for step in timeline._filled_from}
                 timeline.render(QImage(timeline.size(), QImage.Format.Format_ARGB32))
             self.assertGreater(timeline.height(), 0)
+
+    def test_the_window_never_shrinks_while_its_open(self):
+        dialog = st.SpeedTestDialog(None, PAIR_ID, self.COLORS)
+        done = st.device_results(view({
+            "phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None},
+            "watch": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
+        }), pc_ms=100, finished=True)
+        dialog._show({"results": done, "finished": True, "error": None})
+        height = dialog.height()
+        dialog._show({"results": [], "finished": False, "error": None}, restart=True)
+        self.assertEqual(list(dialog.timelines), ["phone", "watch"])
+        self.assertEqual(dialog.height(), height)
+        dialog._show({"results": [], "finished": True, "error": "Couldn't reach the notification server."})
+        self.assertEqual(dialog.height(), height)
+        dialog.close()
 
 
 class RunTests(unittest.TestCase):
