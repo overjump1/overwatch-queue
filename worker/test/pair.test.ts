@@ -9,11 +9,14 @@ vi.mock("cloudflare:workers", () => ({
 }));
 
 const sent: object[] = [];
+// What a send waits on before Firebase "answers", for holding one send up while others land.
+let answer: (message: object) => Promise<void> = async () => undefined;
 vi.mock("../src/fcm", async (original) => ({
   ...(await original<typeof import("../src/fcm")>()),
   parseServiceAccount: () => ({ project_id: "p", client_email: "e", private_key: "k" }),
   send: async (_account: unknown, message: object) => {
     sent.push(message);
+    await answer(message);
     return { ok: true, status: 200 };
   },
 }));
@@ -52,6 +55,7 @@ const to = (name: string) => messages().filter((m) => m.message.token === TOKEN(
 
 beforeEach(async () => {
   sent.length = 0;
+  answer = async () => undefined;
   pair = new Pair({ storage: storage() } as never, { FCM_SERVICE_ACCOUNT: "{}" } as never);
   await pair.register({ kind: "phone", fcm: TOKEN("phone"), updateToken: ACTIVITY, startToken: ACTIVITY });
   await pair.report({ state: "queueing", mode: "competitive", elapsed: 5 });
@@ -125,6 +129,25 @@ describe("speed test", () => {
     const view = read.body as { devices: Record<string, { toDeviceMs: number | null }> };
     expect(view.devices.watch.toDeviceMs).not.toBeNull();
     expect(view.devices.phone.toDeviceMs).toBeNull();
+  });
+
+  it("answers a device while another device's send is still out", async () => {
+    await pair.register({ kind: "watch", fcm: TOKEN("watch") });
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    answer = async (message) => {
+      if ((message as Message).message.token === TOKEN("watch")) await held;
+    };
+    const starting = pair.startTest(PAIR);
+    await vi.waitFor(() => expect(to("phone")).toHaveLength(1));
+    const testId = to("phone")[0].message.apns!.payload.test as string;
+
+    // The phone's answer comes back while Firebase still hasn't answered for the Watch.
+    expect((await pair.testArrived(testId, { kind: "phone" })).status).toBe(200);
+    release();
+    const view = (await starting).body as { devices: Record<string, { toDeviceMs: number | null; error: string | null }> };
+    expect(view.devices.phone.toDeviceMs).not.toBeNull();
+    expect(view.devices.watch.error).toBeNull();
   });
 
   it("takes one test at a time", async () => {

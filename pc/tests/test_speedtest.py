@@ -164,8 +164,10 @@ class TimelineTests(unittest.TestCase):
         dialog._show({"results": [], "finished": False, "error": None}, restart=True)
         self.assertEqual(list(dialog.timelines), ["phone", "watch"])
         self.assertEqual(dialog.height(), height)
-        dialog._show({"results": [], "finished": True, "error": "Couldn't reach the notification server."})
+        dialog._show({"results": [], "finished": True, "error": "Nothing is paired yet: scan the QR code first.",
+                      "failed_at": st.SERVER})
         self.assertEqual(dialog.height(), height)
+        self.assertEqual({timeline.result["failed_at"] for timeline in dialog.timelines.values()}, {st.SERVER})
         dialog.close()
 
 
@@ -212,7 +214,9 @@ class RunTests(unittest.TestCase):
 
     def test_too_soon(self):
         self.answers = [(429, {"error": "too_soon", "retryAfter": 9})]
-        self.assertEqual(self.run_test()["error"], "A test just ran. Try again in 9 s.")
+        final = self.run_test()
+        self.assertEqual(final["error"], "A test just ran. Try again in 9 s.")
+        self.assertEqual(final["failed_at"], st.SERVER)  # it answered, just not yes
 
     def test_nothing_paired(self):
         self.answers = [(409, None)]
@@ -222,7 +226,9 @@ class RunTests(unittest.TestCase):
         def fail(*args, **kwargs):
             raise OSError("no network")
         r._request = fail
-        self.assertEqual(self.run_test()["error"], "Couldn't reach the notification server.")
+        final = self.run_test()
+        self.assertEqual(final["error"], "Couldn't reach the notification server.")
+        self.assertEqual(final["failed_at"], st.YOUR_PC)
 
 
 if __name__ == "__main__":

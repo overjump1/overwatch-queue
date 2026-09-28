@@ -34,7 +34,9 @@ final class NotificationService: UNNotificationServiceExtension {
         arrived.httpMethod = "POST"
         arrived.setValue("application/json", forHTTPHeaderField: "Content-Type")
         arrived.httpBody = try? JSONSerialization.data(withJSONObject: ["kind": Self.kind])
-        let task = URLSession.shared.dataTask(with: arrived) { [weak self] _, _, _ in self?.finish() }
+        // Held strongly: with a weak reference, an extension let go of before the reply would never
+        // hand the alert back, and it would only show when the extension's time ran out.
+        let task = URLSession.shared.dataTask(with: arrived) { _, _, _ in self.finish() }
         lock.withLock { self.task = task }
         task.resume()
     }

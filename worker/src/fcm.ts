@@ -34,7 +34,8 @@ export interface TokenStore {
 }
 
 let cachedToken: AccessToken | null = null;
-let pendingToken: Promise<AccessToken> | null = null;
+/** The exchange under way, if any, and whose token it's for. */
+let pendingToken: { email: string; token: Promise<AccessToken> } | null = null;
 let cachedKey: { pem: string; key: CryptoKey } | null = null;
 
 export function parseServiceAccount(json: string): ServiceAccount {
@@ -93,10 +94,13 @@ async function accessToken(account: ServiceAccount, store?: TokenStore): Promise
     return stored.token;
   }
   // Pushes go out several at once, and on a cold start they'd each trade for a token of their own.
-  pendingToken ??= exchange(account, now).finally(() => {
-    pendingToken = null;
-  });
-  const fresh = await pendingToken;
+  if (pendingToken?.email !== account.client_email) {
+    const exchanging = exchange(account, now).finally(() => {
+      if (pendingToken?.token === exchanging) pendingToken = null;
+    });
+    pendingToken = { email: account.client_email, token: exchanging };
+  }
+  const fresh = await pendingToken.token;
   cachedToken = fresh;
   await store?.put(fresh).catch(() => undefined);
   return fresh.token;

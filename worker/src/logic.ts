@@ -209,9 +209,11 @@ export function androidPayload(push: Push, status: Status, now: number): Record<
  * same alert and show its own straight away, and an expiry, so a phone that was off doesn't hear
  * about the match once it's already being played -- the same minute Android's alert lives for.
  */
-export function matchAlertOptions(status: Status): { collapseId: string; expiresAt: number } {
-  const foundAt = status.foundAt ?? 0;
-  return { collapseId: `found-${foundAt}`, expiresAt: foundAt + PLAYING_AFTER_SECONDS };
+export function matchAlertOptions(status: Status): { collapseId: string; expiresAt?: number } {
+  // Without the time it was found there's nothing to expire it by: a stand-in of 0 would give Apple
+  // an expiry in 1970, and the alert could be dropped as already stale.
+  if (status.foundAt === null) return { collapseId: "found" };
+  return { collapseId: `found-${status.foundAt}`, expiresAt: status.foundAt + PLAYING_AFTER_SECONDS };
 }
 
 /**

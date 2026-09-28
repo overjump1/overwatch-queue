@@ -139,7 +139,8 @@ def headline(results):
 
 class Test:
     """One run, on its own thread. `on_update(snapshot)` is called from that thread with
-    `{"results", "finished", "error"}` every time something changes."""
+    `{"results", "finished", "error", "failed_at"}` every time something changes. `failed_at` is the
+    step an error stopped the test at: the server not answering, or answering no."""
 
     def __init__(self, pair_id, on_update, log=print):
         self.pair_id = pair_id
@@ -153,16 +154,17 @@ class Test:
     def cancel(self):
         self.cancelled.set()
 
-    def _report(self, results=(), finished=False, error=None):
+    def _report(self, results=(), finished=False, error=None, failed_at=SERVER):
         if not self.cancelled.is_set():
-            self.on_update({"results": list(results), "finished": finished, "error": error})
+            self.on_update({"results": list(results), "finished": finished, "error": error,
+                            "failed_at": failed_at if error else None})
 
     def _run(self):
         try:
             self._test()
         except Exception as problem:  # noqa: BLE001 - a test must never take the app down
             self.log("Notification test failed: %s" % problem)
-            self._report(finished=True, error="Couldn't reach the notification server.")
+            self._report(finished=True, error="Couldn't reach the notification server.", failed_at=YOUR_PC)
 
     def _test(self):
         began = time.monotonic()
@@ -215,7 +217,7 @@ FILL_SECONDS = 0.35
 PULSE_SECONDS = 0.6
 # How long the dot takes to cross the step that's under way, over and over until it's done.
 CROSSING_SECONDS = 1.1
-FRAME_MS = 16
+FRAME_MS = 33  # 30 a second: smooth enough for a dot, and half the work on a PC that's gaming
 ICONS = {SENDING: "phone", "phone": "phone", "watch": "watch", "android": "android"}
 FAILED_STEPS = {YOUR_PC: "failed", SERVER: "turned away", PUSH_SERVICE: "no reply"}
 VERDICTS = {FAST: "Fast", OK: "OK", SLOW: "Slow", FAILED: "Didn't arrive", WAITING: "On its way"}
@@ -571,7 +573,8 @@ class SpeedTestDialog(QDialog):
         if results:
             self.kinds = [result["kind"] for result in results]
         elif snapshot["error"]:
-            results = [dict(card, failed_at=YOUR_PC, verdict=FAILED) for card in sending(self.kinds)]
+            failed_at = snapshot.get("failed_at", YOUR_PC)
+            results = [dict(card, failed_at=failed_at, verdict=FAILED) for card in sending(self.kinds)]
         elif not snapshot["finished"]:
             results = sending(self.kinds)
         kinds = [result["kind"] for result in results]

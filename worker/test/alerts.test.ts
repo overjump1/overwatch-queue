@@ -23,6 +23,12 @@ describe("match alert", () => {
     expect(headers["apns-expiration"]).toBe("1360");
   });
 
+  it("never expires an alert whose match has no found time", () => {
+    const options = matchAlertOptions({ ...found, foundAt: null });
+    expect(options).toEqual({ collapseId: "found" });
+    expect(apns(alertMessage("tok", "Match found!", "Competitive", options)).headers).not.toHaveProperty("apns-expiration");
+  });
+
   it("carries data next to aps, and mutable-content only when asked", () => {
     const { payload } = apns(alertMessage("tok", "t", "b", { data: { status: found }, mutable: true }));
     expect(payload.status).toEqual(found);

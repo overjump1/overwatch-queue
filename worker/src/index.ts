@@ -375,7 +375,11 @@ export class Pair extends DurableObject<Env> {
    */
   async startTest(pairId: string): Promise<Reply> {
     const startedAt = Date.now();
-    return this.serial(async () => {
+    // The test is stored before anything is sent, and the sends go out after this, not inside
+    // it: a device can answer before Firebase has answered here, and its reply -- which its
+    // extension holds the alert for -- mustn't wait on the other devices' sends. Nor should a
+    // real report the PC makes mid-test.
+    const started = await this.serial<Reply | { test: SpeedTest; messages: [TestKind, object][] }>(async () => {
       if (await this.ctx.storage.get("deleted")) return { status: 410, body: { error: "reset" } };
       const last = await this.ctx.storage.get<SpeedTest>("test");
       const wait = last ? last.startedAt + TEST_INTERVAL_SECONDS * 1000 - startedAt : 0;
@@ -402,19 +406,29 @@ export class Pair extends DurableObject<Env> {
         })]);
       }
       if (!messages.length) return { status: 409, body: { error: "nothing_paired" } };
-
-      await Promise.all(messages.map(async ([kind, message]) => {
-        const device: NonNullable<SpeedTest["devices"][TestKind]> = {};
-        test.devices[kind] = device;
-        const result = await this.fcm(message);
-        if (result?.ok) device.sentAt = Date.now();
-        else device.error = result?.error ?? (result ? `HTTP ${result.status}` : "unreachable");
-      }));
+      for (const [kind] of messages) test.devices[kind] = {};
       await this.ctx.storage.put("test", test);
-      console.log(`test ${test.id}: ${messages.map(([kind]) => kind).join(", ")}`);
-      const now = Date.now();
-      return { status: 200, body: { ...testView(test, now), handledMs: now - startedAt } };
+      return { test, messages };
     });
+    if (!("test" in started)) return started;
+    const { test, messages } = started;
+
+    await Promise.all(messages.map(async ([kind, message]) => {
+      const result = await this.fcm(message);
+      const sentAt = Date.now();
+      await this.serial(async () => {
+        const stored = await this.ctx.storage.get<SpeedTest>("test");
+        const device = stored?.id === test.id ? stored.devices[kind] : undefined;
+        if (!stored || !device) return;
+        if (result?.ok) device.sentAt = sentAt;
+        else device.error = result?.error ?? (result ? `HTTP ${result.status}` : "unreachable");
+        await this.ctx.storage.put("test", stored);
+        test.devices = stored.devices;
+      });
+    }));
+    console.log(`test ${test.id}: ${messages.map(([kind]) => kind).join(", ")}`);
+    const now = Date.now();
+    return { status: 200, body: { ...testView(test, now), handledMs: now - startedAt } };
   }
 
   /** A device saying it has the test push. The time is taken on arrival, before any queueing here. */
