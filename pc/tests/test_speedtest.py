@@ -33,23 +33,33 @@ class FormattingTests(unittest.TestCase):
 
 class ResultTests(unittest.TestCase):
     def test_an_arrived_device_adds_its_steps_up(self):
-        [phone] = st.device_results(view({"phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None}}),
-                                    pc_ms=100, finished=False)
-        self.assertEqual(phone["name"], "iPhone")
-        self.assertEqual(phone["total_ms"], 1300)
-        self.assertEqual(phone["verdict"], st.FAST)
-        self.assertEqual(phone["times"], [100, 300, 900])
-        self.assertEqual(phone["stage"], st.ARRIVED)
-        self.assertIsNone(phone["failed_at"])
-        self.assertEqual(phone["stops"], ["Your PC", "Server", "Apple", "iPhone"])
-        self.assertIsNone(phone["note"])
+        [android] = st.device_results(view({"android": {"toServiceMs": 300, "toDeviceMs": 900, "error": None}}),
+                                      pc_ms=100, finished=False)
+        self.assertEqual(android["name"], "Android phone")
+        self.assertEqual(android["total_ms"], 1300)
+        self.assertEqual(android["verdict"], st.FAST)
+        self.assertEqual(android["times"], [100, 300, 900])
+        self.assertEqual(android["stage"], st.ARRIVED)
+        self.assertIsNone(android["failed_at"])
+        self.assertEqual(android["stops"], ["Your PC", "Server", "Google", "Android phone"])
+        self.assertIsNone(android["note"])
 
-    def test_the_watch_says_what_its_time_leaves_out_on_hover(self):
-        [watch] = st.device_results(view({"watch": {"toServiceMs": 300, "toDeviceMs": 900, "error": None}}),
-                                    pc_ms=100, finished=True)
-        self.assertIsNone(watch["note"])
-        self.assertIn(st.WATCH_NOTE, st.about(watch))
-        self.assertNotIn(st.WATCH_NOTE, st.about(st.sending(["phone"])[0]))
+    def test_the_iphone_and_watch_are_done_once_apple_has_it(self):
+        phone, watch = st.device_results(view({
+            "phone": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
+            "watch": {"toServiceMs": 400, "toDeviceMs": None, "error": None},
+        }), pc_ms=100, finished=False)
+        self.assertEqual(phone["stops"], ["Your PC", "Server", "Apple", "iPhone"])
+        self.assertEqual(phone["times"], [100, 300, None])
+        self.assertEqual(phone["total_ms"], 400)
+        self.assertEqual(phone["stage"], st.ARRIVED)
+        self.assertEqual(watch["total_ms"], 500)
+        self.assertEqual(watch["verdict"], st.FAST)
+
+    def test_the_iphone_and_watch_say_what_their_time_leaves_out_on_hover(self):
+        for kind in ("phone", "watch"):
+            self.assertIn(st.UNTIMED_NOTE, st.about(st.sending([kind])[0]))
+        self.assertNotIn(st.UNTIMED_NOTE, st.about(st.sending(["android"])[0]))
 
     def test_devices_come_in_a_fixed_order_and_only_if_paired(self):
         results = st.device_results(view({
@@ -92,11 +102,13 @@ class ResultTests(unittest.TestCase):
 
     def test_the_log_line_has_every_step(self):
         results = st.device_results(view({
-            "phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None},
-            "watch": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
+            "phone": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
+            "android": {"toServiceMs": 300, "toDeviceMs": 900, "error": None},
+            "watch": {"toServiceMs": None, "toDeviceMs": None, "error": None},
         }), pc_ms=100, finished=True)
         self.assertEqual(st.summary(results),
-                         "Notification test: iPhone 1.30 s (0.10 s, 0.30 s, 0.90 s); Apple Watch failed")
+                         "Notification test: iPhone 0.40 s (0.10 s, 0.30 s, not timed); Apple Watch failed; "
+                         "Android phone 1.30 s (0.10 s, 0.30 s, 0.90 s)")
 
 
 class HeadlineTests(unittest.TestCase):
@@ -105,20 +117,20 @@ class HeadlineTests(unittest.TestCase):
 
     def test_every_device_got_it(self):
         self.assertEqual(st.headline(self.results({
-            "phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None},
-            "watch": {"toServiceMs": 300, "toDeviceMs": 2000, "error": None},
+            "phone": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
+            "android": {"toServiceMs": 300, "toDeviceMs": 2000, "error": None},
         })), "All your devices got it.")
 
     def test_one_device(self):
-        self.assertEqual(st.headline(self.results({"phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None}})),
+        self.assertEqual(st.headline(self.results({"phone": {"toServiceMs": 300, "toDeviceMs": None, "error": None}})),
                          "Your iPhone got it.")
 
     def test_counts_the_ones_that_didnt(self):
         self.assertEqual(st.headline(self.results({
-            "phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None},
-            "watch": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
+            "phone": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
+            "android": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
         })), "1 of your 2 devices got it.")
-        self.assertEqual(st.headline(self.results({"watch": {"toServiceMs": 300, "toDeviceMs": None, "error": None}})),
+        self.assertEqual(st.headline(self.results({"android": {"toServiceMs": 300, "toDeviceMs": None, "error": None}})),
                          "None of your devices got it.")
 
 
@@ -136,14 +148,18 @@ class TimelineTests(unittest.TestCase):
     def test_paints_every_state(self):
         from PyQt6.QtGui import QImage
         colors = self.COLORS
-        devices = {
-            "phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None},
-            "watch": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
-            "android": {"toServiceMs": None, "toDeviceMs": None, "error": "UNREGISTERED"},
-        }
+        states = [{
+            "phone": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
+            "watch": {"toServiceMs": None, "toDeviceMs": None, "error": None},
+            "android": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
+        }, {
+            "phone": {"toServiceMs": None, "toDeviceMs": None, "error": "UNREGISTERED"},
+            "android": {"toServiceMs": 300, "toDeviceMs": 900, "error": None},
+        }]
         results = st.sending() + st.sending(["phone", "watch"])
-        for finished in (False, True):
-            results += st.device_results(view(devices), pc_ms=100, finished=finished)
+        for devices in states:
+            for finished in (False, True):
+                results += st.device_results(view(devices), pc_ms=100, finished=finished)
         for result in results:
             timeline = st.Timeline(colors)
             timeline.set_result(result)
@@ -156,8 +172,8 @@ class TimelineTests(unittest.TestCase):
     def test_the_window_never_shrinks_while_its_open(self):
         dialog = st.SpeedTestDialog(None, PAIR_ID, self.COLORS)
         done = st.device_results(view({
-            "phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None},
-            "watch": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
+            "phone": {"toServiceMs": 300, "toDeviceMs": None, "error": None},
+            "watch": {"toServiceMs": None, "toDeviceMs": None, "error": None},
         }), pc_ms=100, finished=True)
         dialog._show({"results": done, "finished": True, "error": None})
         height = dialog.height()
@@ -201,16 +217,16 @@ class RunTests(unittest.TestCase):
         return self.updates[-1]
 
     def test_polls_until_every_device_has_answered(self):
-        waiting = {"phone": {"toServiceMs": 300, "toDeviceMs": None, "error": None}}
-        arrived = {"phone": {"toServiceMs": 300, "toDeviceMs": 900, "error": None}}
+        waiting = {"android": {"toServiceMs": 300, "toDeviceMs": None, "error": None}}
+        arrived = {"android": {"toServiceMs": 300, "toDeviceMs": 900, "error": None}}
         self.answers = [(200, dict(view(waiting), handledMs=300)), (200, view(waiting)), (200, view(arrived))]
         final = self.run_test()
         self.assertEqual(self.calls[0], ("POST", "/v1/pair/%s/test" % PAIR_ID))
         self.assertEqual(self.calls[1], ("GET", "/v1/pair/%s/test/%s" % (PAIR_ID, TEST_ID)))
         self.assertEqual(len(self.calls), 3)
         self.assertIsNone(final["error"])
-        [phone] = final["results"]
-        self.assertEqual(phone["verdict"], st.FAST)
+        [android] = final["results"]
+        self.assertEqual(android["verdict"], st.FAST)
 
     def test_too_soon(self):
         self.answers = [(429, {"error": "too_soon", "retryAfter": 9})]

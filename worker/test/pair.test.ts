@@ -118,46 +118,40 @@ describe("speed test", () => {
     expect(Object.keys(devices).sort()).toEqual(["android", "phone", "watch"]);
 
     const [phone] = to("phone");
-    expect(phone.message.apns!.payload.aps["mutable-content"]).toBe(1);
     expect(phone.message.apns!.payload).toMatchObject({ test: testId, pair: PAIR });
     expect(to("watch")[0].message.apns!.headers["apns-collapse-id"])
       .toBe(phone.message.apns!.headers["apns-collapse-id"]);
     expect(to("android")[0].message.data).toMatchObject({ event: "test", test: testId, pair: PAIR });
 
-    expect((await pair.testArrived(testId, { kind: "watch" })).status).toBe(200);
+    expect((await pair.testArrived(testId, { kind: "android" })).status).toBe(200);
     const read = await pair.readTest(testId);
     const view = read.body as { devices: Record<string, { toDeviceMs: number | null }> };
-    expect(view.devices.watch.toDeviceMs).not.toBeNull();
+    expect(view.devices.android.toDeviceMs).not.toBeNull();
     expect(view.devices.phone.toDeviceMs).toBeNull();
   });
 
   it("answers a device while another device's send is still out", async () => {
     await pair.register({ kind: "watch", fcm: TOKEN("watch") });
+    await pair.register({ kind: "android", fcm: TOKEN("android") });
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));
     answer = async (message) => {
       if ((message as Message).message.token === TOKEN("watch")) await held;
     };
     const starting = pair.startTest(PAIR);
-    await vi.waitFor(() => expect(to("phone")).toHaveLength(1));
-    const testId = to("phone")[0].message.apns!.payload.test as string;
+    await vi.waitFor(() => expect(to("android")).toHaveLength(1));
+    const testId = to("android")[0].message.data!.test as string;
 
-    // The phone's answer comes back while Firebase still hasn't answered for the Watch.
-    expect((await pair.testArrived(testId, { kind: "phone" })).status).toBe(200);
+    // The Android phone's answer comes back while Firebase still hasn't answered for the Watch.
+    expect((await pair.testArrived(testId, { kind: "android" })).status).toBe(200);
     release();
     const view = (await starting).body as { devices: Record<string, { toDeviceMs: number | null; error: string | null }> };
-    expect(view.devices.phone.toDeviceMs).not.toBeNull();
+    expect(view.devices.android.toDeviceMs).not.toBeNull();
     expect(view.devices.watch.error).toBeNull();
   });
 
   it("takes one test at a time", async () => {
     expect((await pair.startTest(PAIR)).status).toBe(200);
     expect((await pair.startTest(PAIR)).status).toBe(429);
-  });
-
-  it("never marks real alerts for the extension", async () => {
-    await pair.register({ kind: "watch", fcm: TOKEN("watch") });
-    await pair.report({ state: "found", mode: "competitive", elapsed: 60, sinceFound: 0 });
-    for (const message of messages()) expect(message.message.apns?.payload.aps).not.toHaveProperty("mutable-content");
   });
 });

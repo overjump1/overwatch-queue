@@ -29,11 +29,9 @@ describe("match alert", () => {
     expect(apns(alertMessage("tok", "Match found!", "Competitive", options)).headers).not.toHaveProperty("apns-expiration");
   });
 
-  it("carries data next to aps, and mutable-content only when asked", () => {
-    const { payload } = apns(alertMessage("tok", "t", "b", { data: { status: found }, mutable: true }));
+  it("carries data next to aps", () => {
+    const { payload } = apns(alertMessage("tok", "t", "b", { data: { status: found } }));
     expect(payload.status).toEqual(found);
-    expect(payload.aps["mutable-content"]).toBe(1);
-    expect(apns(alertMessage("tok", "t", "b", matchAlertOptions(found))).payload.aps).not.toHaveProperty("mutable-content");
   });
 
   it("can't have its aps overwritten by the data", () => {

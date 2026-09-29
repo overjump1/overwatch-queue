@@ -146,8 +146,6 @@ export interface AlertOptions {
   collapseId?: string;
   /** Unix seconds after which Apple drops the alert instead of delivering it late. */
   expiresAt?: number;
-  /** Sets `mutable-content`, so the Notification Service Extension sees the alert before it shows. */
-  mutable?: boolean;
   /** Custom keys next to `aps`, for the app to read. */
   data?: Record<string, unknown>;
 }
@@ -162,7 +160,6 @@ export function alertMessage(token: string, title: string, body: string, options
     sound: "match_found.caf",
     "interruption-level": "time-sensitive",
   };
-  if (options.mutable) aps["mutable-content"] = 1;
   return { message: { token, apns: { headers, payload: { ...options.data, aps } } } };
 }
 

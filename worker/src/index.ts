@@ -369,16 +369,16 @@ export class Pair extends DurableObject<Env> {
   };
 
   /**
-   * The notification speed test the PC runs: a test alert to every paired device at once, each
-   * device answering `testArrived` as soon as it has it. `pairId` goes in the push so the devices
-   * know where to answer without looking anything up.
+   * The notification speed test the PC runs: a test alert to every paired device at once. The
+   * Android phone answers `testArrived` as soon as it has it, with `pairId` from the push so it
+   * knows where to answer without looking anything up. The iPhone and the Watch can't answer: that
+   * would take a notification service extension, so the PC times them to Apple taking the push.
    */
   async startTest(pairId: string): Promise<Reply> {
     const startedAt = Date.now();
     // The test is stored before anything is sent, and the sends go out after this, not inside
-    // it: a device can answer before Firebase has answered here, and its reply -- which its
-    // extension holds the alert for -- mustn't wait on the other devices' sends. Nor should a
-    // real report the PC makes mid-test.
+    // it: a device can answer before Firebase has answered here, and its reply mustn't wait on
+    // the other devices' sends. Nor should a real report the PC makes mid-test.
     const started = await this.serial<Reply | { test: SpeedTest; messages: [TestKind, object][] }>(async () => {
       if (await this.ctx.storage.get("deleted")) return { status: 410, body: { error: "reset" } };
       const last = await this.ctx.storage.get<SpeedTest>("test");
@@ -394,7 +394,6 @@ export class Pair extends DurableObject<Env> {
       const apple = {
         collapseId: `test-${test.id}`,
         expiresAt: startedAt / 1000 + TEST_TIMEOUT_SECONDS,
-        mutable: true,
         data: { test: test.id, pair: pairId },
       };
       const messages: [TestKind, object][] = [];
