@@ -25,6 +25,12 @@ Only two things make a sound: a queue starting ("In queue") and a match being fo
 - A minute after the match is found it turns into **In a match** (good luck, have fun) and counts the match time.
 - When the match ends it shows **Not in queue** for 10 minutes, then goes away.
 - If you cancel the queue it shows **Not in queue** for a minute, then goes away.
+
+With an Apple Watch paired, "Match found!" goes to the iPhone and the Watch as the same banner at the same moment, and the Live Activity changes without an alert of its own. That's what lets the Watch buzz straight away: a Watch app holds an alert until the iPhone's copy turns up, to tell whether they're duplicates, and with no matching copy it waits out a 10–20 second timeout first ([Apple's explanation](https://developer.apple.com/forums/thread/737026)). With no Watch paired, the Live Activity's own alert is the one.
+
+### Testing notifications
+
+**Test notifications** in the Windows app sends a test alert to every paired device at once and shows how long each took, step by step: your PC to the server, the server to Apple's or Google's push service, and from there to the device. Each device answers the moment the push lands — the iPhone and the Watch from a notification service extension (`ios/NotificationService`), which only runs for test alerts, never for real ones — and the worker times everything on its own clock. The results also go into the Windows app's log. One test per pairing every 15 seconds.
 - If the phone stops hearing from the worker, the Live Activity greys out and says it lost contact rather than keep counting. The worker repeats the current state every couple of minutes, so that only happens when pushes genuinely aren't landing.
 
 ## Updating

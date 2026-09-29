@@ -99,6 +99,9 @@ class Relay:
         sitting in a long queue -- makes no requests at all."""
         backoff = 1
         while not stop.is_set():
+            # Cleared before sending rather than after waiting: a state published while a request
+            # is out has to wake the next pass, not be wiped by a clear that comes after it.
+            self._wake.clear()
             try:
                 self._delete_stale()
                 if not self._send_pending():
@@ -115,11 +118,12 @@ class Relay:
                 self.reachable = True
                 backoff = 1
                 self._wake.wait(timeout=1)
-                self._wake.clear()
             except Exception as problem:  # noqa: BLE001
                 self.reachable = False
                 self.log("Worker unreachable: %s" % problem)
-                stop.wait(backoff)
+                # A new state cuts the wait short: a match found just after a blip goes out now,
+                # not up to half a minute later.
+                self._wake.wait(backoff)
                 backoff = min(backoff * 2, MAX_BACKOFF_SECONDS)
 
     def _send_pending(self):

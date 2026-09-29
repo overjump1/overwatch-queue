@@ -41,6 +41,10 @@ object Worker {
     suspend fun register(pairId: String, body: JsonObject): Result =
         send("POST", "/v1/pair/$pairId/device", body.toString(), decodeStatus)
 
+    /** Tells the worker a speed test's push got here ([TestPush]). */
+    suspend fun testArrived(test: TestPush): Result =
+        send("POST", "/v1/pair/${test.pairId}/test/${test.testId}", """{"kind":"android"}""") { null }
+
     /** Unpairing: the worker drops this phone's token. */
     suspend fun forget(pairId: String): Result =
         send("DELETE", "/v1/pair/$pairId/device?kind=android", null) { null }

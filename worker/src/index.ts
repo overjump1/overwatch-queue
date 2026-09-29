@@ -1,8 +1,12 @@
 import { DurableObject } from "cloudflare:workers";
-import { alertMessage, androidMessage, FcmResult, liveActivityMessage, parseServiceAccount, send, wakeMessage } from "./fcm";
 import {
-  activityPayload, advance, androidPayload, foundBody, IDLE, nextStatus, parseReport,
-  PLAYING_AFTER_SECONDS, Push, pushesFor, Status,
+  AccessToken, alertMessage, androidMessage, FcmResult, liveActivityMessage, parseServiceAccount, send, TokenStore,
+  wakeMessage,
+} from "./fcm";
+import {
+  activityPayload, advance, androidPayload, foundBody, IDLE, matchAlertOptions, nextStatus, parseReport,
+  PLAYING_AFTER_SECONDS, Push, pushesFor, SpeedTest, Status, TEST_BODY, TEST_INTERVAL_SECONDS, TEST_KINDS,
+  TEST_TIMEOUT_SECONDS, TEST_TITLE, TestKind, testView,
 } from "./logic";
 
 export interface Env {
@@ -45,6 +49,7 @@ type Reply = { status: number; body: unknown };
 const ABANDONED_AFTER_SECONDS = 3 * 3600;
 
 const PAIR_ID = /^[0-9a-f]{32}$/;
+const TEST_ID = /^[0-9a-f]{32}$/;
 const FCM_TOKEN = /^[A-Za-z0-9_:-]{20,4096}$/;
 const ACTIVITY_TOKEN = /^[0-9a-fA-F]{32,400}$/;
 
@@ -223,17 +228,53 @@ export class Pair extends DurableObject<Env> {
     };
   }
 
-  /** Sends a push to every paired device. `status` is always the state after the change. */
+  /**
+   * Sends a push to every paired device, Android and Apple side by side so neither waits on the
+   * other's round trip. `status` is always the state after the change.
+   */
   private async deliver(push: Push, status: Status, now: number): Promise<void> {
-    await this.deliverAndroid(push, status, now);
-    await this.deliverApple(push, status, now);
-    await this.deliverWatch(push, status);
+    await Promise.all([
+      this.deliverAndroid(push, status, now),
+      (async () => {
+        const alerted = push.kind === "update" && push.alert === "found" && await this.alertMatch(status);
+        await this.deliverApple(push, status, now, alerted);
+        // The alert just sent carried the state, and got there sooner than this would.
+        if (!alerted) await this.deliverWatch(push, status);
+      })(),
+    ]);
+  }
+
+  /**
+   * "Match found!" to the Watch and the phone at once, under one ID, before anything else goes.
+   *
+   * With an app of its own on the Watch, watchOS holds an alert until the phone's copy turns up, to
+   * tell whether they're the same notification; with no matching copy it waits out a timeout of
+   * 10-20 s first. Apple's fix is the same alert to both, together, with the same identifier. The
+   * phone's Live Activity alert can't be that copy, so with a Watch paired the phone gets a banner
+   * and the activity changes quietly. Returns false with no Watch, which leaves all that as it was.
+   */
+  private async alertMatch(status: Status): Promise<boolean> {
+    const watch = await this.ctx.storage.get<Watch>("watch");
+    const watchToken = watch?.fcm;
+    if (!watchToken) return false;
+    const phone = await this.phone();
+    const options = matchAlertOptions(status);
+    const body = foundBody(status);
+    await Promise.all([
+      (async () => {
+        const result = await this.fcm(alertMessage(watchToken, "Match found!", body, { ...options, data: { status } }));
+        if (result && dead(result)) await this.ctx.storage.delete("watch");
+      })(),
+      phone.fcm ? this.fcm(alertMessage(phone.fcm, "Match found!", body, options)) : undefined,
+    ]);
+    return true;
   }
 
   /**
    * The Watch has no Live Activity, so it's sent the state itself, silently, and its app shows
    * that instead of polling for it. An end that a start follows carries the same state the start
-   * does, so only the start goes; a match alert reaches the Watch from the phone's own alert.
+   * does, so only the start goes. These are low priority, so watchOS holds them while the Watch app
+   * isn't in front -- wrist down included -- which is why the match alert carries the state too.
    */
   private async deliverWatch(push: Push, status: Status): Promise<void> {
     if (push.kind === "matchAlert" || (push.kind === "end" && status.state !== "idle")) return;
@@ -265,21 +306,19 @@ export class Pair extends DurableObject<Env> {
     }
   }
 
-  /** The iPhone's Live Activity and alerts, and the Watch's alert. */
-  private async deliverApple(push: Push, status: Status, now: number): Promise<void> {
+  /**
+   * The iPhone's Live Activity and alerts. `alerted`: `alertMatch` already sent this match's alert,
+   * so the activity only changes, quietly.
+   */
+  private async deliverApple(push: Push, status: Status, now: number, alerted = false): Promise<void> {
     const phone = await this.phone();
     try {
       if (push.kind === "matchAlert") {
-        // Whatever alerts the phone -- the Live Activity's alert, or the banner below -- shows on
-        // the Watch as well, so the Watch's own banner is only for a phone that can't be reached.
-        const watch = phone.fcm ? undefined : await this.ctx.storage.get<Watch>("watch");
-        if (watch?.fcm) {
-          const result = await this.fcm(alertMessage(watch.fcm, "Match found!", foundBody(status)));
-          if (result && dead(result)) await this.ctx.storage.delete("watch");
-        }
+        // With a Watch paired, `alertMatch` sent this ahead of the activity's update.
+        if ((await this.ctx.storage.get<Watch>("watch"))?.fcm) return;
         const noActivity = phone.activitiesEnabled === false || (!phone.startToken && !phone.updateToken);
         if (phone.fcm && noActivity) {
-          await this.fcm(alertMessage(phone.fcm, "Match found!", foundBody(status)));
+          await this.fcm(alertMessage(phone.fcm, "Match found!", foundBody(status), matchAlertOptions(status)));
         }
         return;
       }
@@ -288,7 +327,7 @@ export class Pair extends DurableObject<Env> {
       const activityToken = push.kind === "start" ? phone.startToken : phone.updateToken;
       let result: FcmResult | null = null;
       if (activityToken) {
-        const alert = push.kind === "start" || push.kind === "update" ? push.alert : undefined;
+        const alert = push.kind === "start" || (push.kind === "update" && !alerted) ? push.alert : undefined;
         const linger = push.kind === "end" ? push.linger ?? 0 : 0;
         const payload = activityPayload(push.kind, status, now, alert, linger);
         result = await this.fcm(liveActivityMessage(phone.fcm, activityToken, payload));
@@ -314,7 +353,8 @@ export class Pair extends DurableObject<Env> {
       await this.ctx.storage.put("phone", phone);
       // A found match is the one thing that can't just be dropped. If the running activity couldn't
       // take it, start a fresh one carrying the alert; if there's no start token either, the
-      // matchAlert push that follows this one sends the plain banner.
+      // matchAlert push that follows this one sends the plain banner. A start has to carry an alert
+      // to arrive at all, so this one does even when `alertMatch` already alerted: a rare second sound.
       if (push.kind === "update" && push.alert === "found" && (!activityToken || tokenDead) && phone.startToken) {
         await this.deliverApple({ kind: "start", alert: "found" }, status, now);
       }
@@ -323,9 +363,100 @@ export class Pair extends DurableObject<Env> {
     }
   }
 
+  private readonly tokenStore: TokenStore = {
+    get: () => this.ctx.storage.get<AccessToken>("fcmAccessToken"),
+    put: (token) => this.ctx.storage.put("fcmAccessToken", token),
+  };
+
+  /**
+   * The notification speed test the PC runs: a test alert to every paired device at once, each
+   * device answering `testArrived` as soon as it has it. `pairId` goes in the push so the devices
+   * know where to answer without looking anything up.
+   */
+  async startTest(pairId: string): Promise<Reply> {
+    const startedAt = Date.now();
+    // The test is stored before anything is sent, and the sends go out after this, not inside
+    // it: a device can answer before Firebase has answered here, and its reply -- which its
+    // extension holds the alert for -- mustn't wait on the other devices' sends. Nor should a
+    // real report the PC makes mid-test.
+    const started = await this.serial<Reply | { test: SpeedTest; messages: [TestKind, object][] }>(async () => {
+      if (await this.ctx.storage.get("deleted")) return { status: 410, body: { error: "reset" } };
+      const last = await this.ctx.storage.get<SpeedTest>("test");
+      const wait = last ? last.startedAt + TEST_INTERVAL_SECONDS * 1000 - startedAt : 0;
+      if (wait > 0) return { status: 429, body: { error: "too_soon", retryAfter: Math.ceil(wait / 1000) } };
+
+      const phone = await this.phone();
+      const watch = await this.ctx.storage.get<Watch>("watch");
+      const android = await this.ctx.storage.get<AndroidDevice>("device:android");
+      const test: SpeedTest = { id: randomHex(16), startedAt, devices: {} };
+      // Shared by the phone and the Watch, the way a real match alert is, so the Watch's time is
+      // a real one: with nothing to match it against, it would sit on the alert first.
+      const apple = {
+        collapseId: `test-${test.id}`,
+        expiresAt: startedAt / 1000 + TEST_TIMEOUT_SECONDS,
+        mutable: true,
+        data: { test: test.id, pair: pairId },
+      };
+      const messages: [TestKind, object][] = [];
+      if (phone.fcm) messages.push(["phone", alertMessage(phone.fcm, TEST_TITLE, TEST_BODY, apple)]);
+      if (watch?.fcm) messages.push(["watch", alertMessage(watch.fcm, TEST_TITLE, TEST_BODY, apple)]);
+      if (android?.fcm) {
+        messages.push(["android", androidMessage(android.fcm, {
+          event: "test", test: test.id, pair: pairId, alert: "test", sentAt: String(startedAt),
+        })]);
+      }
+      if (!messages.length) return { status: 409, body: { error: "nothing_paired" } };
+      for (const [kind] of messages) test.devices[kind] = {};
+      await this.ctx.storage.put("test", test);
+      return { test, messages };
+    });
+    if (!("test" in started)) return started;
+    const { test, messages } = started;
+
+    await Promise.all(messages.map(async ([kind, message]) => {
+      const result = await this.fcm(message);
+      const sentAt = Date.now();
+      await this.serial(async () => {
+        const stored = await this.ctx.storage.get<SpeedTest>("test");
+        const device = stored?.id === test.id ? stored.devices[kind] : undefined;
+        if (!stored || !device) return;
+        if (result?.ok) device.sentAt = sentAt;
+        else device.error = result?.error ?? (result ? `HTTP ${result.status}` : "unreachable");
+        await this.ctx.storage.put("test", stored);
+        test.devices = stored.devices;
+      });
+    }));
+    console.log(`test ${test.id}: ${messages.map(([kind]) => kind).join(", ")}`);
+    const now = Date.now();
+    return { status: 200, body: { ...testView(test, now), handledMs: now - startedAt } };
+  }
+
+  /** A device saying it has the test push. The time is taken on arrival, before any queueing here. */
+  async testArrived(testId: string, body: unknown): Promise<Reply> {
+    const arrivedAt = Date.now();
+    return this.serial(async () => {
+      const kind = typeof body === "object" && body !== null ? (body as Record<string, unknown>).kind : undefined;
+      if (!TEST_KINDS.includes(kind as TestKind)) return { status: 400, body: { error: "bad_kind" } };
+      const test = await this.ctx.storage.get<SpeedTest>("test");
+      const device = test?.id === testId ? test.devices[kind as TestKind] : undefined;
+      if (!test || !device) return { status: 404, body: { error: "no_test" } };
+      if (device.arrivedAt === undefined) {
+        device.arrivedAt = arrivedAt;
+        await this.ctx.storage.put("test", test);
+      }
+      return { status: 200, body: {} };
+    });
+  }
+
+  async readTest(testId: string): Promise<Reply> {
+    const test = await this.ctx.storage.get<SpeedTest>("test");
+    if (!test || test.id !== testId) return { status: 404, body: { error: "no_test" } };
+    return { status: 200, body: testView(test, Date.now()) };
+  }
+
   private async fcm(message: object): Promise<FcmResult | null> {
     try {
-      return await send(parseServiceAccount(this.env.FCM_SERVICE_ACCOUNT), message);
+      return await send(parseServiceAccount(this.env.FCM_SERVICE_ACCOUNT), message, this.tokenStore);
     } catch (error) {
       console.log(`fcm unreachable: ${String(error)}`);
       return null;
@@ -342,6 +473,10 @@ function tail(value: string | undefined): string {
   return value ? `…${value.slice(-8)}` : "-";
 }
 
+function randomHex(bytes: number): string {
+  return [...crypto.getRandomValues(new Uint8Array(bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function dead(result: FcmResult): boolean {
   return !result.ok && (result.status === 400 || result.status === 404);
 }
@@ -349,10 +484,11 @@ function dead(result: FcmResult): boolean {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const match = url.pathname.match(/^\/v1\/pair\/([^/]+)(\/state|\/device)?$/);
+    const match = url.pathname.match(/^\/v1\/pair\/([^/]+)(\/state|\/device|\/test)?(?:\/([^/]+))?$/);
     if (!match) return json(404, { error: "not_found" });
-    const [, id, action] = match;
+    const [, id, action, testId] = match;
     if (!PAIR_ID.test(id)) return json(400, { error: "bad_pair_id" });
+    if (testId !== undefined && (action !== "/test" || !TEST_ID.test(testId))) return json(404, { error: "not_found" });
     const pair = env.PAIR.get(env.PAIR.idFromName(id));
 
     let body: unknown = null;
@@ -371,6 +507,9 @@ export default {
     else if (action === "/device" && request.method === "DELETE") {
       reply = await pair.forget(url.searchParams.get("kind") ?? "");
     }
+    else if (action === "/test" && !testId && request.method === "POST") reply = await pair.startTest(id);
+    else if (action === "/test" && testId && request.method === "POST") reply = await pair.testArrived(testId, body);
+    else if (action === "/test" && testId && request.method === "GET") reply = await pair.readTest(testId);
     else if (!action && request.method === "DELETE") reply = await pair.reset();
     else return json(405, { error: "method_not_allowed" });
     return json(reply.status, reply.body);

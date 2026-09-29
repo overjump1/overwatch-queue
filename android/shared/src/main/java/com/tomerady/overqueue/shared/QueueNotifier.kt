@@ -31,6 +31,8 @@ object QueueNotifier {
     val VIBRATION = longArrayOf(0, 100, 250, 100, 250, 100)
 
     private const val ID = 1
+    /** The speed test's alert, apart from the queue notification so it leaves that alone. */
+    private const val TEST_ID = 2
     private const val STATE_EXTRA = "owq.state"
     /** `Notification.EXTRA_REQUEST_PROMOTED_ONGOING` (API 36): shows it as a Live Update on Android 16. */
     private const val PROMOTED_EXTRA = "android.requestPromotedOngoing"
@@ -129,6 +131,21 @@ object QueueNotifier {
         post(context, builder)
     }
 
+    /** The speed test's alert: the match channel, so it sounds and shows the way a match does. */
+    fun showTest(context: Context) {
+        val builder = NotificationCompat.Builder(context, MATCH_CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_queue)
+            .setContentTitle("Test notification")
+            .setContentText("Checking how fast alerts reach you")
+            .setCategory(NotificationCompat.CATEGORY_EVENT)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setContentIntent(openApp(context))
+            .setAutoCancel(true)
+            .setTimeoutAfter(60_000)
+        post(context, builder, TEST_ID)
+    }
+
     fun cancel(context: Context) {
         NotificationManagerCompat.from(context).cancel(ID)
     }
@@ -163,12 +180,12 @@ object QueueNotifier {
         )
     }
 
-    private fun post(context: Context, builder: NotificationCompat.Builder) {
+    private fun post(context: Context, builder: NotificationCompat.Builder, id: Int = ID) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
         try {
-            NotificationManagerCompat.from(context).notify(ID, builder.build())
+            NotificationManagerCompat.from(context).notify(id, builder.build())
         } catch (e: SecurityException) {
             // Notifications were turned off between the check and the post.
         }

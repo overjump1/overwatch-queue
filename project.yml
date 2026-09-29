@@ -39,6 +39,7 @@ targets:
       - ios/Shared
     dependencies:
       - target: QueueWidgets
+      - target: NotificationService
       - target: OverQueue Watch App
       - package: Firebase
         product: FirebaseMessaging
@@ -93,6 +94,41 @@ targets:
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
 
+  # Sees the notification speed test's alert land and tells the worker, so the PC can time it
+  # (ios/NotificationService/NotificationService.swift). One for each app, from the same file.
+  NotificationService:
+    type: app-extension
+    platform: iOS
+    sources:
+      - ios/NotificationService/NotificationService.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(OWQ_BUNDLE_ID).NotificationService
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      path: ios/NotificationService/iOS/Info.plist
+      properties: &notificationServiceInfo
+        CFBundleDisplayName: $(OWQ_APP_NAME)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        OWQWorkerURL: $(OWQ_WORKER_URL)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+
+  WatchNotificationService:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - ios/NotificationService/NotificationService.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(OWQ_BUNDLE_ID).watchkitapp.NotificationService
+        TARGETED_DEVICE_FAMILY: "4"
+    info:
+      path: ios/NotificationService/Watch/Info.plist
+      properties: *notificationServiceInfo
+
   OverQueue Watch App:
     type: application
     platform: watchOS
@@ -100,6 +136,7 @@ targets:
       - ios/Watch
       - ios/Shared
     dependencies:
+      - target: WatchNotificationService
       - package: Firebase
         product: FirebaseMessaging
     settings:
