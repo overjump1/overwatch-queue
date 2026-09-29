@@ -30,7 +30,7 @@ With an Apple Watch paired, "Match found!" goes to the iPhone and the Watch as t
 
 ### Testing notifications
 
-**Test notifications** in the Windows app sends a test alert to every paired device at once and shows how long each took, step by step: your PC to the server, the server to Apple's or Google's push service, and from there to the device. Each device answers the moment the push lands — the iPhone and the Watch from a notification service extension (`ios/NotificationService`), which only runs for test alerts, never for real ones — and the worker times everything on its own clock. The results also go into the Windows app's log. One test per pairing every 15 seconds.
+**Test notifications** in the Windows app sends a test alert to every paired device at once and shows how long each took, step by step: your PC to the server, the server to Apple's or Google's push service, and from there to the device. The Android phone answers the moment the push lands, and the worker times everything on its own clock. The iPhone and the Watch can't answer without a notification service extension, which would need its own App ID on each app, so their time stops when Apple has the push. The results also go into the Windows app's log. One test per pairing every 15 seconds.
 - If the phone stops hearing from the worker, the Live Activity greys out and says it lost contact rather than keep counting. The worker repeats the current state every couple of minutes, so that only happens when pushes genuinely aren't landing.
 
 ## Updating

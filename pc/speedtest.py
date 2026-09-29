@@ -1,10 +1,11 @@
 """The notification speed test: sends a test alert to every paired device and shows how long each
 step took to reach it.
 
-The worker pushes the test to all of them at once and each device says when it got it, all timed
-on the worker's own clock, so a phone whose clock is off doesn't skew anything. The one step the
-worker can't see is this PC reaching it, which is timed here: half the request's round trip, less
-the time the worker spent on it.
+The worker pushes the test to all of them at once and the Android phone says when it got it, all
+timed on the worker's own clock, so a phone whose clock is off doesn't skew anything. The iPhone and
+the Watch can't say (that would take a notification service extension), so theirs is timed to Apple
+having the push. The one step the worker can't see is this PC reaching it, which is timed here: half
+the request's round trip, less the time the worker spent on it.
 """
 from __future__ import annotations
 
@@ -30,6 +31,8 @@ DEVICES = (
     ("watch", "Apple Watch", "Apple"),
     ("android", "Android phone", "Google"),
 )
+# The devices that can't say when the push lands: their last step isn't timed.
+UNTIMED = ("phone", "watch")
 
 TIPS = {
     "phone": "Check OverQueue's notifications are on and no Focus hides them, then open it once.",
@@ -37,10 +40,10 @@ TIPS = {
     "android": "Allow OverQueue's notifications, turn off battery optimisation for it, and open it once.",
 }
 # The rest is on the cards' tooltips, so the window itself stays to the timelines.
-ABOUT = ("Under %d s is fast, under %d s is OK. Each time includes the device's short reply saying it "
-         "got the alert." % (FAST_MS // 1000, OK_MS // 1000))
-WATCH_NOTE = ("With your iPhone nearby, the Watch gets its alerts through the iPhone and answers back the "
-              "same way, so it's a little slower than the iPhone.")
+ABOUT = ("Under %d s is fast, under %d s is OK. The Android phone's time includes its short reply saying "
+         "it got the alert." % (FAST_MS // 1000, OK_MS // 1000))
+UNTIMED_NOTE = ("The iPhone and the Watch can't say when an alert lands, so their time stops when Apple has "
+                "it. It usually shows a moment later.")
 STALE_ERRORS = ("UNREGISTERED", "NOT_FOUND", "INVALID_ARGUMENT", "BadDeviceToken", "Unregistered")
 
 FAST, OK, SLOW, WAITING, FAILED = "fast", "ok", "slow", "waiting", "failed"
@@ -82,8 +85,8 @@ def device_results(view, pc_ms, finished):
             result.update(verdict=FAILED, failed_at=SERVER, times=[pc_ms, None, None], note=(
                 "Out of date on this device: open OverQueue on it, then test again."
                 if stale else "%s turned it away (%s)." % (service, error)))
-        elif to_device is not None:
-            total = pc_ms + to_service + to_device
+        elif to_device is not None or (kind in UNTIMED and to_service is not None):
+            total = pc_ms + to_service + (to_device or 0)
             result.update(total_ms=total, verdict=verdict(total), stage=ARRIVED)
         elif finished:
             result.update(verdict=FAILED, failed_at=PUSH_SERVICE, note="Didn't arrive in %d s. %s" % (
@@ -112,7 +115,7 @@ def sending(kinds=()):
 
 def about(result):
     """A card's tooltip."""
-    return ABOUT + ("\n\n" + WATCH_NOTE if result["kind"] == "watch" else "")
+    return ABOUT + ("\n\n" + UNTIMED_NOTE if result["kind"] in UNTIMED else "")
 
 
 def summary(results):
@@ -122,8 +125,8 @@ def summary(results):
         if result["total_ms"] is None:
             parts.append("%s %s" % (result["name"], result["verdict"]))
         else:
-            parts.append("%s %s (%s)" % (result["name"], seconds(result["total_ms"]),
-                                         ", ".join(seconds(ms) for ms in result["times"])))
+            parts.append("%s %s (%s)" % (result["name"], seconds(result["total_ms"]), ", ".join(
+                seconds(ms) if ms is not None else "not timed" for ms in result["times"])))
     return "Notification test: " + "; ".join(parts)
 
 
@@ -364,6 +367,8 @@ class Timeline(QWidget):
                     painter.drawLine(start, start + (end - start) * _ease(progress))
                 if progress >= 1 and result["times"][step] is not None:
                     self._step_label(painter, label_rect, seconds(result["times"][step]), QColor(colors["text"]))
+                elif progress >= 1:
+                    self._step_label(painter, label_rect, "not timed", QColor(colors["muted"]))
             elif step == result["stage"] and result["failed_at"] is None and now >= self._reached(step):
                 self._paint_crossing(painter, start, end, now - self._reached(step))
                 # From when the card turned up, which is about when the worker sent it on, rather

@@ -36,10 +36,6 @@
 		F3132852A8D8C9A2A25B4469 /* WatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F34A0DC3CBADF87BDE26B18 /* WatchApp.swift */; };
 		F6C28EBD4E1B9BFC374311BF /* Worker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B434A9892332FC8CB6A5E924 /* Worker.swift */; };
 		F8F4C9CBECA68658DA885AA2 /* Queue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D377DEDFE44A9D7C8884CED /* Queue.swift */; };
-		0B22A1C0E0F10000000000C1 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B22A1C0E0F10000000000A1 /* NotificationService.swift */; };
-		0B22A1C0E0F10000000000C2 /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B22A1C0E0F10000000000A1 /* NotificationService.swift */; };
-		0B22A1C0E0F10000000000C3 /* NotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0B22A1C0E0F10000000000A4 /* NotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		0B22A1C0E0F10000000000C4 /* WatchNotificationService.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0B22A1C0E0F10000000000A5 /* WatchNotificationService.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -56,20 +52,6 @@
 			proxyType = 1;
 			remoteGlobalIDString = 8121C34F9F5BE16D187AF345;
 			remoteInfo = "OverQueue Watch App";
-		};
-		0B22A1C0E0F10000000000E3 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 6BC969E03ACA7214828C7656 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 0B22A1C0E0F10000000000E1;
-			remoteInfo = NotificationService;
-		};
-		0B22A1C0E0F10000000000E4 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 6BC969E03ACA7214828C7656 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 0B22A1C0E0F10000000000E2;
-			remoteInfo = WatchNotificationService;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -92,18 +74,6 @@
 			dstSubfolderSpec = 13;
 			files = (
 				1F63141B107B6A7051E0A171 /* QueueWidgets.appex in Embed Foundation Extensions */,
-				0B22A1C0E0F10000000000C3 /* NotificationService.appex in Embed Foundation Extensions */,
-			);
-			name = "Embed Foundation Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		0B22A1C0E0F10000000000D3 /* Embed Foundation Extensions */ = {
-			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
-			files = (
-				0B22A1C0E0F10000000000C4 /* WatchNotificationService.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -137,11 +107,6 @@
 		DEA9355FDD5EBB241C46D253 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		EE3E6E948B4A84825D4356B9 /* WatchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchView.swift; sourceTree = "<group>"; };
 		F3B9910EFF63BA8C9C0FBAB9 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		0B22A1C0E0F10000000000A1 /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
-		0B22A1C0E0F10000000000A2 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		0B22A1C0E0F10000000000A3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		0B22A1C0E0F10000000000A4 /* NotificationService.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = NotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		0B22A1C0E0F10000000000A5 /* WatchNotificationService.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = WatchNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -218,7 +183,6 @@
 			isa = PBXGroup;
 			children = (
 				66A765BA9D00B6BEAA94E612 /* iOS */,
-				0B22A1C0E0F10000000000B1 /* NotificationService */,
 				62FFD0A57223BA3C20C1725D /* Shared */,
 				36AEA90B91FDB9F50701FE9B /* Watch */,
 				FEA926E64D1A781CBFFB71A7 /* Widgets */,
@@ -230,10 +194,8 @@
 			isa = PBXGroup;
 			children = (
 				5CF4172B47D45767F0DC5792 /* OverQueue Watch App.app */,
-				0B22A1C0E0F10000000000A4 /* NotificationService.appex */,
 				3F41C4D1F5D0DAAB36741257 /* OverQueue.app */,
 				3CA5107F6C77EE9B745CB3AD /* QueueWidgets.appex */,
-				0B22A1C0E0F10000000000A5 /* WatchNotificationService.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -247,32 +209,6 @@
 			path = Widgets;
 			sourceTree = "<group>";
 		};
-		0B22A1C0E0F10000000000B1 /* NotificationService */ = {
-			isa = PBXGroup;
-			children = (
-				0B22A1C0E0F10000000000B2 /* iOS */,
-				0B22A1C0E0F10000000000A1 /* NotificationService.swift */,
-				0B22A1C0E0F10000000000B3 /* Watch */,
-			);
-			path = NotificationService;
-			sourceTree = "<group>";
-		};
-		0B22A1C0E0F10000000000B2 /* iOS */ = {
-			isa = PBXGroup;
-			children = (
-				0B22A1C0E0F10000000000A2 /* Info.plist */,
-			);
-			path = iOS;
-			sourceTree = "<group>";
-		};
-		0B22A1C0E0F10000000000B3 /* Watch */ = {
-			isa = PBXGroup;
-			children = (
-				0B22A1C0E0F10000000000A3 /* Info.plist */,
-			);
-			path = Watch;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -283,12 +219,10 @@
 				51BB5BB57BA72D4A85AB7B45 /* Sources */,
 				84934D75476136E27529AE86 /* Resources */,
 				7BA0C4F235BF5F6B93547647 /* Frameworks */,
-				0B22A1C0E0F10000000000D3 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				0B22A1C0E0F10000000000E6 /* PBXTargetDependency */,
 			);
 			name = "OverQueue Watch App";
 			packageProductDependencies = (
@@ -312,7 +246,6 @@
 			);
 			dependencies = (
 				1400C65DCC586ECED1C0D9D6 /* PBXTargetDependency */,
-				0B22A1C0E0F10000000000E5 /* PBXTargetDependency */,
 				258CAC68F001D29EDCAC8363 /* PBXTargetDependency */,
 			);
 			name = OverQueue;
@@ -340,40 +273,6 @@
 			productReference = 3CA5107F6C77EE9B745CB3AD /* QueueWidgets.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
-		0B22A1C0E0F10000000000E1 /* NotificationService */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 0B22A1C0E0F10000000000F1 /* Build configuration list for PBXNativeTarget "NotificationService" */;
-			buildPhases = (
-				0B22A1C0E0F10000000000D1 /* Sources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = NotificationService;
-			packageProductDependencies = (
-			);
-			productName = NotificationService;
-			productReference = 0B22A1C0E0F10000000000A4 /* NotificationService.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
-		0B22A1C0E0F10000000000E2 /* WatchNotificationService */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 0B22A1C0E0F10000000000F2 /* Build configuration list for PBXNativeTarget "WatchNotificationService" */;
-			buildPhases = (
-				0B22A1C0E0F10000000000D2 /* Sources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = WatchNotificationService;
-			packageProductDependencies = (
-			);
-			productName = WatchNotificationService;
-			productReference = 0B22A1C0E0F10000000000A5 /* WatchNotificationService.appex */;
-			productType = "com.apple.product-type.app-extension";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -392,14 +291,6 @@
 						ProvisioningStyle = Automatic;
 					};
 					A0B9DACEE802DDFA4CC9757B = {
-						DevelopmentTeam = 56N4LCCUN2;
-						ProvisioningStyle = Automatic;
-					};
-					0B22A1C0E0F10000000000E1 = {
-						DevelopmentTeam = 56N4LCCUN2;
-						ProvisioningStyle = Automatic;
-					};
-					0B22A1C0E0F10000000000E2 = {
 						DevelopmentTeam = 56N4LCCUN2;
 						ProvisioningStyle = Automatic;
 					};
@@ -424,8 +315,6 @@
 			targets = (
 				94351ACD2B2826DD5FA05838 /* OverQueue */,
 				A0B9DACEE802DDFA4CC9757B /* QueueWidgets */,
-				0B22A1C0E0F10000000000E1 /* NotificationService */,
-				0B22A1C0E0F10000000000E2 /* WatchNotificationService */,
 				8121C34F9F5BE16D187AF345 /* OverQueue Watch App */,
 			);
 		};
@@ -495,22 +384,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		0B22A1C0E0F10000000000D1 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				0B22A1C0E0F10000000000C1 /* NotificationService.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		0B22A1C0E0F10000000000D2 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				0B22A1C0E0F10000000000C2 /* NotificationService.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -523,16 +396,6 @@
 			isa = PBXTargetDependency;
 			target = 8121C34F9F5BE16D187AF345 /* OverQueue Watch App */;
 			targetProxy = BB649A169AAD7E79DACC3377 /* PBXContainerItemProxy */;
-		};
-		0B22A1C0E0F10000000000E5 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 0B22A1C0E0F10000000000E1 /* NotificationService */;
-			targetProxy = 0B22A1C0E0F10000000000E3 /* PBXContainerItemProxy */;
-		};
-		0B22A1C0E0F10000000000E6 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 0B22A1C0E0F10000000000E2 /* WatchNotificationService */;
-			targetProxy = 0B22A1C0E0F10000000000E4 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -768,66 +631,6 @@
 			};
 			name = Release;
 		};
-		0B22A1C0E0F10000000000F3 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				INFOPLIST_FILE = ios/NotificationService/iOS/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID).NotificationService";
-				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = 1;
-			};
-			name = Debug;
-		};
-		0B22A1C0E0F10000000000F4 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				INFOPLIST_FILE = ios/NotificationService/iOS/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID).NotificationService";
-				SDKROOT = iphoneos;
-				TARGETED_DEVICE_FAMILY = 1;
-			};
-			name = Release;
-		};
-		0B22A1C0E0F10000000000F5 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				INFOPLIST_FILE = ios/NotificationService/Watch/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID).watchkitapp.NotificationService";
-				SDKROOT = watchos;
-				TARGETED_DEVICE_FAMILY = 4;
-			};
-			name = Debug;
-		};
-		0B22A1C0E0F10000000000F6 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				INFOPLIST_FILE = ios/NotificationService/Watch/Info.plist;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = "$(OWQ_BUNDLE_ID).watchkitapp.NotificationService";
-				SDKROOT = watchos;
-				TARGETED_DEVICE_FAMILY = 4;
-			};
-			name = Release;
-		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -863,24 +666,6 @@
 			buildConfigurations = (
 				70DE290A6E0917853DC8BDBD /* Debug */,
 				1E880DAB154BB0FCF1BBE304 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
-		0B22A1C0E0F10000000000F1 /* Build configuration list for PBXNativeTarget "NotificationService" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				0B22A1C0E0F10000000000F3 /* Debug */,
-				0B22A1C0E0F10000000000F4 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
-		0B22A1C0E0F10000000000F2 /* Build configuration list for PBXNativeTarget "WatchNotificationService" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				0B22A1C0E0F10000000000F5 /* Debug */,
-				0B22A1C0E0F10000000000F6 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
