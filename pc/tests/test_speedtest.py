@@ -202,7 +202,7 @@ class RunTests(unittest.TestCase):
         self.updates = []
         self.done = threading.Event()
 
-    def request(self, method, path, body=None):
+    def request(self, method, path, body=None, base=None):
         self.calls.append((method, path))
         return self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
 

@@ -167,17 +167,17 @@ class UpdatesTest {
     }
 
     @Test fun offersANewerApk() {
-        val found = Updates.findUpdate(release("QueueFox-Setup-2.0.42.exe", "QueueFox-2.0.42.apk"), "2.0.40")
-        assertEquals(Updates.Release("2.0.42", "https://example.test/QueueFox-2.0.42.apk", 1234), found)
+        val found = Updates.findUpdate(release("windows-x64-2.0.42.exe", "android-2.0.42.apk"), "2.0.40")
+        assertEquals(Updates.Release("2.0.42", "https://example.test/android-2.0.42.apk", 1234), found)
     }
 
     @Test fun readsTheVersionFromTheAssetNotTheTag() {
         // release.yml copies unchanged apps forward, so a newer tag can hold this build's APK.
-        assertNull(Updates.findUpdate(release("QueueFox-2.0.40.apk"), "2.0.40"))
+        assertNull(Updates.findUpdate(release("android-2.0.40.apk"), "2.0.40"))
     }
 
     @Test fun ignoresTheOtherPlatforms() {
-        assertNull(Updates.findUpdate(release("QueueFox-Setup-2.0.42.exe", "QueueFox-2.0.42.ipa"), "2.0.40"))
+        assertNull(Updates.findUpdate(release("windows-x64-2.0.42.exe", "ios-2.0.42.ipa"), "2.0.40"))
     }
 
     @Test fun survivesAReleaseWithNothingInIt() {

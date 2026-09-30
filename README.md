@@ -41,7 +41,9 @@ Each app checks the [latest release](https://github.com/overjump1/queuefox/relea
 - **Android**: one tap downloads the APK and hands it to the system installer, which asks you to confirm. The first time, Android sends you to *Install unknown apps* to allow it for QueueFox. The new APK only installs over the old one if both were signed with the same key — see `ANDROID_DEBUG_KEYSTORE` under [Building](#building).
 - **iPhone**: only says a newer build is out. iOS can't install an app on itself, so the IPA still goes on through AltStore or Sideloadly. Only the sideloaded build looks: `.github/workflows/ios-app.yml` marks it with `QFGitHubBuild` in the Info.plist, and nothing else sets that. TestFlight and the App Store hand out their own updates, and an App Store build pointing anyone at a release page would be against App Review's rules.
 
-Each app compares itself against **the version in its own asset's filename**, not the release tag. `Release` copies unchanged apps forward, so `v2.0.42` can hold `QueueFox-Setup-2.0.40.exe`; going by the tag would have the Windows app reinstalling its own build forever.
+Each app compares itself against **the version in its own asset's filename**, not the release tag. `Release` copies unchanged apps forward, so `v2.0.42` can hold `windows-x64-2.0.40.exe`; going by the tag would have the Windows app reinstalling its own build forever.
+
+Release files are named for the platform -- `windows-x64-<version>.exe`, `android-<version>.apk`, `ios-<version>.ipa` -- never for the app, so renaming the app doesn't touch them. For now each release also carries `OverQueue-Setup-<version>.exe`, a copy of the Windows installer: desktop apps from before the QueueFox rename look for that name only. The update keeps their pairing (`%APPDATA%\OverQueue` moves to `%APPDATA%\QueueFox`), and until that pairing is reset the Windows app keeps the pre-rename worker told as well as the new one, since that's the only worker the pre-rename phone apps talk to (`relay.Mirrored`). Once nobody's left on the old apps, drop the copy step in `release.yml` and the `old_*` fields in `pc/channel.py`.
 
 Builds that aren't from a release never check: they're on a `0.x` version (`0.0.0` running `pc/app.py` from source, `0.0.0-dev` for a local Gradle build, `0.0.0-dev.<run>` for a pull request artifact, `0.0.0` for an iPhone build nobody stamped), which is below every release and would claim an update forever.
 
@@ -75,7 +77,7 @@ Setting up the dev phone apps, once:
 
 ## Windows app
 
-Download `QueueFox-Setup-<version>.exe` from [Releases](https://github.com/overjump1/queuefox/releases) and run it. It installs for your user only (no admin prompt) and can start the app when you sign in.
+Download `windows-x64-<version>.exe` from [Releases](https://github.com/overjump1/queuefox/releases) and run it. It installs for your user only (no admin prompt) and can start the app when you sign in.
 
 To run from source:
 

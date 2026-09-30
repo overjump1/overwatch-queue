@@ -1,6 +1,6 @@
 ; Inno Setup script for the Windows installer. Build the app with PyInstaller first, then from the repo root:
 ;   iscc /DAppVersion=1.2.3 pc\installer.iss
-; Writes dist\QueueFox-Setup-<version>.exe for QueueFox Dev, which installs beside the real app
+; Writes dist\windows-x64-<version>.exe for QueueFox Dev, which installs beside the real app
 ; rather than over it (see channel.py). Add /DReal for the real app, as main's release does.
 
 #ifndef AppVersion
@@ -32,7 +32,7 @@ PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\dist
-OutputBaseFilename=QueueFox-Setup-{#AppVersion}
+OutputBaseFilename=windows-x64-{#AppVersion}
 UninstallDisplayIcon={app}\QueueFox.exe
 #ifdef Real
 SetupIconFile=icons\queuefox.ico

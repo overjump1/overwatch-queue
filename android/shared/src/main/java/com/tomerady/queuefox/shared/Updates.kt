@@ -19,7 +19,8 @@ object Updates {
     @Volatile
     var releaseApi: String = DEFAULT_RELEASE_API
 
-    private val ASSET = Regex("""^QueueFox-(.+)\.apk$""", RegexOption.IGNORE_CASE)
+    // Named for the platform, not the app, so a rename never has to touch it (release.yml).
+    private val ASSET = Regex("""^android-(.+)\.apk$""", RegexOption.IGNORE_CASE)
     private const val TIMEOUT_MS = 20_000
 
     /** The APK on offer. [version] is read from its filename. */
@@ -61,7 +62,7 @@ object Updates {
     /**
      * The APK in a `releases/latest` reply, if it's newer than [current]. The version comes from the
      * asset's filename, not the release tag: release.yml copies unchanged apps forward, so v2.0.3
-     * holds QueueFox-2.0.2.apk and the tag would offer an update this build already is.
+     * holds android-2.0.2.apk and the tag would offer an update this build already is.
      */
     fun findUpdate(body: String, current: String?): Release? {
         val release = runCatching {
@@ -103,7 +104,7 @@ object Updates {
         onProgress: (Int) -> Unit,
     ): File = withContext(Dispatchers.IO) {
         val directory = File(context.cacheDir, "updates").apply { mkdirs() }
-        val target = File(directory, "QueueFox-${release.version}.apk")
+        val target = File(directory, "android-${release.version}.apk")
         if (release.size > 0 && target.length() == release.size) return@withContext target
         // Anything else in there is an older release's APK.
         directory.listFiles()?.forEach { it.delete() }

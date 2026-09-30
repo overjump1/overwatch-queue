@@ -155,6 +155,19 @@ jobs:
           copy "${{ needs.changes.outputs.ios }}" '*.ipa'
           ls -l release
 
+      # Desktop apps from before the rename look for OverQueue-Setup-<version>.exe and nothing
+      # else, so this copy is how they learn about the update that turns them into QueueFox (which
+      # keeps their pairing: pc/app.py's adopt_old_data_dir). Drop it once they've all updated.
+      - name: Keep the pre-rename Windows filename alive
+        run: |
+          cd release
+          for file in windows-x64-*.exe; do
+            [ -e "$file" ] || continue
+            legacy="OverQueue-Setup-${file#windows-x64-}"
+            [ -e "$legacy" ] || cp "$file" "$legacy"
+          done
+          ls -l
+
       - name: Publish release
         if: needs.changes.outputs.channel == 'main'
         env:
@@ -169,7 +182,7 @@ jobs:
           gh release create "v$VERSION" release/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "QueueFox $VERSION" \
+            --title "$VERSION" \
             --notes "$notes" \
             --generate-notes
 
@@ -186,7 +199,7 @@ jobs:
           [ "${{ needs.changes.outputs.android }}" = true ] && built+=("Android")
           [ "${{ needs.changes.outputs.windows }}" = true ] && built+=("Windows")
           [ "${{ needs.changes.outputs.ios }}" = true ] && built+=("iPhone")
-          notes="QueueFox Dev, built from ${GITHUB_SHA::7}: installs beside the real apps and talks to the dev worker. New builds: $(IFS=,; echo "${built[*]}" | sed 's/,/, /g'). The other apps are unchanged from the previous dev build."
+          notes="Dev build from ${GITHUB_SHA::7}: installs beside the real apps and talks to the dev worker. New builds: $(IFS=,; echo "${built[*]}" | sed 's/,/, /g'). The other apps are unchanged from the previous dev build."
           gh release delete dev-latest --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null || true
           # And the tag itself, in case it outlived its release: a new release made on a leftover tag
           # would sit on the old commit, and the next build would diff against the wrong one.
@@ -194,7 +207,7 @@ jobs:
           gh release create dev-latest release/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "QueueFox $VERSION (dev)" \
+            --title "$VERSION (dev)" \
             --notes "$notes" \
             --prerelease \
             --latest=false

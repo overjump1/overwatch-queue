@@ -24,7 +24,8 @@ enum Updates {
         }
         return URL(string: "https://api.github.com/repos/overjump1/queuefox/releases/latest")!
     }()
-    private static let assetPrefix = "QueueFox-"
+    /// Named for the platform, not the app, so a rename never has to touch it (release.yml).
+    private static let assetPrefix = "ios-"
     private static let assetSuffix = ".ipa"
 
     private struct Release: Decodable {
@@ -97,7 +98,7 @@ enum Updates {
     /// The version of the newer IPA among `assetNames`, if there is one.
     ///
     /// The version comes from the asset's filename, not the release tag: release.yml only rebuilds
-    /// the apps that changed and copies the rest forward, so v2.0.3 holds QueueFox-2.0.2.ipa and
+    /// the apps that changed and copies the rest forward, so v2.0.3 holds ios-2.0.2.ipa and
     /// going by the tag would claim an update this build already is.
     static func newerVersion(in assetNames: [String], than current: String) -> String? {
         for name in assetNames where name.hasPrefix(assetPrefix) && name.hasSuffix(assetSuffix) {

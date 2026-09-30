@@ -110,10 +110,10 @@ jobs:
           -Pdev=${{ !inputs.real }}
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk "QueueFox-${{ steps.version.outputs.version }}.apk"
+        run: cp app/build/outputs/apk/debug/app-debug.apk "android-${{ steps.version.outputs.version }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: QueueFox-${{ steps.version.outputs.version }}-android
-          path: android/QueueFox-*.apk
+          name: android-${{ steps.version.outputs.version }}
+          path: android/android-*.apk
           if-no-files-found: error

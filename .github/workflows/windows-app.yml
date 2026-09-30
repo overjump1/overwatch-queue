@@ -94,6 +94,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: QueueFox-Setup-${{ steps.version.outputs.version }}
-          path: dist/QueueFox-Setup-*.exe
+          name: windows-x64-${{ steps.version.outputs.version }}
+          path: dist/windows-x64-*.exe
           if-no-files-found: error

@@ -28,7 +28,7 @@ import devmode
 import speedtest
 import updater as up
 from detector import FOUND, QUEUEING, Detector
-from relay import Relay
+from relay import Mirrored, Relay
 from roleselect import RoleSelect
 from updater import Updater
 from channel import CURRENT
@@ -74,10 +74,43 @@ PAIRING_FILE = CURRENT.pairing_file
 log = logging.getLogger("queuefox")
 
 
+def adopt_old_data_dir(old_dir=None, data_dir=DATA_DIR, pairing_file=PAIRING_FILE):
+    """Moves OverQueue's folder over, once, before anything reads or writes this one. It holds the
+    pairing every phone from then was scanned against, so it comes across rather than leaving
+    everyone to scan a new code -- and the pairing is marked as one those phones are on, so the
+    old worker keeps hearing about it (relay.Mirrored)."""
+    old_dir = old_dir or CURRENT.old_data_dir
+    if os.path.exists(data_dir) or not os.path.isdir(old_dir):
+        return
+    try:
+        os.rename(old_dir, data_dir)
+        with open(pairing_file, encoding="utf-8") as handle:
+            pairing = json.load(handle)
+        pairing["oldWorker"] = True
+        _save_pairing(pairing, pairing_file)
+    except (OSError, ValueError, TypeError):
+        pass  # A new pairing code is a nuisance, not a reason not to start.
+
+
+def pairing_uses_old_worker(pairing_file=PAIRING_FILE):
+    try:
+        with open(pairing_file, encoding="utf-8") as handle:
+            return json.load(handle).get("oldWorker") is True
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def _save_pairing(pairing, pairing_file=PAIRING_FILE):
+    with open(pairing_file + ".tmp", "w", encoding="utf-8") as handle:
+        json.dump(pairing, handle)
+    os.replace(pairing_file + ".tmp", pairing_file)
+
+
 def setup_logging():
     if sys.stdout:  # None in the installed build, which has no console
         log.addHandler(logging.StreamHandler(sys.stdout))
     log.setLevel(logging.INFO)
+    adopt_old_data_dir()
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
     except OSError:
@@ -106,9 +139,8 @@ def load_pair_id():
 def new_pair_id():
     pair_id = secrets.token_hex(16)
     os.makedirs(DATA_DIR, exist_ok=True)
-    with open(PAIRING_FILE + ".tmp", "w", encoding="utf-8") as handle:
-        json.dump({"id": pair_id}, handle)
-    os.replace(PAIRING_FILE + ".tmp", PAIRING_FILE)
+    # Without "oldWorker": a new code is this app's alone, so a reset ends the mirroring for good.
+    _save_pairing({"id": pair_id})
     return pair_id
 
 
@@ -535,6 +567,11 @@ def main():
     args = parse_args()
     pair_id = load_pair_id()
     relay = Relay(pair_id, log=log.info)
+    if pairing_uses_old_worker():
+        log.info("Paired before the rename: keeping %s told as well", CURRENT.old_worker_url)
+        old = Relay(pair_id, log=lambda message: log.info("Old worker: %s", message),
+                    base_url=CURRENT.old_worker_url)
+        relay = Mirrored(relay, old)
     reader = devmode.Reader(args.presence_source, args.battlenet_port, log=log.info)
     watcher = Watcher(relay, reader)
     updater = Updater(DATA_DIR, log=log.info)
