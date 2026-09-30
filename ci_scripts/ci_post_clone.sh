@@ -4,7 +4,7 @@ set -e
 cd "$CI_PRIMARY_REPOSITORY_PATH"
 
 # TestFlight is the real app, whichever branch it was built from. The project on its own is
-# OverQueue Dev (project.yml).
+# QueueFox Dev (project.yml).
 sh ios/make-real.sh
 
 write_config() {
@@ -27,8 +27,8 @@ version="2.0.$CI_BUILD_NUMBER"
 sed -i '' \
   -e "s/MARKETING_VERSION = [^;]*;/MARKETING_VERSION = $version;/g" \
   -e "s/CURRENT_PROJECT_VERSION = [^;]*;/CURRENT_PROJECT_VERSION = $CI_BUILD_NUMBER;/g" \
-  OverQueue.xcodeproj/project.pbxproj
-grep -q "MARKETING_VERSION = $version;" OverQueue.xcodeproj/project.pbxproj \
+  QueueFox.xcodeproj/project.pbxproj
+grep -q "MARKETING_VERSION = $version;" QueueFox.xcodeproj/project.pbxproj \
   || { echo "error: couldn't stamp the version into the Xcode project"; exit 1; }
 echo "Building $version ($CI_BUILD_NUMBER)"
 

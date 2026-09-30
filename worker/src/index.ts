@@ -8,6 +8,7 @@ import {
   PLAYING_AFTER_SECONDS, Push, pushesFor, SpeedTest, Status, TEST_BODY, TEST_INTERVAL_SECONDS, TEST_KINDS,
   TEST_TIMEOUT_SECONDS, TEST_TITLE, TestKind, testView,
 } from "./logic";
+import { PRIVACY_HTML } from "./privacy";
 
 export interface Env {
   PAIR: DurableObjectNamespace<Pair>;
@@ -483,6 +484,9 @@ function dead(result: FcmResult): boolean {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname === "/privacy" && request.method === "GET") {
+      return new Response(PRIVACY_HTML, { headers: { "content-type": "text/html; charset=utf-8" } });
+    }
     const match = url.pathname.match(/^\/v1\/pair\/([^/]+)(\/state|\/device|\/test)?(?:\/([^/]+))?$/);
     if (!match) return json(404, { error: "not_found" });
     const [, id, action, testId] = match;

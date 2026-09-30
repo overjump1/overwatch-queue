@@ -4,25 +4,23 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// Every build is OverQueue Dev -- a separate app that installs beside the real one, with its own
+// Every build is QueueFox Dev -- a separate app that installs beside the real one, with its own
 // pairing, the dev worker and the dev prerelease -- except main's release, which passes -Pdev=false
 // (see .github/workflows/android-app.yml). So Android Studio and the dev branch never touch the
 // real app.
 val dev = findProperty("dev") != "false"
-// Not the namespace below, on purpose. This is the id Android installs the app under, and an APK
-// carrying a different one installs beside the old app instead of over it -- so the real app keeps
-// the name it shipped with. Nothing shows it to anyone.
-val appId = if (dev) "com.tomerady.overwatchqueue.dev" else "com.tomerady.overwatchqueue"
-val appName = if (dev) "OverQueue Dev" else "OverQueue"
+// The id Android installs the app under. An APK carrying a different one installs beside the old
+// app instead of over it, so this never changes again once a release has gone out.
+val appId = if (dev) "com.tomerady.queuefox.dev" else "com.tomerady.queuefox"
+val appName = if (dev) "QueueFox Dev" else "QueueFox"
 // The launcher icon's accent: the real app's orange, or purple so the dev app stands out beside it.
 val iconAccent = if (dev) "#BF5AF2" else "#FF9F0A"
-// The QR code's link. Each app claims only its own, so the camera opens the right one. The real app
-// also takes owq://, the name it used to go by, which a PC that hasn't been updated still writes.
-val pairSchemes = if (dev) listOf("overqueue-dev") else listOf("overqueue", "owq")
-val workerUrl = if (dev) "https://overwatch-queue-push-relay-dev.tomerady.workers.dev"
-    else "https://overwatch-queue-push-relay.tomerady.workers.dev"
-val releaseApi = if (dev) "https://api.github.com/repos/overjump1/overwatch-queue/releases/tags/dev-latest"
-    else "https://api.github.com/repos/overjump1/overwatch-queue/releases/latest"
+// The QR code's link. Each app claims only its own, so the camera opens the right one.
+val pairScheme = if (dev) "queuefox-dev" else "queuefox"
+val workerUrl = if (dev) "https://queuefox-push-relay-dev.tomerady.workers.dev"
+    else "https://queuefox-push-relay.tomerady.workers.dev"
+val releaseApi = if (dev) "https://api.github.com/repos/overjump1/queuefox/releases/tags/dev-latest"
+    else "https://api.github.com/repos/overjump1/queuefox/releases/latest"
 
 // google-services.json is gitignored (CI writes it from a secret). Without it -- or with one that
 // predates this app being added to Firebase -- the build still compiles, e.g. for CodeQL's
@@ -35,7 +33,7 @@ if (googleServices.exists() && googleServices.readText().contains("\"$appId\""))
 }
 
 android {
-    namespace = "com.tomerady.overqueue"
+    namespace = "com.tomerady.queuefox"
     compileSdk = 35
 
     defaultConfig {
@@ -48,11 +46,10 @@ android {
         buildConfigField("String", "WORKER_URL", "\"$workerUrl\"")
         buildConfigField("String", "RELEASE_API", "\"$releaseApi\"")
         buildConfigField("String", "APP_NAME", "\"$appName\"")
-        buildConfigField("String", "PAIR_SCHEMES", "\"${pairSchemes.joinToString(",")}\"")
+        buildConfigField("String", "PAIR_SCHEME", "\"$pairScheme\"")
         resValue("color", "ic_launcher_accent", iconAccent)
         manifestPlaceholders["appName"] = appName
-        manifestPlaceholders["pairScheme"] = pairSchemes.first()
-        manifestPlaceholders["legacyPairScheme"] = pairSchemes.last()
+        manifestPlaceholders["pairScheme"] = pairScheme
     }
 
     buildTypes {

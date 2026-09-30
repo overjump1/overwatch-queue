@@ -1,4 +1,4 @@
-name = "overwatch-queue-push-relay"
+name = "queuefox-push-relay"
 main = "src/index.ts"
 compatibility_date = "2024-11-01"
 
@@ -7,7 +7,7 @@ compatibility_date = "2024-11-01"
 # Workers Logs: the console.log lines the worker writes, plus one invocation log per request.
 # Kept 3 days on the Free plan, 200,000 events a day; past that Cloudflare stops logging, not the
 # worker. Invocation logs carry the request, so they include the pairing ID in the URL —
-# docs/privacy.md says so, and has to keep saying so while this is on.
+# the privacy policy (src/privacy.ts) says so, and has to keep saying so while this is on.
 [observability]
 enabled = true
 head_sampling_rate = 1
@@ -27,7 +27,7 @@ new_sqlite_classes = ["Pair"]
 # builds of the apps talk to. Its own Durable Objects, so nothing tested here touches a real pairing.
 # Deploy by hand with `npx wrangler deploy --env dev`; the Firebase secret is `--env dev` too.
 [env.dev]
-name = "overwatch-queue-push-relay-dev"
+name = "queuefox-push-relay-dev"
 
 # Bindings don't carry over into an environment, so the dev worker names its own.
 [[env.dev.durable_objects.bindings]]

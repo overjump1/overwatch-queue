@@ -1,4 +1,4 @@
-package com.tomerady.overqueue.shared
+package com.tomerady.queuefox.shared
 
 import android.Manifest
 import android.app.NotificationChannel
@@ -33,7 +33,7 @@ object QueueNotifier {
     private const val ID = 1
     /** The speed test's alert, apart from the queue notification so it leaves that alone. */
     private const val TEST_ID = 2
-    private const val STATE_EXTRA = "owq.state"
+    private const val STATE_EXTRA = "queuefox.state"
     /** `Notification.EXTRA_REQUEST_PROMOTED_ONGOING` (API 36): shows it as a Live Update on Android 16. */
     private const val PROMOTED_EXTRA = "android.requestPromotedOngoing"
 

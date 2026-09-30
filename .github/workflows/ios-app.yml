@@ -8,7 +8,7 @@ on:
     paths:
       - "ios/**"
       - "project.yml"
-      - "OverQueue.xcodeproj/**"
+      - "QueueFox.xcodeproj/**"
       - ".github/workflows/ios-app.yml"
   # The Release workflow calls this when the app changed since the last release.
   workflow_call:
@@ -20,8 +20,8 @@ on:
         type: number
         required: false
         default: 1
-      # Builds the real OverQueue, for main's release. Everything else -- pull requests, the dev
-      # branch, a manual run -- is OverQueue Dev (project.yml). TestFlight is real too, but that's
+      # Builds the real QueueFox, for main's release. Everything else -- pull requests, the dev
+      # branch, a manual run -- is QueueFox Dev (project.yml). TestFlight is real too, but that's
       # Xcode Cloud's (ci_scripts/ci_post_clone.sh).
       real:
         type: boolean
@@ -37,7 +37,7 @@ jobs:
     runs-on: macos-15
     env:
       # Who the app is; the watch app and the widgets hang off it (project.yml).
-      BUNDLE_ID: com.tomerady.OverwatchQueue${{ !inputs.real && '.dev' || '' }}
+      BUNDLE_ID: com.tomerady.QueueFox${{ !inputs.real && '.dev' || '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -45,7 +45,7 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      # Each Firebase iOS app is one bundle ID, so OverQueue Dev has configs of its own.
+      # Each Firebase iOS app is one bundle ID, so QueueFox Dev has configs of its own.
       - name: Firebase config
         env:
           GOOGLE_SERVICE_INFO_PLIST: ${{ secrets.GOOGLE_SERVICE_INFO_PLIST }}
@@ -69,7 +69,7 @@ jobs:
             <key>API_KEY</key><string>placeholder</string>
             <key>GCM_SENDER_ID</key><string>000000000000</string>
             <key>BUNDLE_ID</key><string>$4</string>
-            <key>PROJECT_ID</key><string>overqueue-placeholder</string>
+            <key>PROJECT_ID</key><string>queuefox-placeholder</string>
             <key>GOOGLE_APP_ID</key><string>1:000000000000:ios:0000000000000000</string>
           </dict></plist>
           EOF
@@ -94,19 +94,19 @@ jobs:
       - name: Mark as a GitHub release build
         run: |
           plist=ios/iOS/Info.plist
-          /usr/libexec/PlistBuddy -c "Delete :OWQGitHubBuild" "$plist" 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Add :OWQGitHubBuild bool true" "$plist"
+          /usr/libexec/PlistBuddy -c "Delete :QFGitHubBuild" "$plist" 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :QFGitHubBuild bool true" "$plist"
 
-      # The project is OverQueue Dev on its own; main's release is the real app.
-      - name: Make it the real OverQueue
+      # The project is QueueFox Dev on its own; main's release is the real app.
+      - name: Make it the real QueueFox
         if: inputs.real
         run: sh ios/make-real.sh
 
       - name: Build
         run: >
           xcodebuild build
-          -project OverQueue.xcodeproj
-          -scheme OverQueue
+          -project QueueFox.xcodeproj
+          -scheme QueueFox
           -configuration Release
           -destination generic/platform=iOS
           -derivedDataPath build
@@ -121,11 +121,11 @@ jobs:
       - name: Package IPA
         run: |
           mkdir Payload
-          cp -R build/Build/Products/Release-iphoneos/OverQueue.app Payload/
-          zip -qry "OverQueue-${{ steps.version.outputs.version }}.ipa" Payload
+          cp -R build/Build/Products/Release-iphoneos/QueueFox.app Payload/
+          zip -qry "QueueFox-${{ steps.version.outputs.version }}.ipa" Payload
 
       - uses: actions/upload-artifact@v4
         with:
-          name: OverQueue-${{ steps.version.outputs.version }}-ios
-          path: OverQueue-*.ipa
+          name: QueueFox-${{ steps.version.outputs.version }}-ios
+          path: QueueFox-*.ipa
           if-no-files-found: error

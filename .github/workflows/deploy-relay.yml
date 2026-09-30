@@ -54,7 +54,7 @@ jobs:
       # Empty means the top of wrangler.toml, the real worker. Passed even then: with more than one
       # environment defined, wrangler warns about a deploy that doesn't say which it means.
       WORKER_ENV: ${{ github.ref_name == 'dev' && 'dev' || '' }}
-      WORKER_URL: ${{ github.ref_name == 'dev' && 'https://overwatch-queue-push-relay-dev.tomerady.workers.dev' || 'https://overwatch-queue-push-relay.tomerady.workers.dev' }}
+      WORKER_URL: ${{ github.ref_name == 'dev' && 'https://queuefox-push-relay-dev.tomerady.workers.dev' || 'https://queuefox-push-relay.tomerady.workers.dev' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -97,7 +97,7 @@ jobs:
         working-directory: .
         run: |
           for attempt in 1 2 3 4 5 6; do
-            body=$(curl -s -H "User-Agent: OverQueue/2.0" "$WORKER_URL/v1/pair/not-a-pair/state")
+            body=$(curl -s -H "User-Agent: QueueFox/2.0" "$WORKER_URL/v1/pair/not-a-pair/state")
             echo "$body"
             echo "$body" | grep -q "bad_pair_id" && exit 0
             sleep 10

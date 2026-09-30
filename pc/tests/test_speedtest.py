@@ -98,7 +98,7 @@ class ResultTests(unittest.TestCase):
                                                     "error": "UNREGISTERED"}}), pc_ms=0, finished=False)
         self.assertEqual(phone["verdict"], st.FAILED)
         self.assertEqual(phone["failed_at"], st.SERVER)
-        self.assertIn("open OverQueue on it", phone["note"])
+        self.assertIn("open QueueFox on it", phone["note"])
 
     def test_the_log_line_has_every_step(self):
         results = st.device_results(view({

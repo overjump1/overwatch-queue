@@ -1,9 +1,9 @@
-"""OverQueue for Windows: watches your Overwatch queue and pushes it to your iPhone and Apple Watch.
+"""QueueFox for Windows: watches your game queue and pushes it to your iPhone and Apple Watch.
 
 Battle.net is asked what you're doing over its own debug port, which means starting it in
 developer mode (`--remote-debugging-port`) -- see `devmode`. `--presence-source` picks
 something else: `auto` uses the port only if Battle.net already has one open and never
-starts or restarts Battle.net itself. Either way this app only reads, and Overwatch is
+starts or restarts Battle.net itself. Either way this app only reads, and the game is
 never touched.
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ from detector import FOUND, QUEUEING, Detector
 from relay import Relay
 from roleselect import RoleSelect
 from updater import Updater
-from channel import CURRENT, REAL
+from channel import CURRENT
 from version import VERSION
 
 POLL_SECONDS = 1.0
@@ -56,7 +56,7 @@ MODE_COLORS = {
     "competitive": "#ec477e",
     "arcade": "#4dcc84",
     "stadium": "#ffc74c",
-    "mysteryHeroes": "#a376f4",
+    "mystery": "#a376f4",
     "custom": "#9aa0a6",
 }
 MODE_NAMES = {
@@ -64,43 +64,26 @@ MODE_NAMES = {
     "competitive": "Competitive",
     "arcade": "Arcade",
     "stadium": "Stadium",
-    "mysteryHeroes": "Mystery Heroes",
+    "mystery": "Mystery",
     "custom": "Custom Game",
 }
 
-_APPDATA = os.environ.get("APPDATA") or os.path.expanduser("~")
 DATA_DIR = CURRENT.data_dir
-# The app was called OW Queue before this. Its folder holds the pairing code every paired
-# phone was scanned against, so the folder moves across rather than leaving everyone to scan
-# a new one; after that the old name is never looked at again.
-LEGACY_DATA_DIR = os.path.join(_APPDATA, "OWQueue")
 PAIRING_FILE = CURRENT.pairing_file
 
-log = logging.getLogger("overqueue")
-
-
-def adopt_legacy_data_dir():
-    """Moves the old folder over, once, before anything reads or writes the new one."""
-    # Only the real app ever went by the old name; OverQueue Dev starts a pairing of its own.
-    if CURRENT != REAL or os.path.exists(DATA_DIR) or not os.path.isdir(LEGACY_DATA_DIR):
-        return
-    try:
-        os.rename(LEGACY_DATA_DIR, DATA_DIR)
-    except OSError:
-        pass  # A new pairing code is a nuisance, not a reason not to start.
+log = logging.getLogger("queuefox")
 
 
 def setup_logging():
     if sys.stdout:  # None in the installed build, which has no console
         log.addHandler(logging.StreamHandler(sys.stdout))
     log.setLevel(logging.INFO)
-    adopt_legacy_data_dir()
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
     except OSError:
         return
     handler = logging.handlers.RotatingFileHandler(
-        os.path.join(DATA_DIR, "overqueue.log"), maxBytes=1_000_000, backupCount=2, encoding="utf-8")
+        os.path.join(DATA_DIR, "queuefox.log"), maxBytes=1_000_000, backupCount=2, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
     log.addHandler(handler)
 
@@ -343,12 +326,6 @@ class App(QWidget):
         layout.addSpacing(10)
         layout.addLayout(footer)
 
-        disclaimer = QLabel("Not affiliated with Overwatch or Blizzard Entertainment.", font=_font(8))
-        disclaimer.setStyleSheet("color: %s;" % MUTED)
-        disclaimer.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-        layout.addSpacing(6)
-        layout.addWidget(disclaimer)
-
         self.timer = QTimer(self, interval=GUI_REFRESH_MS, timeout=self.refresh)
         self.timer.start()
         self.refresh()
@@ -373,7 +350,7 @@ class App(QWidget):
     def _render(self):
         state, mode, elapsed, since_found, holding, connected = self.watcher.snapshot()
         color = MODE_COLORS.get(mode, TEXT)
-        mode_name = MODE_NAMES.get(mode, "Overwatch")
+        mode_name = MODE_NAMES.get(mode, "Matchmaking")
         if state == QUEUEING:
             self._set(self.state_label, "In queue", color)
             self._set(self.mode_label, mode_name, MUTED)

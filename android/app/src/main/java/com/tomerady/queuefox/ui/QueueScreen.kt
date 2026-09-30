@@ -1,4 +1,4 @@
-package com.tomerady.overqueue.ui
+package com.tomerady.queuefox.ui
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
@@ -70,13 +70,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.sp
-import com.tomerady.overqueue.QueueRepository
-import com.tomerady.overqueue.Updater
-import com.tomerady.overqueue.shared.GameMode
-import com.tomerady.overqueue.shared.QueueState
-import com.tomerady.overqueue.shared.QueueStatus
-import com.tomerady.overqueue.shared.clockString
-import com.tomerady.overqueue.shared.nowSeconds
+import com.tomerady.queuefox.QueueRepository
+import com.tomerady.queuefox.Updater
+import com.tomerady.queuefox.shared.GameMode
+import com.tomerady.queuefox.shared.QueueState
+import com.tomerady.queuefox.shared.QueueStatus
+import com.tomerady.queuefox.shared.clockString
+import com.tomerady.queuefox.shared.nowSeconds
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -317,6 +317,6 @@ private val GameMode.icon: ImageVector
         GameMode.COMPETITIVE -> Icons.Filled.EmojiEvents
         GameMode.ARCADE -> Icons.Filled.SportsEsports
         GameMode.STADIUM -> Icons.Filled.AccountBalance
-        GameMode.MYSTERY_HEROES -> Icons.Filled.QuestionMark
+        GameMode.MYSTERY -> Icons.Filled.QuestionMark
         GameMode.CUSTOM -> Icons.Filled.Tune
     }

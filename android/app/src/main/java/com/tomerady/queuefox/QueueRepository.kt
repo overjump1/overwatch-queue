@@ -1,16 +1,16 @@
-package com.tomerady.overqueue
+package com.tomerady.queuefox
 
 import android.content.Context
 import android.util.Log
 import androidx.core.app.NotificationManagerCompat
 import com.google.firebase.messaging.FirebaseMessaging
-import com.tomerady.overqueue.shared.MatchAlert
-import com.tomerady.overqueue.shared.Pairing
-import com.tomerady.overqueue.shared.QueueNotifier
-import com.tomerady.overqueue.shared.QueuePush
-import com.tomerady.overqueue.shared.QueueState
-import com.tomerady.overqueue.shared.QueueStatus
-import com.tomerady.overqueue.shared.Worker
+import com.tomerady.queuefox.shared.MatchAlert
+import com.tomerady.queuefox.shared.Pairing
+import com.tomerady.queuefox.shared.QueueNotifier
+import com.tomerady.queuefox.shared.QueuePush
+import com.tomerady.queuefox.shared.QueueState
+import com.tomerady.queuefox.shared.QueueStatus
+import com.tomerady.queuefox.shared.Worker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -273,7 +273,7 @@ class QueueRepository private constructor(context: Context) {
     }
 
     companion object {
-        private const val TAG = "OverQueue"
+        private const val TAG = "QueueFox"
 
         @Volatile private var instance: QueueRepository? = null
 

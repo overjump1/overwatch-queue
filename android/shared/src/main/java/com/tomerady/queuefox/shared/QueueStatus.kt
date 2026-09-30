@@ -1,4 +1,4 @@
-package com.tomerady.overqueue.shared
+package com.tomerady.queuefox.shared
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -23,7 +23,7 @@ enum class GameMode(val displayName: String, val color: Int) {
     @SerialName("competitive") COMPETITIVE("Competitive", rgb(0.925, 0.278, 0.494)),
     @SerialName("arcade") ARCADE("Arcade", rgb(0.302, 0.800, 0.518)),
     @SerialName("stadium") STADIUM("Stadium", rgb(1.0, 0.780, 0.298)),
-    @SerialName("mysteryHeroes") MYSTERY_HEROES("Mystery Heroes", rgb(0.639, 0.463, 0.957)),
+    @SerialName("mystery") MYSTERY("Mystery", rgb(0.639, 0.463, 0.957)),
     @SerialName("custom") CUSTOM("Custom Game", rgb(0.62, 0.62, 0.62)),
 }
 
@@ -50,7 +50,7 @@ data class QueueStatus(
             QueueState.PLAYING -> "Good luck, have fun!"
         }
 
-    val modeName: String get() = mode?.displayName ?: "Overwatch"
+    val modeName: String get() = mode?.displayName ?: "Matchmaking"
 
     /** ARGB. */
     val accent: Int

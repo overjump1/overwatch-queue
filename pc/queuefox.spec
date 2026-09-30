@@ -1,5 +1,5 @@
-# PyInstaller build for the Windows app: `pyinstaller pc/overqueue.spec` from the repo root.
-# Produces a one-folder build in dist/OverQueue, which installer.iss packs into the setup exe.
+# PyInstaller build for the Windows app: `pyinstaller pc/queuefox.spec` from the repo root.
+# Produces a one-folder build in dist/QueueFox, which installer.iss packs into the setup exe.
 # One folder rather than one file: it starts faster and doesn't unpack to %TEMP% on every launch.
 
 import os
@@ -12,9 +12,9 @@ from PyInstaller.utils.win32.versioninfo import (
 sys.path.insert(0, SPECPATH)
 import version  # noqa: E402  (stamped by CI before this runs)
 
-# The real app's icon is orange; OverQueue Dev's is purple, so the two tell apart in the taskbar.
-ICON = os.path.join(SPECPATH, "icons", "overqueue-dev.ico" if version.DEV else "overqueue.ico")
-NAME = "OverQueue Dev" if version.DEV else "OverQueue"
+# The real app's icon is orange; QueueFox Dev's is purple, so the two tell apart in the taskbar.
+ICON = os.path.join(SPECPATH, "icons", "queuefox-dev.ico" if version.DEV else "queuefox.ico")
+NAME = "QueueFox Dev" if version.DEV else "QueueFox"
 
 # Details > Properties in Explorer. An exe with none of this is one of the things Defender's
 # machine-learning scan holds against a PyInstaller build (Trojan:Win32/Bearfoos!ml).
@@ -26,9 +26,9 @@ VERSION_INFO = VSVersionInfo(
             StringStruct("CompanyName", "Tomer Ady"),
             StringStruct("FileDescription", NAME),
             StringStruct("FileVersion", version.VERSION),
-            StringStruct("InternalName", "OverQueue"),
+            StringStruct("InternalName", "QueueFox"),
             StringStruct("LegalCopyright", "Tomer Ady"),
-            StringStruct("OriginalFilename", "OverQueue.exe"),
+            StringStruct("OriginalFilename", "QueueFox.exe"),
             StringStruct("ProductName", NAME),
             StringStruct("ProductVersion", version.VERSION),
         ])]),
@@ -54,10 +54,10 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="OverQueue",
+    name="QueueFox",
     console=False,
     upx=False,
     icon=ICON,
     version=VERSION_INFO,
 )
-coll = COLLECT(exe, used(a.binaries), used(a.datas), name="OverQueue", upx=False)
+coll = COLLECT(exe, used(a.binaries), used(a.datas), name="QueueFox", upx=False)

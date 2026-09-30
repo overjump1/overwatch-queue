@@ -5,11 +5,11 @@ name: Release
 # others are copied over from that release unchanged.
 #
 # Pushes to dev do the same into a single prerelease, dev-latest, replaced on every build. Those
-# builds are OverQueue Dev: separate apps that install beside the real ones, with their own pairing,
+# builds are QueueFox Dev: separate apps that install beside the real ones, with their own pairing,
 # talking to the dev worker and updating only from dev-latest. GitHub never counts a prerelease as
 # the latest release, which is exactly what the real apps ask for, so they never see a dev one.
 #
-# Every app builds as OverQueue Dev unless it's told otherwise, and only main's release tells it.
+# Every app builds as QueueFox Dev unless it's told otherwise, and only main's release tells it.
 on:
   push:
     branches: [main, dev]
@@ -84,7 +84,7 @@ jobs:
           any=false
           check android '\.apk$' '^(android/|\.github/workflows/android-app\.yml)'
           check windows '\.exe$' '^(pc/|\.github/workflows/windows-app\.yml)'
-          check ios '\.ipa$' '^(ios/|project\.yml|OverQueue\.xcodeproj/|\.github/workflows/ios-app\.yml)'
+          check ios '\.ipa$' '^(ios/|project\.yml|QueueFox\.xcodeproj/|\.github/workflows/ios-app\.yml)'
           echo "any=$any" >> "$GITHUB_OUTPUT"
           echo "previous=$previous" >> "$GITHUB_OUTPUT"
           echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
@@ -169,7 +169,7 @@ jobs:
           gh release create "v$VERSION" release/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "OverQueue $VERSION" \
+            --title "QueueFox $VERSION" \
             --notes "$notes" \
             --generate-notes
 
@@ -186,7 +186,7 @@ jobs:
           [ "${{ needs.changes.outputs.android }}" = true ] && built+=("Android")
           [ "${{ needs.changes.outputs.windows }}" = true ] && built+=("Windows")
           [ "${{ needs.changes.outputs.ios }}" = true ] && built+=("iPhone")
-          notes="OverQueue Dev, built from ${GITHUB_SHA::7}: installs beside the real apps and talks to the dev worker. New builds: $(IFS=,; echo "${built[*]}" | sed 's/,/, /g'). The other apps are unchanged from the previous dev build."
+          notes="QueueFox Dev, built from ${GITHUB_SHA::7}: installs beside the real apps and talks to the dev worker. New builds: $(IFS=,; echo "${built[*]}" | sed 's/,/, /g'). The other apps are unchanged from the previous dev build."
           gh release delete dev-latest --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes 2>/dev/null || true
           # And the tag itself, in case it outlived its release: a new release made on a leftover tag
           # would sit on the old commit, and the next build would diff against the wrong one.
@@ -194,7 +194,7 @@ jobs:
           gh release create dev-latest release/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "OverQueue $VERSION (dev)" \
+            --title "QueueFox $VERSION (dev)" \
             --notes "$notes" \
             --prerelease \
             --latest=false

@@ -1,4 +1,4 @@
-package com.tomerady.overqueue
+package com.tomerady.queuefox
 
 import android.app.PendingIntent
 import android.content.Context
@@ -6,7 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.util.Log
-import com.tomerady.overqueue.shared.Updates
+import com.tomerady.queuefox.shared.Updates
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -133,7 +133,7 @@ class Updater private constructor(context: Context) {
     )
 
     companion object {
-        private const val TAG = "OverQueue"
+        private const val TAG = "QueueFox"
         private const val CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000L
         private const val ANNOUNCE_MS = 4_000L
 

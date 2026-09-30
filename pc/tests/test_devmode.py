@@ -13,16 +13,16 @@ class ClassifyTests(unittest.TestCase):
     """`subscribeSelfPresence` records, in the shape Battle.net hands them back."""
 
     def test_a_queue(self):
-        self.assertEqual(devmode.classify({"program_id": "Pro", "program_name": "Overwatch",
+        self.assertEqual(devmode.classify({"program_id": p.GAME_PROGRAM, "program_name": p.GAME_NAME,
                                            "rich_presence": "Competitive: In Queue"}),
                          (p.QUEUEING, "competitive"))
 
     def test_a_match(self):
-        self.assertEqual(devmode.classify({"program_id": "Pro", "rich_presence": "Quick Play: In Game"}),
+        self.assertEqual(devmode.classify({"program_id": p.GAME_PROGRAM, "rich_presence": "Quick Play: In Game"}),
                          (p.IN_GAME, "quickPlay"))
 
     def test_the_menus(self):
-        self.assertEqual(devmode.classify({"program_name": "Overwatch", "rich_presence": "In Menus"}),
+        self.assertEqual(devmode.classify({"program_name": p.GAME_NAME, "rich_presence": "In Menus"}),
                          (p.MENUS, None))
 
     def test_another_game_is_elsewhere_whatever_it_says(self):
@@ -70,12 +70,12 @@ class ReaderTests(unittest.TestCase):
         self.reader = devmode.Reader("devmode", log=lambda message: None)
 
     def test_it_reads_what_the_debug_port_answers(self):
-        self.reader.debug = _FakeDebugPort([{"program_id": "Pro", "rich_presence": "Arcade: In Queue"}])
+        self.reader.debug = _FakeDebugPort([{"program_id": p.GAME_PROGRAM, "rich_presence": "Arcade: In Queue"}])
         self.assertEqual(self.reader.read(), (p.QUEUEING, "arcade"))
         self.assertTrue(self.reader.connected)
 
     def test_a_quiet_debug_port_is_not_connected(self):
-        self.reader.debug = _FakeDebugPort([{"program_id": "Pro", "rich_presence": "In Menus"}, None])
+        self.reader.debug = _FakeDebugPort([{"program_id": p.GAME_PROGRAM, "rich_presence": "In Menus"}, None])
         self.reader.read()
         self.assertTrue(self.reader.connected)
         self.assertEqual(self.reader.read(), (p.UNKNOWN, None))
@@ -140,7 +140,7 @@ class RelaunchTests(unittest.TestCase):
     def tearDown(self):
         devmode.running, devmode.launch, devmode.subprocess.run = self.saved
 
-    def test_an_open_overwatch_does_not_hold_it_back(self):
+    def test_an_open_game_does_not_hold_it_back(self):
         """A Battle.net restart leaves a running game alone, so the restart doesn't wait
         for one to finish -- otherwise anyone who starts the app mid-game never gets a
         debug port at all."""
@@ -149,7 +149,7 @@ class RelaunchTests(unittest.TestCase):
         self.assertEqual(self.launched, [9222])
 
     def test_it_kills_by_image_name_never_the_tree(self):
-        """`/T` would take Overwatch with it: the game is Battle.net's own child."""
+        """`/T` would take the game with it: the game is Battle.net's own child."""
         devmode.running = lambda: False
         devmode.relaunch(log=self.lines.append)
         self.assertEqual(self.killed, [["taskkill", "/IM", "Battle.net.exe", "/F"]])

@@ -16,15 +16,15 @@ class SourceTests(unittest.TestCase):
     stamp that got committed instead would make running from source, and every dev build, the real
     app -- on the real worker, with the real pairing."""
 
-    def test_the_source_is_overqueue_dev(self):
+    def test_the_source_is_queuefox_dev(self):
         self.assertIs(version.DEV, True)
 
     def test_the_real_app_talks_to_the_real_worker(self):
-        self.assertEqual(channel.REAL.worker_url, "https://overwatch-queue-push-relay.tomerady.workers.dev")
+        self.assertEqual(channel.REAL.worker_url, "https://queuefox-push-relay.tomerady.workers.dev")
 
     def test_the_real_app_updates_from_the_real_releases(self):
         self.assertEqual(channel.REAL.release_api,
-                         "https://api.github.com/repos/overjump1/overwatch-queue/releases/latest")
+                         "https://api.github.com/repos/overjump1/queuefox/releases/latest")
 
 
 class ChannelTests(unittest.TestCase):
@@ -32,10 +32,10 @@ class ChannelTests(unittest.TestCase):
         importlib.reload(channel)
 
     def load(self, dev, worker_url=None):
-        env = {"OVERQUEUE_WORKER_URL": worker_url} if worker_url else {}
+        env = {"QUEUEFOX_WORKER_URL": worker_url} if worker_url else {}
         with mock.patch.object(version, "DEV", dev), mock.patch.dict(os.environ, env):
             if not worker_url:
-                os.environ.pop("OVERQUEUE_WORKER_URL", None)
+                os.environ.pop("QUEUEFOX_WORKER_URL", None)
             return importlib.reload(channel)
 
     def test_mains_release_is_the_real_app(self):
@@ -43,7 +43,7 @@ class ChannelTests(unittest.TestCase):
         self.assertEqual(loaded.CURRENT, loaded.REAL)
         self.assertEqual(loaded.WORKER_URL, loaded.REAL.worker_url)
 
-    def test_everything_else_is_overqueue_dev(self):
+    def test_everything_else_is_queuefox_dev(self):
         loaded = self.load(dev=True)
         self.assertEqual(loaded.CURRENT, loaded.DEV)
         self.assertEqual(loaded.WORKER_URL, loaded.DEV.worker_url)

@@ -15,10 +15,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "94351ACD2B2826DD5FA05838"
-               BuildableName = "OverQueue.app"
-               BlueprintName = "OverQueue"
-               ReferencedContainer = "container:OverQueue.xcodeproj">
+               BlueprintIdentifier = "3F35738D225F5AE708676DA2"
+               BuildableName = "QueueFox.app"
+               BlueprintName = "QueueFox"
+               ReferencedContainer = "container:QueueFox.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -32,10 +32,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "94351ACD2B2826DD5FA05838"
-            BuildableName = "OverQueue.app"
-            BlueprintName = "OverQueue"
-            ReferencedContainer = "container:OverQueue.xcodeproj">
+            BlueprintIdentifier = "3F35738D225F5AE708676DA2"
+            BuildableName = "QueueFox.app"
+            BlueprintName = "QueueFox"
+            ReferencedContainer = "container:QueueFox.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <Testables>
@@ -55,10 +55,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "94351ACD2B2826DD5FA05838"
-            BuildableName = "OverQueue.app"
-            BlueprintName = "OverQueue"
-            ReferencedContainer = "container:OverQueue.xcodeproj">
+            BlueprintIdentifier = "3F35738D225F5AE708676DA2"
+            BuildableName = "QueueFox.app"
+            BlueprintName = "QueueFox"
+            ReferencedContainer = "container:QueueFox.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <CommandLineArguments>
@@ -74,10 +74,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "94351ACD2B2826DD5FA05838"
-            BuildableName = "OverQueue.app"
-            BlueprintName = "OverQueue"
-            ReferencedContainer = "container:OverQueue.xcodeproj">
+            BlueprintIdentifier = "3F35738D225F5AE708676DA2"
+            BuildableName = "QueueFox.app"
+            BlueprintName = "QueueFox"
+            ReferencedContainer = "container:QueueFox.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

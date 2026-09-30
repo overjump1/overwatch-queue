@@ -35,9 +35,9 @@ DEVICES = (
 UNTIMED = ("phone", "watch")
 
 TIPS = {
-    "phone": "Check OverQueue's notifications are on and no Focus hides them, then open it once.",
-    "watch": "Wear the Watch unlocked, check OverQueue's notifications are on, and open it once.",
-    "android": "Allow OverQueue's notifications, turn off battery optimisation for it, and open it once.",
+    "phone": "Check QueueFox's notifications are on and no Focus hides them, then open it once.",
+    "watch": "Wear the Watch unlocked, check QueueFox's notifications are on, and open it once.",
+    "android": "Allow QueueFox's notifications, turn off battery optimisation for it, and open it once.",
 }
 # The rest is on the cards' tooltips, so the window itself stays to the timelines.
 ABOUT = ("Under %d s is fast, under %d s is OK. The Android phone's time includes its short reply saying "
@@ -83,7 +83,7 @@ def device_results(view, pc_ms, finished):
         if error:
             stale = any(code in error for code in STALE_ERRORS)
             result.update(verdict=FAILED, failed_at=SERVER, times=[pc_ms, None, None], note=(
-                "Out of date on this device: open OverQueue on it, then test again."
+                "Out of date on this device: open QueueFox on it, then test again."
                 if stale else "%s turned it away (%s)." % (service, error)))
         elif to_device is not None or (kind in UNTIMED and to_service is not None):
             total = pc_ms + to_service + (to_device or 0)

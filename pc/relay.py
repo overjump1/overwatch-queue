@@ -11,7 +11,7 @@ import urllib.request
 
 from channel import WORKER_URL
 
-USER_AGENT = "OverQueue/2.0"
+USER_AGENT = "QueueFox/2.0"
 TIMEOUT_SECONDS = 10
 # How often to ask who's paired, while that's still worth asking -- see `run`.
 UNPAIRED_CHECK_SECONDS = 5

@@ -1,6 +1,6 @@
 """Manual notification tester: sends queue states to the worker by hand, as the PC app would.
 
-Close the real OverQueue app first, or its heartbeat will overwrite whatever you set here.
+Close the real QueueFox app first, or its heartbeat will overwrite whatever you set here.
 Run with:  python test.py
 """
 from __future__ import annotations
@@ -22,10 +22,10 @@ from PyQt6.QtWidgets import (
 import channel
 
 # Which app to test, with that app's worker and pairing. Dev first: it's what running the PC app
-# from source is, and what a dev build on the phone talks to. OVERQUEUE_WORKER_URL points either
+# from source is, and what a dev build on the phone talks to. QUEUEFOX_WORKER_URL points either
 # at another worker, the way it does for the app itself.
 APPS = [channel.DEV, channel.REAL]
-MODES = ["competitive", "quickPlay", "arcade", "stadium", "mysteryHeroes", "custom"]
+MODES = ["competitive", "quickPlay", "arcade", "stadium", "mystery", "custom"]
 HEARTBEAT_SECONDS = 30  # the worker ends everything after 180s without a report
 
 
@@ -40,7 +40,7 @@ def saved_pair_id(app):
 def request(method, url, body=None):
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method, headers={
-        "Content-Type": "application/json", "User-Agent": "OWQueue-test/1.0"})
+        "Content-Type": "application/json", "User-Agent": "QueueFox-test/1.0"})
     try:
         with urllib.request.urlopen(req, timeout=10) as response:
             return response.status, response.read().decode("utf-8", "replace")
@@ -57,7 +57,7 @@ class Signals(QObject):
 class Tester(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("OverQueue – notification tester")
+        self.setWindowTitle("QueueFox – notification tester")
         self.resize(560, 480)
         self.signals = Signals()
         self.signals.line.connect(self._append)
@@ -104,7 +104,7 @@ class Tester(QWidget):
         form.addWidget(self.late, 3, 1)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Close the real OverQueue app first. Lock your phone, then press a button."))
+        layout.addWidget(QLabel("Close the real QueueFox app first. Lock your phone, then press a button."))
         layout.addLayout(form)
         layout.addWidget(self.heartbeat)
         layout.addLayout(buttons)
@@ -149,7 +149,7 @@ class Tester(QWidget):
         self.check()
 
     def _worker_url(self):
-        return (os.environ.get("OVERQUEUE_WORKER_URL") or self.app.currentData().worker_url).rstrip("/")
+        return (os.environ.get("QUEUEFOX_WORKER_URL") or self.app.currentData().worker_url).rstrip("/")
 
     def _body(self):
         now = time.monotonic()
