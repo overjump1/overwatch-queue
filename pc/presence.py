@@ -21,9 +21,12 @@ MODE_WORDS = {
     "Custom Game": "custom",
     "Arcade": "arcade",
     "Stadium": "stadium",
-    "Mystery Heroes": "mysteryHeroes",
+    "Mystery Heroes": "mystery",
 }
-OVERWATCH_PROGRAM = "Pro"
+# How Battle.net and Windows name the game this app watches: its program id in a presence
+# record, and both its program name there and its window title.
+GAME_PROGRAM = "Pro"
+GAME_NAME = "Overwatch"
 
 AVAILABLE = os.name == "nt"
 

@@ -9,14 +9,14 @@ Battle.net only opens that port if it was launched with the flag, and it rewrite
 arrange for one; a flagged launch alongside a running unflagged copy just hands off to that
 copy and exits. A flagged launch from a clean start is the one thing that works, so
 `ensure` starts Battle.net with the flag when it isn't running, and closes and reopens it
-when it is running without the port -- with Overwatch open or not, which was measured to
+when it is running without the port -- with the game open or not, which was measured to
 leave a running game alone. The kill is still by image name rather than `/T`, because
-Overwatch is Battle.net's own child and a tree kill would take the game with it.
+the game is Battle.net's own child and a tree kill would take the game with it.
 
 `Reader.restart` is the same restart on demand -- what the app's "Restart Battle.net"
 button calls.
 
-Read-only: the only thing written anywhere is Battle.net's own command line, and Overwatch
+Read-only: the only thing written anywhere is Battle.net's own command line, and the game
 is never touched.
 """
 from __future__ import annotations
@@ -51,8 +51,6 @@ RECONNECT_SECONDS = 5.0
 GRACE_SECONDS = 15.0
 CLOSE_TIMEOUT_SECONDS = 10.0
 
-OVERWATCH_PROGRAM_NAME = "Overwatch"
-
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 _DETACHED = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 
@@ -79,17 +77,17 @@ def classify(record):
     back over the wire is whatever Battle.net's frontend chose to hand over -- anything but
     a record it can read is `UNKNOWN`, never an exception.
 
-    A program that isn't Overwatch is `ELSEWHERE` and never falls through to `parse`:
+    A program that isn't the game is `ELSEWHERE` and never falls through to `parse`:
     another game's rich presence has nothing to do with this app's words. Finding no
     program named at all is `UNKNOWN`, not `ELSEWHERE` -- only a positively named *other*
-    program is evidence there's no Overwatch queue.
+    program is evidence there's no queue.
     """
     if not isinstance(record, dict) or not record:
         return presence.UNKNOWN, None
     program_id = record.get("program_id")
     program_name = record.get("program_name")
     if program_id or program_name:
-        if program_id != presence.OVERWATCH_PROGRAM and program_name != OVERWATCH_PROGRAM_NAME:
+        if program_id != presence.GAME_PROGRAM and program_name != presence.GAME_NAME:
             return presence.ELSEWHERE, None
     return presence.parse(record.get("rich_presence") or "")
 
@@ -257,7 +255,7 @@ def launch(port=DEBUG_PORT, log=print):
 
 
 def relaunch(port=DEBUG_PORT, log=print, stop=None):
-    """Closes Battle.net and starts it again with its debug port open. Runs with Overwatch
+    """Closes Battle.net and starts it again with its debug port open. Runs with the game
     open too: a Battle.net restart was measured to leave a running game alone, and the kill
     below is by image name rather than `/T` so the game is never in the tree that goes.
 
@@ -267,7 +265,7 @@ def relaunch(port=DEBUG_PORT, log=print, stop=None):
         return False
     log("Restarting Battle.net in developer mode")
     try:
-        # By image name, never `/T`: Overwatch is Battle.net's own child, and killing the
+        # By image name, never `/T`: the game is Battle.net's own child, and killing the
         # tree would take the game with it. Every Battle.net helper is a Battle.net.exe.
         closing = subprocess.run(["taskkill", "/IM", "Battle.net.exe", "/F"], capture_output=True,
                                  text=True, timeout=CLOSE_TIMEOUT_SECONDS, creationflags=_NO_WINDOW)

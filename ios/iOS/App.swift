@@ -5,7 +5,7 @@ import FirebaseCore
 import FirebaseMessaging
 
 @main
-struct OverQueueApp: App {
+struct QueueFoxApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @StateObject private var model = AppModel.shared
     @Environment(\.scenePhase) private var scenePhase

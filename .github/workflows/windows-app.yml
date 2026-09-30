@@ -12,8 +12,8 @@ on:
       version:
         type: string
         required: true
-      # Builds the real OverQueue, for main's release. Everything else -- pull requests, the dev
-      # branch, a manual run -- is OverQueue Dev (see pc/channel.py).
+      # Builds the real QueueFox, for main's release. Everything else -- pull requests, the dev
+      # branch, a manual run -- is QueueFox Dev (see pc/channel.py).
       real:
         type: boolean
         required: false
@@ -35,7 +35,7 @@ jobs:
           cache: pip
           cache-dependency-path: pc/requirements.txt
 
-      # PyInstaller is built from source so it compiles its own bootloader (the stub OverQueue.exe
+      # PyInstaller is built from source so it compiles its own bootloader (the stub QueueFox.exe
       # starts from) instead of using the prebuilt one in the wheel. Malware ships that exact prebuilt
       # stub too, so Defender's machine-learning scan learned to flag it: our releases were getting
       # quarantined as Trojan:Win32/Bearfoos!ml. Pinned, so a new PyInstaller can't change the stub
@@ -67,10 +67,10 @@ jobs:
         shell: bash
         run: sed -i 's/^VERSION = .*/VERSION = "${{ steps.version.outputs.version }}"/' pc/version.py
 
-      # The source is OverQueue Dev: its own pairing, the dev worker and the dev prerelease
+      # The source is QueueFox Dev: its own pairing, the dev worker and the dev prerelease
       # (pc/channel.py). Checked afterwards, because a sed that matches nothing succeeds anyway and
       # would ship main's release as the dev app without a word.
-      - name: Make it the real OverQueue
+      - name: Make it the real QueueFox
         if: inputs.real
         shell: bash
         run: |
@@ -78,7 +78,7 @@ jobs:
           grep -qx 'DEV = False' pc/version.py || { echo "::error::DEV didn't land in pc/version.py"; exit 1; }
 
       - name: Build app
-        run: pyinstaller --noconfirm pc/overqueue.spec
+        run: pyinstaller --noconfirm pc/queuefox.spec
 
       - name: Build installer
         run: |
@@ -94,6 +94,6 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: OverQueue-Setup-${{ steps.version.outputs.version }}
-          path: dist/OverQueue-Setup-*.exe
+          name: windows-x64-${{ steps.version.outputs.version }}
+          path: dist/windows-x64-*.exe
           if-no-files-found: error

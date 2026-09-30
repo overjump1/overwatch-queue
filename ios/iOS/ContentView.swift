@@ -187,8 +187,9 @@ struct ContentView: View {
 struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
 
-    private static let privacyPolicy =
-        URL(string: "https://github.com/overjump1/overwatch-queue/blob/main/docs/privacy.md")!
+    /// Served by the worker (worker/src/privacy.ts), so the link leads to that page and nowhere else.
+    private static let privacyPolicy = Worker.base?.appendingPathComponent("privacy")
+        ?? URL(string: "https://queuefox-push-relay.tomerady.workers.dev/privacy")!
 
     var body: some View {
         NavigationStack {
@@ -202,15 +203,6 @@ struct AboutView: View {
                     Link(destination: Self.privacyPolicy) {
                         Label("Privacy policy", systemImage: "hand.raised")
                     }
-                }
-                Section {
-                    Text("""
-                    This app is not affiliated with Overwatch or Blizzard Entertainment.
-
-                    Overwatch and the Overwatch logo are ©2022 Blizzard Entertainment, Inc.
-                    """)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
                 }
             }
             .navigationTitle("About")

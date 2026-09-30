@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.tomerady.overqueue.shared"
+    namespace = "com.tomerady.queuefox.shared"
     compileSdk = 35
 
     defaultConfig {

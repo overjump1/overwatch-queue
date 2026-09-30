@@ -62,13 +62,6 @@ struct PairView: View {
             }
 
             Spacer()
-
-            Text("Not affiliated with Overwatch or Blizzard Entertainment.")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-                .padding(.bottom, 8)
         }
         .task {
             if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined {

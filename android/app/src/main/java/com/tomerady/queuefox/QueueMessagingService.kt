@@ -1,11 +1,11 @@
-package com.tomerady.overqueue
+package com.tomerady.queuefox
 
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import com.tomerady.overqueue.shared.QueueNotifier
-import com.tomerady.overqueue.shared.QueuePush
-import com.tomerady.overqueue.shared.TestPush
-import com.tomerady.overqueue.shared.Worker
+import com.tomerady.queuefox.shared.QueueNotifier
+import com.tomerady.queuefox.shared.QueuePush
+import com.tomerady.queuefox.shared.TestPush
+import com.tomerady.queuefox.shared.Worker
 import kotlinx.coroutines.runBlocking
 
 /** Gets the worker's pushes, even while the app is closed. */

@@ -1,4 +1,4 @@
-package com.tomerady.overqueue
+package com.tomerady.queuefox
 
 import android.content.BroadcastReceiver
 import android.content.Context

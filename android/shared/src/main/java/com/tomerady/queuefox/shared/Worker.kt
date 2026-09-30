@@ -1,4 +1,4 @@
-package com.tomerady.overqueue.shared
+package com.tomerady.queuefox.shared
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -10,7 +10,7 @@ import java.net.URL
 
 /** The Cloudflare worker: the only thing the apps talk to. */
 object Worker {
-    const val DEFAULT_URL = "https://overwatch-queue-push-relay.tomerady.workers.dev"
+    const val DEFAULT_URL = "https://queuefox-push-relay.tomerady.workers.dev"
 
     /** Debug builds can point this at a local worker (see the README). */
     @Volatile

@@ -1,0 +1,690 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0FB2D24FE0F8A849315D021A /* PairView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6BAE3CA1E987CD74D859B1E /* PairView.swift */; };
+		13A1C3D753D784EBB9A2AE88 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B7FCCB960BD5CF4C92C2301 /* ContentView.swift */; };
+		19897E26EC1C14FDF8A22217 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1E063A70D92BC7DC38B4275 /* Assets.xcassets */; };
+		206513F3AF0F57871A6C0CCC /* QueueLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C01AE5E703CF24E24A40FE0 /* QueueLiveActivity.swift */; };
+		207B1F23BBDB7498C46AE9BB /* Worker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B83E1A6F8ED0AF7941D0D17 /* Worker.swift */; };
+		2FCDA7642C24DDB9B03CAB70 /* Worker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B83E1A6F8ED0AF7941D0D17 /* Worker.swift */; };
+		3E25475B43DE74786FA5ED57 /* QueueViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD0E2014124629E5B65A5E2C /* QueueViews.swift */; };
+		3EBF485068AFB60404D02F19 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36D5224D74ECC1C772B2AA3 /* AppModel.swift */; };
+		530CE1AF32760BF0228EDCD1 /* Queue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2431E3EBE8543F0EF88DCBD9 /* Queue.swift */; };
+		5324AD990B3B2091C9DEF269 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 341A7C1F6F180EB5493298D7 /* PrivacyInfo.xcprivacy */; };
+		539E09BDE11407FF0A9B44B7 /* WatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EAA7C0C677DDD7A3686596F /* WatchApp.swift */; };
+		5729CF5CC03300608BFF4343 /* Worker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B83E1A6F8ED0AF7941D0D17 /* Worker.swift */; };
+		5CEF8CD366E5B74E34824899 /* Queue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2431E3EBE8543F0EF88DCBD9 /* Queue.swift */; };
+		8051319214B2F4C847EE520C /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B14117D63E4B3D5E6EDADEF3 /* Assets.xcassets */; };
+		8716EC44CFE7F7A6DD67738B /* QueueFox Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 6CF05D7DC66FFA8CC1571F63 /* QueueFox Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		9235CBDCF62A194E87A0ED1E /* match_found.caf in Resources */ = {isa = PBXBuildFile; fileRef = 1F4CCF51C840358CB0E9127D /* match_found.caf */; };
+		97448C5EE2F6B52A1336A540 /* match_found.caf in Resources */ = {isa = PBXBuildFile; fileRef = 1F4CCF51C840358CB0E9127D /* match_found.caf */; };
+		9CFA8C50136428F496E1EAB2 /* WatchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71E007AD9BA066E57B614F91 /* WatchView.swift */; };
+		A436127A4D737C834920DF7A /* QueueViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD0E2014124629E5B65A5E2C /* QueueViews.swift */; };
+		AD38D48AAF533D4C8119C0A8 /* QueueViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD0E2014124629E5B65A5E2C /* QueueViews.swift */; };
+		B1C05BAD697B929098341AB4 /* Queue.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2431E3EBE8543F0EF88DCBD9 /* Queue.swift */; };
+		C3C3CCF63912581A54DE9983 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FB369BE93F42C24C4596B6B /* App.swift */; };
+		CC6616CF22E89EA73C20259D /* Updates.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6213B06044FFD241182D0875 /* Updates.swift */; };
+		D339A3B31BEEC98207551518 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = C997EB9F46FFB8B3D89045DA /* FirebaseMessaging */; };
+		EE446693D5DCEE58EAC988EE /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B7E46D65E9ACF995261DE6AC /* PrivacyInfo.xcprivacy */; };
+		F09DCE2DD948DAC331C16BF7 /* QueueWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D543950B8E84B8A5D77F4C67 /* QueueWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F305393ABA28DE510C81B124 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 4503EF0894FF0D61BF05E504 /* FirebaseMessaging */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		D19227A7E61A2C4B53967CC5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 73A37B4EFD50065EA87D70AF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 14CCA471EB486340C7773BDE;
+			remoteInfo = QueueWidgets;
+		};
+		DCA427DDE22A0AFE2D0A641A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 73A37B4EFD50065EA87D70AF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 9BE760C93A7C87CB716D5C84;
+			remoteInfo = "QueueFox Watch App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A7523C14A1C43A31DA40086A /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F09DCE2DD948DAC331C16BF7 /* QueueWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CA4B1A25DACE4B6479EF10AD /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				8716EC44CFE7F7A6DD67738B /* QueueFox Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		1F4CCF51C840358CB0E9127D /* match_found.caf */ = {isa = PBXFileReference; path = match_found.caf; sourceTree = "<group>"; };
+		21FA988D12B9A1667839C3FF /* QueueFox.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = QueueFox.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2431E3EBE8543F0EF88DCBD9 /* Queue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Queue.swift; sourceTree = "<group>"; };
+		341A7C1F6F180EB5493298D7 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		3C01AE5E703CF24E24A40FE0 /* QueueLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueLiveActivity.swift; sourceTree = "<group>"; };
+		4A6A4906FD2C167FB9F185DF /* QueueFox.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = QueueFox.entitlements; sourceTree = "<group>"; };
+		4B83E1A6F8ED0AF7941D0D17 /* Worker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Worker.swift; sourceTree = "<group>"; };
+		4EAA7C0C677DDD7A3686596F /* WatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchApp.swift; sourceTree = "<group>"; };
+		52C4D6EF5E7B84D433FDC0E5 /* Watch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Watch.entitlements; sourceTree = "<group>"; };
+		6213B06044FFD241182D0875 /* Updates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Updates.swift; sourceTree = "<group>"; };
+		68460A7020A7FB7DA93E965C /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		6CF05D7DC66FFA8CC1571F63 /* QueueFox Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "QueueFox Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		6FB369BE93F42C24C4596B6B /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
+		71E007AD9BA066E57B614F91 /* WatchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchView.swift; sourceTree = "<group>"; };
+		885CE99A7C8651FFC00D14C8 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		8AB5EF73B2FB0AEF1C485C60 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		8B7FCCB960BD5CF4C92C2301 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A1E063A70D92BC7DC38B4275 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		A36D5224D74ECC1C772B2AA3 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		B14117D63E4B3D5E6EDADEF3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B7E46D65E9ACF995261DE6AC /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		CD0E2014124629E5B65A5E2C /* QueueViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueViews.swift; sourceTree = "<group>"; };
+		D543950B8E84B8A5D77F4C67 /* QueueWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = QueueWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E6BAE3CA1E987CD74D859B1E /* PairView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		9CFA8293D6A6017A3234C398 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D339A3B31BEEC98207551518 /* FirebaseMessaging in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F9C16560CD6AC22FC59066AF /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F305393ABA28DE510C81B124 /* FirebaseMessaging in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		42E89CC2BB0540B036FFF032 = {
+			isa = PBXGroup;
+			children = (
+				9D5231143DBFBCBBDBC520B8 /* ios */,
+				D75E95C5DD2E963C2857A758 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		5B88B397F0E269094BD2CC16 /* Widgets */ = {
+			isa = PBXGroup;
+			children = (
+				885CE99A7C8651FFC00D14C8 /* Info.plist */,
+				3C01AE5E703CF24E24A40FE0 /* QueueLiveActivity.swift */,
+			);
+			path = Widgets;
+			sourceTree = "<group>";
+		};
+		5D43D886C5F6875A1E03D9D3 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				6FB369BE93F42C24C4596B6B /* App.swift */,
+				A36D5224D74ECC1C772B2AA3 /* AppModel.swift */,
+				B14117D63E4B3D5E6EDADEF3 /* Assets.xcassets */,
+				8B7FCCB960BD5CF4C92C2301 /* ContentView.swift */,
+				68460A7020A7FB7DA93E965C /* Info.plist */,
+				E6BAE3CA1E987CD74D859B1E /* PairView.swift */,
+				B7E46D65E9ACF995261DE6AC /* PrivacyInfo.xcprivacy */,
+				4A6A4906FD2C167FB9F185DF /* QueueFox.entitlements */,
+				6213B06044FFD241182D0875 /* Updates.swift */,
+			);
+			path = iOS;
+			sourceTree = "<group>";
+		};
+		5F7EDF2A45CC6AFB9106EFED /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				1F4CCF51C840358CB0E9127D /* match_found.caf */,
+				2431E3EBE8543F0EF88DCBD9 /* Queue.swift */,
+				CD0E2014124629E5B65A5E2C /* QueueViews.swift */,
+				4B83E1A6F8ED0AF7941D0D17 /* Worker.swift */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		9D5231143DBFBCBBDBC520B8 /* ios */ = {
+			isa = PBXGroup;
+			children = (
+				5D43D886C5F6875A1E03D9D3 /* iOS */,
+				5F7EDF2A45CC6AFB9106EFED /* Shared */,
+				C374364B75BAAC154E018B92 /* Watch */,
+				5B88B397F0E269094BD2CC16 /* Widgets */,
+			);
+			path = ios;
+			sourceTree = "<group>";
+		};
+		C374364B75BAAC154E018B92 /* Watch */ = {
+			isa = PBXGroup;
+			children = (
+				A1E063A70D92BC7DC38B4275 /* Assets.xcassets */,
+				8AB5EF73B2FB0AEF1C485C60 /* Info.plist */,
+				341A7C1F6F180EB5493298D7 /* PrivacyInfo.xcprivacy */,
+				52C4D6EF5E7B84D433FDC0E5 /* Watch.entitlements */,
+				4EAA7C0C677DDD7A3686596F /* WatchApp.swift */,
+				71E007AD9BA066E57B614F91 /* WatchView.swift */,
+			);
+			path = Watch;
+			sourceTree = "<group>";
+		};
+		D75E95C5DD2E963C2857A758 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				6CF05D7DC66FFA8CC1571F63 /* QueueFox Watch App.app */,
+				21FA988D12B9A1667839C3FF /* QueueFox.app */,
+				D543950B8E84B8A5D77F4C67 /* QueueWidgets.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		14CCA471EB486340C7773BDE /* QueueWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B34EA2D7CEF653784B4B479C /* Build configuration list for PBXNativeTarget "QueueWidgets" */;
+			buildPhases = (
+				056B8446905993E04E00AF1E /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = QueueWidgets;
+			packageProductDependencies = (
+			);
+			productName = QueueWidgets;
+			productReference = D543950B8E84B8A5D77F4C67 /* QueueWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		3F35738D225F5AE708676DA2 /* QueueFox */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6FDC1B8439AE58EBDF6E749B /* Build configuration list for PBXNativeTarget "QueueFox" */;
+			buildPhases = (
+				DC0F9DBFC13765EFE5FBCBF9 /* Sources */,
+				092D81535864DCF9D383D465 /* Resources */,
+				F9C16560CD6AC22FC59066AF /* Frameworks */,
+				A7523C14A1C43A31DA40086A /* Embed Foundation Extensions */,
+				CA4B1A25DACE4B6479EF10AD /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E9999E5C7304C1CE5F4D8DC3 /* PBXTargetDependency */,
+				2BF194179FC4A418A1E25D8F /* PBXTargetDependency */,
+			);
+			name = QueueFox;
+			packageProductDependencies = (
+				4503EF0894FF0D61BF05E504 /* FirebaseMessaging */,
+			);
+			productName = QueueFox;
+			productReference = 21FA988D12B9A1667839C3FF /* QueueFox.app */;
+			productType = "com.apple.product-type.application";
+		};
+		9BE760C93A7C87CB716D5C84 /* QueueFox Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 01DE503FC13EC0AA547645D6 /* Build configuration list for PBXNativeTarget "QueueFox Watch App" */;
+			buildPhases = (
+				C9BDA8FDC7E1ECCCEECFC4BB /* Sources */,
+				38055550581DBDAF766BD9DD /* Resources */,
+				9CFA8293D6A6017A3234C398 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "QueueFox Watch App";
+			packageProductDependencies = (
+				C997EB9F46FFB8B3D89045DA /* FirebaseMessaging */,
+			);
+			productName = "QueueFox Watch App";
+			productReference = 6CF05D7DC66FFA8CC1571F63 /* QueueFox Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		73A37B4EFD50065EA87D70AF /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					14CCA471EB486340C7773BDE = {
+						DevelopmentTeam = 56N4LCCUN2;
+						ProvisioningStyle = Automatic;
+					};
+					3F35738D225F5AE708676DA2 = {
+						DevelopmentTeam = 56N4LCCUN2;
+						ProvisioningStyle = Automatic;
+					};
+					9BE760C93A7C87CB716D5C84 = {
+						DevelopmentTeam = 56N4LCCUN2;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = D706C9CC16EEA01D4BF3A72D /* Build configuration list for PBXProject "QueueFox" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 42E89CC2BB0540B036FFF032;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				583E75F8E177EED612D76C7B /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = D75E95C5DD2E963C2857A758 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				3F35738D225F5AE708676DA2 /* QueueFox */,
+				14CCA471EB486340C7773BDE /* QueueWidgets */,
+				9BE760C93A7C87CB716D5C84 /* QueueFox Watch App */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		092D81535864DCF9D383D465 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8051319214B2F4C847EE520C /* Assets.xcassets in Resources */,
+				EE446693D5DCEE58EAC988EE /* PrivacyInfo.xcprivacy in Resources */,
+				97448C5EE2F6B52A1336A540 /* match_found.caf in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		38055550581DBDAF766BD9DD /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				19897E26EC1C14FDF8A22217 /* Assets.xcassets in Resources */,
+				5324AD990B3B2091C9DEF269 /* PrivacyInfo.xcprivacy in Resources */,
+				9235CBDCF62A194E87A0ED1E /* match_found.caf in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		056B8446905993E04E00AF1E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B1C05BAD697B929098341AB4 /* Queue.swift in Sources */,
+				206513F3AF0F57871A6C0CCC /* QueueLiveActivity.swift in Sources */,
+				3E25475B43DE74786FA5ED57 /* QueueViews.swift in Sources */,
+				5729CF5CC03300608BFF4343 /* Worker.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C9BDA8FDC7E1ECCCEECFC4BB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				530CE1AF32760BF0228EDCD1 /* Queue.swift in Sources */,
+				AD38D48AAF533D4C8119C0A8 /* QueueViews.swift in Sources */,
+				539E09BDE11407FF0A9B44B7 /* WatchApp.swift in Sources */,
+				9CFA8C50136428F496E1EAB2 /* WatchView.swift in Sources */,
+				2FCDA7642C24DDB9B03CAB70 /* Worker.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DC0F9DBFC13765EFE5FBCBF9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C3C3CCF63912581A54DE9983 /* App.swift in Sources */,
+				3EBF485068AFB60404D02F19 /* AppModel.swift in Sources */,
+				13A1C3D753D784EBB9A2AE88 /* ContentView.swift in Sources */,
+				0FB2D24FE0F8A849315D021A /* PairView.swift in Sources */,
+				5CEF8CD366E5B74E34824899 /* Queue.swift in Sources */,
+				A436127A4D737C834920DF7A /* QueueViews.swift in Sources */,
+				CC6616CF22E89EA73C20259D /* Updates.swift in Sources */,
+				207B1F23BBDB7498C46AE9BB /* Worker.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		2BF194179FC4A418A1E25D8F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 9BE760C93A7C87CB716D5C84 /* QueueFox Watch App */;
+			targetProxy = DCA427DDE22A0AFE2D0A641A /* PBXContainerItemProxy */;
+		};
+		E9999E5C7304C1CE5F4D8DC3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 14CCA471EB486340C7773BDE /* QueueWidgets */;
+			targetProxy = D19227A7E61A2C4B53967CC5 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		184E4AFE25F822B8277712E3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(QF_APP_ICON)";
+				CODE_SIGN_ENTITLEMENTS = ios/Watch/Watch.entitlements;
+				INFOPLIST_FILE = ios/Watch/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(QF_BUNDLE_ID).watchkitapp";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+			};
+			name = Debug;
+		};
+		2509AA97AA711893C09A3BD9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(QF_APP_ICON)";
+				CODE_SIGN_ENTITLEMENTS = ios/iOS/QueueFox.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = ios/iOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(QF_BUNDLE_ID)";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		357C678E163B25C464CBD23E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 56N4LCCUN2;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 0.0.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				QF_APP_ICON = "AppIcon-Dev";
+				QF_APP_NAME = "QueueFox Dev";
+				QF_BUNDLE_ID = com.tomerady.QueueFox.dev;
+				QF_PAIR_SCHEME = "queuefox-dev";
+				QF_RELEASE_API = "https://api.github.com/repos/overjump1/queuefox/releases/tags/dev-latest";
+				QF_WORKER_URL = "https://queuefox-push-relay-dev.tomerady.workers.dev";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Release;
+		};
+		511A2017A233BD91FCBED003 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(QF_APP_ICON)";
+				CODE_SIGN_ENTITLEMENTS = ios/Watch/Watch.entitlements;
+				INFOPLIST_FILE = ios/Watch/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(QF_BUNDLE_ID).watchkitapp";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 4;
+			};
+			name = Release;
+		};
+		7AE5C853D4B9FDD0DBB5D6BE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = ios/Widgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(QF_BUNDLE_ID).QueueWidgets";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		B8ACC76C61222F0443FF37E2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "$(QF_APP_ICON)";
+				CODE_SIGN_ENTITLEMENTS = ios/iOS/QueueFox.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = ios/iOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(QF_BUNDLE_ID)";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		F1E6A41F28445814969C68E1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 56N4LCCUN2;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MARKETING_VERSION = 0.0.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				QF_APP_ICON = "AppIcon-Dev";
+				QF_APP_NAME = "QueueFox Dev";
+				QF_BUNDLE_ID = com.tomerady.QueueFox.dev;
+				QF_PAIR_SCHEME = "queuefox-dev";
+				QF_RELEASE_API = "https://api.github.com/repos/overjump1/queuefox/releases/tags/dev-latest";
+				QF_WORKER_URL = "https://queuefox-push-relay-dev.tomerady.workers.dev";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug;
+		};
+		FB0A0EEC2C4C87C67CF5A697 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				INFOPLIST_FILE = ios/Widgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "$(QF_BUNDLE_ID).QueueWidgets";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		01DE503FC13EC0AA547645D6 /* Build configuration list for PBXNativeTarget "QueueFox Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				184E4AFE25F822B8277712E3 /* Debug */,
+				511A2017A233BD91FCBED003 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6FDC1B8439AE58EBDF6E749B /* Build configuration list for PBXNativeTarget "QueueFox" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B8ACC76C61222F0443FF37E2 /* Debug */,
+				2509AA97AA711893C09A3BD9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B34EA2D7CEF653784B4B479C /* Build configuration list for PBXNativeTarget "QueueWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FB0A0EEC2C4C87C67CF5A697 /* Debug */,
+				7AE5C853D4B9FDD0DBB5D6BE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D706C9CC16EEA01D4BF3A72D /* Build configuration list for PBXProject "QueueFox" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F1E6A41F28445814969C68E1 /* Debug */,
+				357C678E163B25C464CBD23E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		583E75F8E177EED612D76C7B /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 11.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4503EF0894FF0D61BF05E504 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 583E75F8E177EED612D76C7B /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
+		C997EB9F46FFB8B3D89045DA /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 583E75F8E177EED612D76C7B /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 73A37B4EFD50065EA87D70AF /* Project object */;
+}

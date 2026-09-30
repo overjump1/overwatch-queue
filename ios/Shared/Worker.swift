@@ -6,11 +6,11 @@ enum Worker {
         #if DEBUG
         if let override = UserDefaults.standard.string(forKey: "workerURL") { return URL(string: override) }
         #endif
-        // OverQueue Dev carries the dev worker's address, the real app the real one (project.yml).
-        if let stamped = Bundle.main.object(forInfoDictionaryKey: "OWQWorkerURL") as? String {
+        // QueueFox Dev carries the dev worker's address, the real app the real one (project.yml).
+        if let stamped = Bundle.main.object(forInfoDictionaryKey: "QFWorkerURL") as? String {
             return URL(string: stamped)
         }
-        return URL(string: "https://overwatch-queue-push-relay.tomerady.workers.dev")
+        return URL(string: "https://queuefox-push-relay.tomerady.workers.dev")
     }
 
     enum Result {
@@ -76,15 +76,13 @@ enum Pairing {
     }
 
     /// The links this app answers to, straight from its Info.plist. The real app takes
-    /// `overqueue://` and `owq://`, the same link under the name the app used to go by, which a PC
-    /// that hasn't been updated yet still writes. OverQueue Dev takes only `overqueue-dev://`
-    /// (project.yml), so each PC app's code pairs only the matching phone app.
+    /// `queuefox://` and QueueFox Dev takes `queuefox-dev://` (project.yml), so each PC app's code
+    /// pairs only the matching phone app.
     ///
     /// Should that ever come back empty, the app would ignore every code it scanned, so it falls
     /// back to the links this app is known by instead, told apart by the dev app's bundle ID.
     static let schemes: [String] = {
         let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
-        // The dev app lists its one link twice (OWQ_LEGACY_PAIR_SCHEME), so each is kept once.
         var declared: [String] = []
         for scheme in types.flatMap({ $0["CFBundleURLSchemes"] as? [String] ?? [] })
         where !scheme.isEmpty && !declared.contains(scheme.lowercased()) {
@@ -94,10 +92,10 @@ enum Pairing {
         return Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true ? Pairing.devSchemes : Pairing.realSchemes
     }()
 
-    private static let realSchemes = ["overqueue", "owq"]
-    private static let devSchemes = ["overqueue-dev"]
+    private static let realSchemes = ["queuefox"]
+    private static let devSchemes = ["queuefox-dev"]
 
-    /// Accepts `overqueue://pair?id=<32 hex>` (from the QR code) and returns the pairing id.
+    /// Accepts `queuefox://pair?id=<32 hex>` (from the QR code) and returns the pairing id.
     static func parse(_ text: String) -> String? {
         guard let components = URLComponents(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
               let scheme = components.scheme?.lowercased(), schemes.contains(scheme), components.host == "pair",
@@ -118,11 +116,11 @@ enum Pairing {
         }
         // The other app's code. Unless this app goes by that name itself, which only a build with
         // the wrong links would, and is exactly what the last message is there to show.
-        if devSchemes.contains(scheme), appName != "OverQueue Dev" {
-            return "That code is from OverQueue Dev. Scan the one in \(appName) on your PC instead."
+        if devSchemes.contains(scheme), appName != "QueueFox Dev" {
+            return "That code is from QueueFox Dev. Scan the one in \(appName) on your PC instead."
         }
-        if realSchemes.contains(scheme), appName != "OverQueue" {
-            return "That code is from OverQueue. Scan the one in \(appName) on your PC instead."
+        if realSchemes.contains(scheme), appName != "QueueFox" {
+            return "That code is from QueueFox. Scan the one in \(appName) on your PC instead."
         }
         return "That code (\(scheme)://) isn't one \(appName) can pair with. "
             + "It takes \(schemes.map { "\($0)://" }.joined(separator: " or "))."
@@ -135,9 +133,9 @@ enum Pairing {
     }
 }
 
-/// What this app is called: "OverQueue", or "OverQueue Dev" for the dev app, whose PC app is the
+/// What this app is called: "QueueFox", or "QueueFox Dev" for the dev app, whose PC app is the
 /// one to open to pair it.
-let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "OverQueue"
+let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "QueueFox"
 
 extension Data {
     var hex: String { map { String(format: "%02x", $0) }.joined() }

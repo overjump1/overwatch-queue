@@ -1,4 +1,4 @@
-package com.tomerady.overqueue.shared
+package com.tomerady.queuefox.shared
 
 import android.content.Context
 import android.media.AudioAttributes

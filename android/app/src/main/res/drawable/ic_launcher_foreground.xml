@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- The iPhone app icon (ios/iOS/Assets.xcassets/AppIcon.appiconset) redrawn inside the adaptive icon's safe zone.
-     Its accent is orange in the real app and purple in OverQueue Dev (see build.gradle.kts). -->
+     Its accent is orange in the real app and purple in QueueFox Dev (see build.gradle.kts). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"

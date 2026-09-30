@@ -1,4 +1,4 @@
-package com.tomerady.overqueue.ui
+package com.tomerady.queuefox.ui
 
 import android.Manifest
 import android.content.Intent
@@ -64,8 +64,8 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
-import com.tomerady.overqueue.BuildConfig
-import com.tomerady.overqueue.shared.Pairing
+import com.tomerady.queuefox.BuildConfig
+import com.tomerady.queuefox.shared.Pairing
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -149,13 +149,6 @@ fun PairScreen(resetNotice: Boolean, onCode: (String) -> Unit, onClose: (() -> U
             }
         }
         Spacer(Modifier.weight(1f))
-        Text(
-            "Not affiliated with Overwatch or Blizzard Entertainment.",
-            fontSize = 12.sp,
-            color = Secondary,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
     }
 }
 

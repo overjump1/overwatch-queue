@@ -15,16 +15,17 @@ enum UpdateNotice: Equatable {
 /// iOS can't install an app on itself, so this only reports the version; getting the build onto the
 /// phone is still AltStore or Sideloadly with the IPA from the release page.
 enum Updates {
-    /// OverQueue Dev carries the dev prerelease's address (project.yml), so it only ever updates to
+    /// QueueFox Dev carries the dev prerelease's address (project.yml), so it only ever updates to
     /// another dev build. The real app asks for the latest release.
     static let releaseAPI: URL = {
-        if let stamped = Bundle.main.object(forInfoDictionaryKey: "OWQReleaseAPI") as? String,
+        if let stamped = Bundle.main.object(forInfoDictionaryKey: "QFReleaseAPI") as? String,
            let url = URL(string: stamped) {
             return url
         }
-        return URL(string: "https://api.github.com/repos/overjump1/overwatch-queue/releases/latest")!
+        return URL(string: "https://api.github.com/repos/overjump1/queuefox/releases/latest")!
     }()
-    private static let assetPrefix = "OverQueue-"
+    /// Named for the platform, not the app, so a rename never has to touch it (release.yml).
+    private static let assetPrefix = "ios-"
     private static let assetSuffix = ".ipa"
 
     private struct Release: Decodable {
@@ -65,7 +66,7 @@ enum Updates {
     /// would be breaking App Review's rules as well as wasting their time. Opting in beats opting
     /// out here: a build nobody stamped keeps quiet instead of guessing.
     static var isGitHubReleaseBuild: Bool {
-        Bundle.main.object(forInfoDictionaryKey: "OWQGitHubBuild") as? Bool ?? false
+        Bundle.main.object(forInfoDictionaryKey: "QFGitHubBuild") as? Bool ?? false
     }
 
     /// Worked out once, since the view body reads it and it can't change while the app runs. On
@@ -83,7 +84,7 @@ enum Updates {
         guard checksForUpdates else { return .upToDate }
         var request = URLRequest(url: releaseAPI, timeoutInterval: 20)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("OverQueue/\(current)", forHTTPHeaderField: "User-Agent")
+        request.setValue("QueueFox/\(current)", forHTTPHeaderField: "User-Agent")
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
               let release = try? JSONDecoder().decode(Release.self, from: data)
@@ -97,7 +98,7 @@ enum Updates {
     /// The version of the newer IPA among `assetNames`, if there is one.
     ///
     /// The version comes from the asset's filename, not the release tag: release.yml only rebuilds
-    /// the apps that changed and copies the rest forward, so v2.0.3 holds OverQueue-2.0.2.ipa and
+    /// the apps that changed and copies the rest forward, so v2.0.3 holds ios-2.0.2.ipa and
     /// going by the tag would claim an update this build already is.
     static func newerVersion(in assetNames: [String], than current: String) -> String? {
         for name in assetNames where name.hasPrefix(assetPrefix) && name.hasSuffix(assetSuffix) {

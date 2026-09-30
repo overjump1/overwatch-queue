@@ -85,7 +85,7 @@ class PairingTests(unittest.TestCase):
         self.addCleanup(setattr, r, "_request", real)
         self.relay = r.Relay(PAIR_ID, log=lambda *args: None)
 
-    def request(self, method, path, body=None):
+    def request(self, method, path, body=None, base=None):
         self.calls.append((method, path))
         return 200, dict(self.answer)
 
@@ -154,7 +154,7 @@ class RetryTests(unittest.TestCase):
         self.addCleanup(setattr, r, "_request", real)
         self.relay = r.Relay(PAIR_ID, log=lambda *args: None)
 
-    def request(self, method, path, body=None):
+    def request(self, method, path, body=None, base=None):
         self.calls.append((time.monotonic(), body["state"] if body else None))
         if len(self.calls) == 1:
             raise OSError("network down")
@@ -177,6 +177,60 @@ class RetryTests(unittest.TestCase):
         thread.join(timeout=2)
         self.assertEqual([state for _, state in self.calls[:2]], ["queueing", "found"])
         self.assertLess(self.calls[1][0] - found_at, 0.5)
+
+
+class MirrorTests(unittest.TestCase):
+    """An install upgraded from OverQueue keeps the phones paired back then updated through the
+    worker they know, until the pairing is reset."""
+
+    OLD = "https://old.example"
+
+    def setUp(self):
+        self.calls = []
+        self.answers = {None: {"status": {}}, self.OLD: {"status": {}}}
+        real = r._request
+        r._request = self.request
+        self.addCleanup(setattr, r, "_request", real)
+        self.new = r.Relay(PAIR_ID, log=lambda *args: None)
+        self.old = r.Relay(PAIR_ID, log=lambda *args: None, base_url=self.OLD)
+        self.new._base = None  # so the calls read as "the new worker" below, whatever WORKER_URL is
+        self.relay = r.Mirrored(self.new, self.old)
+
+    def request(self, method, path, body=None, base=None):
+        self.calls.append((base, method, path))
+        return 200, dict(self.answers[base])
+
+    def deliver(self):
+        self.old._delete_stale()
+        self.new._delete_stale()
+        self.assertTrue(self.new._send_pending())
+        self.assertTrue(self.old._send_pending())
+
+    def test_every_state_reaches_both_workers(self):
+        self.relay.publish("found", "competitive", 60.0)
+        self.deliver()
+        self.assertEqual(self.calls, [(None, "POST", "/v1/pair/%s/state" % PAIR_ID),
+                                      (self.OLD, "POST", "/v1/pair/%s/state" % PAIR_ID)])
+
+    def test_phones_on_either_worker_count_as_paired(self):
+        self.answers = {None: {"status": {}, "androidPaired": True},
+                        self.OLD: {"status": {}, "phonePaired": True, "androidPaired": True}}
+        self.relay.publish("idle", None, 0.0)
+        self.deliver()
+        self.assertEqual(self.relay.paired, ["Android", "iPhone"])
+
+    def test_a_reset_deletes_the_old_pairing_and_stops_mirroring(self):
+        self.relay.change_pair(OTHER_ID)
+        self.relay.publish("queueing", "competitive", 5.0)
+        self.deliver()
+        self.assertIn((self.OLD, "DELETE", "/v1/pair/%s" % PAIR_ID), self.calls)
+        self.assertNotIn(self.OLD, [base for base, method, _ in self.calls if method == "POST"])
+        self.assertIn((None, "POST", "/v1/pair/%s/state" % OTHER_ID), self.calls)
+
+    def test_only_the_new_worker_is_asked_who_is_scanning(self):
+        self.relay.expect_phone(True)
+        self.assertTrue(self.new._expecting_phone)
+        self.assertFalse(self.old._expecting_phone)
 
 
 if __name__ == "__main__":

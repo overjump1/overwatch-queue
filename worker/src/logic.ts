@@ -1,7 +1,7 @@
 export const STATES = ["idle", "queueing", "found", "playing"] as const;
 /** What the PC can report. "playing" is only ever derived here, from how long ago the match was found. */
 export const REPORTED_STATES = ["idle", "queueing", "found"] as const;
-export const MODES = ["quickPlay", "competitive", "arcade", "stadium", "mysteryHeroes", "custom"] as const;
+export const MODES = ["quickPlay", "competitive", "arcade", "stadium", "mystery", "custom"] as const;
 
 export type QueueState = (typeof STATES)[number];
 export type ReportedState = (typeof REPORTED_STATES)[number];
@@ -63,12 +63,12 @@ const MODE_NAMES: Record<Mode, string> = {
   competitive: "Competitive",
   arcade: "Arcade",
   stadium: "Stadium",
-  mysteryHeroes: "Mystery Heroes",
+  mystery: "Mystery",
   custom: "Custom Game",
 };
 
 export function modeName(mode: Mode | null): string {
-  return mode ? MODE_NAMES[mode] : "Overwatch";
+  return mode ? MODE_NAMES[mode] : "Matchmaking";
 }
 
 export function parseReport(body: unknown): Report | null {

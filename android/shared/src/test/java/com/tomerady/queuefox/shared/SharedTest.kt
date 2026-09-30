@@ -1,4 +1,4 @@
-package com.tomerady.overqueue.shared
+package com.tomerady.queuefox.shared
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -10,60 +10,59 @@ import org.junit.Test
 class PairingTest {
     private val id = "0123456789abcdef0123456789abcdef"
 
-    @Test fun parsesTheQrCode() = assertEquals(id, Pairing.parse("owq://pair?id=$id"))
+    @Test fun parsesTheQrCode() = assertEquals(id, Pairing.parse("queuefox://pair?id=$id"))
 
-    @Test fun theRealAppIgnoresTheDevAppsCode() = assertNull(Pairing.parse("overqueue-dev://pair?id=$id"))
+    @Test fun theRealAppIgnoresTheDevAppsCode() = assertNull(Pairing.parse("queuefox-dev://pair?id=$id"))
 
     @Test fun theDevAppOnlyTakesItsOwnCode() {
         val real = Pairing.schemes
-        Pairing.schemes = setOf("overqueue-dev")
+        Pairing.schemes = setOf("queuefox-dev")
         try {
-            assertEquals(id, Pairing.parse("overqueue-dev://pair?id=$id"))
-            assertNull(Pairing.parse("overqueue://pair?id=$id"))
-            assertNull(Pairing.parse("owq://pair?id=$id"))
+            assertEquals(id, Pairing.parse("queuefox-dev://pair?id=$id"))
+            assertNull(Pairing.parse("queuefox://pair?id=$id"))
         } finally {
             Pairing.schemes = real
         }
     }
 
-    @Test fun lowercasesAndTrims() =assertEquals(id, Pairing.parse("  owq://pair?id=${id.uppercase()}\n"))
+    @Test fun lowercasesAndTrims() =assertEquals(id, Pairing.parse("  queuefox://pair?id=${id.uppercase()}\n"))
 
-    @Test fun findsIdAmongOtherParameters() = assertEquals(id, Pairing.parse("owq://pair?v=1&id=$id"))
+    @Test fun findsIdAmongOtherParameters() = assertEquals(id, Pairing.parse("queuefox://pair?v=1&id=$id"))
 
     @Test fun rejectsOtherSchemesAndHosts() {
         assertNull(Pairing.parse("https://pair?id=$id"))
-        assertNull(Pairing.parse("owq://other?id=$id"))
+        assertNull(Pairing.parse("queuefox://other?id=$id"))
     }
 
-    @Test fun saysNothingAgainstACodeThatPairs() = assertNull(Pairing.rejection("owq://pair?id=$id", "OverQueue"))
+    @Test fun saysNothingAgainstACodeThatPairs() = assertNull(Pairing.rejection("queuefox://pair?id=$id", "QueueFox"))
 
     @Test fun saysWhichAppACodeIsFrom() {
-        val said = Pairing.rejection("overqueue-dev://pair?id=$id", "OverQueue")
-        assertTrue(said!!.contains("OverQueue Dev"))
+        val said = Pairing.rejection("queuefox-dev://pair?id=$id", "QueueFox")
+        assertTrue(said!!.contains("QueueFox Dev"))
     }
 
     @Test fun namesTheLinksWhenTheAppIsBuiltWithTheWrongOnes() {
         val real = Pairing.schemes
-        Pairing.schemes = setOf("overqueue-dev")
+        Pairing.schemes = setOf("queuefox-dev")
         try {
-            val said = Pairing.rejection("overqueue://pair?id=$id", "OverQueue")!!
-            assertTrue(said.contains("overqueue://"))
-            assertTrue(said.contains("overqueue-dev://"))
+            val said = Pairing.rejection("queuefox://pair?id=$id", "QueueFox")!!
+            assertTrue(said.contains("queuefox://"))
+            assertTrue(said.contains("queuefox-dev://"))
         } finally {
             Pairing.schemes = real
         }
     }
 
     @Test fun saysADamagedCodeIsDamaged() =
-        assertTrue(Pairing.rejection("owq://pair?id=nope", "OverQueue")!!.contains("damaged"))
+        assertTrue(Pairing.rejection("queuefox://pair?id=nope", "QueueFox")!!.contains("damaged"))
 
     @Test fun saysAnythingElseIsntAPairingCode() =
-        assertTrue(Pairing.rejection("https://example.com", "OverQueue")!!.contains("isn't a pairing code"))
+        assertTrue(Pairing.rejection("https://example.com", "QueueFox")!!.contains("isn't a pairing code"))
 
     @Test fun rejectsBadIds() {
-        assertNull(Pairing.parse("owq://pair?id=${id.dropLast(1)}"))
-        assertNull(Pairing.parse("owq://pair?id=${id.dropLast(1)}g"))
-        assertNull(Pairing.parse("owq://pair"))
+        assertNull(Pairing.parse("queuefox://pair?id=${id.dropLast(1)}"))
+        assertNull(Pairing.parse("queuefox://pair?id=${id.dropLast(1)}g"))
+        assertNull(Pairing.parse("queuefox://pair"))
         assertNull(Pairing.parse("not a url at all"))
     }
 }
@@ -168,17 +167,17 @@ class UpdatesTest {
     }
 
     @Test fun offersANewerApk() {
-        val found = Updates.findUpdate(release("OverQueue-Setup-2.0.42.exe", "OverQueue-2.0.42.apk"), "2.0.40")
-        assertEquals(Updates.Release("2.0.42", "https://example.test/OverQueue-2.0.42.apk", 1234), found)
+        val found = Updates.findUpdate(release("windows-x64-2.0.42.exe", "android-2.0.42.apk"), "2.0.40")
+        assertEquals(Updates.Release("2.0.42", "https://example.test/android-2.0.42.apk", 1234), found)
     }
 
     @Test fun readsTheVersionFromTheAssetNotTheTag() {
         // release.yml copies unchanged apps forward, so a newer tag can hold this build's APK.
-        assertNull(Updates.findUpdate(release("OverQueue-2.0.40.apk"), "2.0.40"))
+        assertNull(Updates.findUpdate(release("android-2.0.40.apk"), "2.0.40"))
     }
 
     @Test fun ignoresTheOtherPlatforms() {
-        assertNull(Updates.findUpdate(release("OverQueue-Setup-2.0.42.exe", "OverQueue-2.0.42.ipa"), "2.0.40"))
+        assertNull(Updates.findUpdate(release("windows-x64-2.0.42.exe", "ios-2.0.42.ipa"), "2.0.40"))
     }
 
     @Test fun survivesAReleaseWithNothingInIt() {

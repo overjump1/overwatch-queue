@@ -155,3 +155,13 @@ describe("speed test", () => {
     expect((await pair.startTest(PAIR)).status).toBe(429);
   });
 });
+
+describe("privacy policy", () => {
+  it("is served as a page of its own", async () => {
+    const { default: worker } = await import("../src/index");
+    const response = await worker.fetch(new Request("https://example.com/privacy"), {} as never);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/html");
+    expect(await response.text()).toContain("QueueFox — Privacy Policy");
+  });
+});

@@ -14,7 +14,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "OverQueue"
+rootProject.name = "QueueFox"
 
 // :shared has everything that isn't phone UI, so a Wear OS app can be added as another module next to :app.
 include(":app", ":shared")

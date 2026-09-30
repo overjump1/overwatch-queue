@@ -6,7 +6,7 @@ enum QueueState: String, Codable, Hashable {
 }
 
 enum GameMode: String, Codable, Hashable, CaseIterable {
-    case quickPlay, competitive, arcade, stadium, mysteryHeroes, custom
+    case quickPlay, competitive, arcade, stadium, mystery, custom
 
     var name: String {
         switch self {
@@ -14,7 +14,7 @@ enum GameMode: String, Codable, Hashable, CaseIterable {
         case .competitive: "Competitive"
         case .arcade: "Arcade"
         case .stadium: "Stadium"
-        case .mysteryHeroes: "Mystery Heroes"
+        case .mystery: "Mystery"
         case .custom: "Custom Game"
         }
     }
@@ -25,7 +25,7 @@ enum GameMode: String, Codable, Hashable, CaseIterable {
         case .competitive: "trophy.fill"
         case .arcade: "gamecontroller.fill"
         case .stadium: "building.columns.fill"
-        case .mysteryHeroes: "questionmark.diamond.fill"
+        case .mystery: "questionmark.diamond.fill"
         case .custom: "slider.horizontal.3"
         }
     }
@@ -36,7 +36,7 @@ enum GameMode: String, Codable, Hashable, CaseIterable {
         case .competitive: Color(red: 0.925, green: 0.278, blue: 0.494)
         case .arcade: Color(red: 0.302, green: 0.800, blue: 0.518)
         case .stadium: Color(red: 1.0, green: 0.780, blue: 0.298)
-        case .mysteryHeroes: Color(red: 0.639, green: 0.463, blue: 0.957)
+        case .mystery: Color(red: 0.639, green: 0.463, blue: 0.957)
         case .custom: Color(white: 0.62)
         }
     }
@@ -91,7 +91,7 @@ struct QueueStatus: Codable, Hashable {
     var subtitle: String {
         switch state {
         case .idle: "Start a queue on your PC"
-        case .queueing, .found: mode?.name ?? "Overwatch"
+        case .queueing, .found: mode?.name ?? "Matchmaking"
         case .playing: "Good luck, have fun!"
         }
     }

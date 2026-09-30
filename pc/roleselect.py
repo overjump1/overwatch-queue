@@ -1,4 +1,4 @@
-"""Detects Overwatch's "Select a Role" screen by finding its four role icons in a row.
+"""Detects the game's "Select a Role" screen by finding its four role icons in a row.
 
 Only used while Battle.net says "In Queue" but the queue hasn't been confirmed yet, because
 Battle.net reports "In Queue" from the moment that screen opens."""
@@ -10,6 +10,8 @@ import re
 import threading
 import time
 import urllib.request
+
+import presence
 
 try:
     import cv2
@@ -45,7 +47,7 @@ _SVG_TOKEN = re.compile(r"([MLZ])|(-?[0-9]*\.?[0-9]+(?:[eE]-?[0-9]+)?)")
 
 
 class RoleSelect:
-    """`visible()` is True/False when it could look, None when it can't (Overwatch isn't the
+    """`visible()` is True/False when it could look, None when it can't (the game isn't the
     foreground window, icons unavailable, or no vision libraries)."""
 
     def __init__(self, cache_dir, log=print):
@@ -69,7 +71,7 @@ class RoleSelect:
             templates = self._load(blocking=False)
             if not templates:
                 return None
-            rect = overwatch_window()
+            rect = game_window()
             if rect is None:
                 return None
             return looks_like_role_select(find_role_row(capture(rect), templates))
@@ -107,7 +109,7 @@ class RoleSelect:
         path = os.path.join(self.cache_dir, role + (".svg" if role == "flex" else ".png"))
         if not os.path.exists(path):
             try:
-                request = urllib.request.Request(ICON_URLS[role], headers={"User-Agent": "OverQueue/2.0"})
+                request = urllib.request.Request(ICON_URLS[role], headers={"User-Agent": "QueueFox/2.0"})
                 with urllib.request.urlopen(request, timeout=15) as response:
                     data = response.read()
                 with open(path + ".part", "wb") as handle:
@@ -125,8 +127,8 @@ class RoleSelect:
         return _tight_crop(glyph)
 
 
-def overwatch_window():
-    """The Overwatch window's screen rectangle if it's the foreground window, else None."""
+def game_window():
+    """The game window's screen rectangle if it's the foreground window, else None."""
     user32 = ctypes.WinDLL("user32")
     user32.GetForegroundWindow.restype = ctypes.c_void_p
     user32.GetWindowTextW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_int]
@@ -137,7 +139,7 @@ def overwatch_window():
         return None
     title = ctypes.create_unicode_buffer(64)
     user32.GetWindowTextW(hwnd, title, 64)
-    if title.value != "Overwatch":
+    if title.value != presence.GAME_NAME:
         return None
 
     class RECT(ctypes.Structure):

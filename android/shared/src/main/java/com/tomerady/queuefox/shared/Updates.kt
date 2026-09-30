@@ -1,4 +1,4 @@
-package com.tomerady.overqueue.shared
+package com.tomerady.queuefox.shared
 
 import android.app.PendingIntent
 import android.content.Context
@@ -13,13 +13,14 @@ import java.net.URL
 
 /** The app's own updates, from the GitHub releases the Release workflow publishes. */
 object Updates {
-    const val DEFAULT_RELEASE_API = "https://api.github.com/repos/overjump1/overwatch-queue/releases/latest"
+    const val DEFAULT_RELEASE_API = "https://api.github.com/repos/overjump1/queuefox/releases/latest"
 
-    /** Where [latest] looks. A dev build points it at the dev prerelease (see OwqApp). */
+    /** Where [latest] looks. A dev build points it at the dev prerelease (see QueueFoxApp). */
     @Volatile
     var releaseApi: String = DEFAULT_RELEASE_API
 
-    private val ASSET = Regex("""^OverQueue-(.+)\.apk$""", RegexOption.IGNORE_CASE)
+    // Named for the platform, not the app, so a rename never has to touch it (release.yml).
+    private val ASSET = Regex("""^android-(.+)\.apk$""", RegexOption.IGNORE_CASE)
     private const val TIMEOUT_MS = 20_000
 
     /** The APK on offer. [version] is read from its filename. */
@@ -61,7 +62,7 @@ object Updates {
     /**
      * The APK in a `releases/latest` reply, if it's newer than [current]. The version comes from the
      * asset's filename, not the release tag: release.yml copies unchanged apps forward, so v2.0.3
-     * holds OverQueue-2.0.2.apk and the tag would offer an update this build already is.
+     * holds android-2.0.2.apk and the tag would offer an update this build already is.
      */
     fun findUpdate(body: String, current: String?): Release? {
         val release = runCatching {
@@ -84,7 +85,7 @@ object Updates {
             connection.readTimeout = TIMEOUT_MS
             connection.setRequestProperty("Accept", "application/vnd.github+json")
             // GitHub turns away requests without one.
-            connection.setRequestProperty("User-Agent", "OverQueue/${current.orEmpty()}")
+            connection.setRequestProperty("User-Agent", "QueueFox/${current.orEmpty()}")
             check(connection.responseCode == 200) { "HTTP ${connection.responseCode}" }
             connection.inputStream.bufferedReader().use { it.readText() }
         } finally {
@@ -103,7 +104,7 @@ object Updates {
         onProgress: (Int) -> Unit,
     ): File = withContext(Dispatchers.IO) {
         val directory = File(context.cacheDir, "updates").apply { mkdirs() }
-        val target = File(directory, "OverQueue-${release.version}.apk")
+        val target = File(directory, "android-${release.version}.apk")
         if (release.size > 0 && target.length() == release.size) return@withContext target
         // Anything else in there is an older release's APK.
         directory.listFiles()?.forEach { it.delete() }
@@ -112,7 +113,7 @@ object Updates {
         try {
             connection.connectTimeout = TIMEOUT_MS
             connection.readTimeout = TIMEOUT_MS
-            connection.setRequestProperty("User-Agent", "OverQueue/${release.version}")
+            connection.setRequestProperty("User-Agent", "QueueFox/${release.version}")
             check(connection.responseCode == 200) { "HTTP ${connection.responseCode}" }
             val total = if (release.size > 0) release.size else connection.contentLength.toLong()
             var written = 0L

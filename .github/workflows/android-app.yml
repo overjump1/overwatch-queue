@@ -16,8 +16,8 @@ on:
         type: number
         required: false
         default: 1
-      # Builds the real OverQueue, for main's release. Everything else -- pull requests, the dev
-      # branch, a manual run -- is OverQueue Dev (android/app/build.gradle.kts).
+      # Builds the real QueueFox, for main's release. Everything else -- pull requests, the dev
+      # branch, a manual run -- is QueueFox Dev (android/app/build.gradle.kts).
       real:
         type: boolean
         required: false
@@ -46,12 +46,12 @@ jobs:
           gradle-version: "8.11.1"
 
       # One google-services.json holds every Android app in the Firebase project, so the same secret
-      # serves both apps -- once OverQueue Dev has been added to the project and the file downloaded
+      # serves both apps -- once QueueFox Dev has been added to the project and the file downloaded
       # again. Until then its builds get the placeholder.
       - name: Firebase config
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
-          PACKAGE: com.tomerady.overwatchqueue${{ !inputs.real && '.dev' || '' }}
+          PACKAGE: com.tomerady.queuefox${{ !inputs.real && '.dev' || '' }}
         run: |
           if [ -n "$GOOGLE_SERVICES_JSON" ]; then
             echo "$GOOGLE_SERVICES_JSON" | base64 --decode > app/google-services.json
@@ -64,8 +64,8 @@ jobs:
           {
             "project_info": {
               "project_number": "000000000000",
-              "project_id": "overqueue-placeholder",
-              "storage_bucket": "overqueue-placeholder.appspot.com"
+              "project_id": "queuefox-placeholder",
+              "storage_bucket": "queuefox-placeholder.appspot.com"
             },
             "client": [{
               "client_info": {
@@ -110,10 +110,10 @@ jobs:
           -Pdev=${{ !inputs.real }}
 
       - name: Rename APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk "OverQueue-${{ steps.version.outputs.version }}.apk"
+        run: cp app/build/outputs/apk/debug/app-debug.apk "android-${{ steps.version.outputs.version }}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: OverQueue-${{ steps.version.outputs.version }}-android
-          path: android/OverQueue-*.apk
+          name: android-${{ steps.version.outputs.version }}
+          path: android/android-*.apk
           if-no-files-found: error

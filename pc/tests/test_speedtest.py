@@ -98,7 +98,7 @@ class ResultTests(unittest.TestCase):
                                                     "error": "UNREGISTERED"}}), pc_ms=0, finished=False)
         self.assertEqual(phone["verdict"], st.FAILED)
         self.assertEqual(phone["failed_at"], st.SERVER)
-        self.assertIn("open OverQueue on it", phone["note"])
+        self.assertIn("open QueueFox on it", phone["note"])
 
     def test_the_log_line_has_every_step(self):
         results = st.device_results(view({
@@ -202,7 +202,7 @@ class RunTests(unittest.TestCase):
         self.updates = []
         self.done = threading.Event()
 
-    def request(self, method, path, body=None):
+    def request(self, method, path, body=None, base=None):
         self.calls.append((method, path))
         return self.answers.pop(0) if len(self.answers) > 1 else self.answers[0]
 

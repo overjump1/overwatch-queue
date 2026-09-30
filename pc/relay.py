@@ -11,7 +11,7 @@ import urllib.request
 
 from channel import WORKER_URL
 
-USER_AGENT = "OverQueue/2.0"
+USER_AGENT = "QueueFox/2.0"
 TIMEOUT_SECONDS = 10
 # How often to ask who's paired, while that's still worth asking -- see `run`.
 UNPAIRED_CHECK_SECONDS = 5
@@ -19,9 +19,9 @@ PAIRED_KEYS = (("iPhone", "phonePaired"), ("Android", "androidPaired"))
 MAX_BACKOFF_SECONDS = 30
 
 
-def _request(method, path, body=None):
+def _request(method, path, body=None, base=None):
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    request = urllib.request.Request(WORKER_URL + path, data=data, method=method, headers={
+    request = urllib.request.Request((base or WORKER_URL) + path, data=data, method=method, headers={
         "Content-Type": "application/json", "User-Agent": USER_AGENT})
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
@@ -50,8 +50,9 @@ def _report(pending):
 
 
 class Relay:
-    def __init__(self, pair_id, log=print):
+    def __init__(self, pair_id, log=print, base_url=None):
         self.log = log
+        self._base = base_url or WORKER_URL
         self.paired = []  # names of the phones that registered with this pairing, e.g. ["iPhone"]
         self.reachable = True
         self._pair_id = pair_id
@@ -77,6 +78,16 @@ class Relay:
                 self._pending = self._last_sent
             self.paired = []
             self._next_check = 0.0
+        self._wake.set()
+
+    def retire(self):
+        """Deletes this pairing from the worker and sends it nothing more."""
+        with self._lock:
+            if self._pair_id is not None:
+                self._stale_ids.append(self._pair_id)
+            self._pair_id = None
+            self._pending = None
+            self.paired = []
         self._wake.set()
 
     def expect_phone(self, expecting):
@@ -129,10 +140,10 @@ class Relay:
     def _send_pending(self):
         with self._lock:
             pending, pair_id = self._pending, self._pair_id
-        if pending is None:
+        if pending is None or pair_id is None:
             return True
         try:
-            status, body = _request("POST", "/v1/pair/%s/state" % pair_id, _report(pending))
+            status, body = _request("POST", "/v1/pair/%s/state" % pair_id, _report(pending), base=self._base)
         except Exception as problem:  # noqa: BLE001
             self.log("Sending state failed: %s" % problem)
             return False
@@ -152,7 +163,9 @@ class Relay:
     def _check_paired(self):
         with self._lock:
             pair_id = self._pair_id
-        status, body = _request("GET", "/v1/pair/%s/state" % pair_id)
+        if pair_id is None:
+            return
+        status, body = _request("GET", "/v1/pair/%s/state" % pair_id, base=self._base)
         self._set_paired(pair_id, _paired_names(body if status == 200 else None))
 
     def _set_paired(self, pair_id, paired):
@@ -165,7 +178,51 @@ class Relay:
         with self._lock:
             stale = list(self._stale_ids)
         for pair_id in stale:
-            status, _ = _request("DELETE", "/v1/pair/%s" % pair_id)
+            status, _ = _request("DELETE", "/v1/pair/%s" % pair_id, base=self._base)
             if status < 500:
                 with self._lock:
                     self._stale_ids.remove(pair_id)
+
+
+class Mirrored:
+    """A relay that also keeps a second worker told: the one an install upgraded from OverQueue
+    paired through (channel.Channel.old_worker_url). The phone apps from before the rename only
+    ever talk to that worker, so without this they would stop hearing from this PC the moment it
+    updated. New phones pair through this app's own worker, so only it is asked who's scanning.
+
+    Resetting the pairing ends it: the old worker forgets the pairing, and it's never told
+    anything again."""
+
+    def __init__(self, relay, mirror):
+        self.relay = relay
+        self._mirror = mirror
+        self._retired = False
+
+    @property
+    def paired(self):
+        mirrored = [] if self._retired else self._mirror.paired
+        return self.relay.paired + [name for name in mirrored if name not in self.relay.paired]
+
+    @property
+    def reachable(self):
+        return self.relay.reachable
+
+    def publish(self, state, mode, elapsed, since_found=0.0):
+        self.relay.publish(state, mode, elapsed, since_found)
+        if not self._retired:
+            self._mirror.publish(state, mode, elapsed, since_found)
+
+    def change_pair(self, pair_id):
+        self.relay.change_pair(pair_id)
+        if not self._retired:
+            self._retired = True
+            self._mirror.retire()
+
+    def expect_phone(self, expecting):
+        self.relay.expect_phone(expecting)
+
+    def run(self, stop):
+        # After a reset the old worker.s loop has one thing left to do, deleting the pairing, and
+        # then sits idle: nothing is published to it again.
+        threading.Thread(target=self._mirror.run, args=(stop,), daemon=True, name="old-worker").start()
+        self.relay.run(stop)

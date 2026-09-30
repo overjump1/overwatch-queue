@@ -1,4 +1,4 @@
-package com.tomerady.overqueue.shared
+package com.tomerady.queuefox.shared
 
 /** An FCM data message from the worker (`androidPayload` in worker/src/logic.ts). */
 data class QueuePush(
