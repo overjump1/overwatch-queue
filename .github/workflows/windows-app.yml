@@ -48,6 +48,24 @@ jobs:
           pip install -r pc/requirements.txt
           pip install --no-binary pyinstaller pyinstaller==6.22.3
 
+      # pip builds quietly, so nothing above shows the compile happened. Checked against the wheel's
+      # stub instead, in case a cached wheel or a change in PyInstaller's packaging brings it back.
+      - name: Check the bootloader is our own
+        run: |
+          pip download --quiet --no-deps --only-binary :all: pyinstaller==6.22.3 -d stock
+          @'
+          import glob, hashlib, os, sys, zipfile
+          import PyInstaller
+          stub = "PyInstaller/bootloader/Windows-64bit-intel/runw.exe"
+          stock = hashlib.sha256(zipfile.ZipFile(glob.glob("stock/*.whl")[0]).read(stub)).hexdigest()
+          ours = hashlib.sha256(open(os.path.join(os.path.dirname(PyInstaller.__file__), "..", stub), "rb").read()).hexdigest()
+          print("stock", stock)
+          print("ours ", ours)
+          if stock == ours:
+              print("::error::OverQueue.exe would start from PyInstaller's prebuilt bootloader")
+              sys.exit(1)
+          '@ | python -
+
       - name: Test
         run: python -m unittest discover -s pc/tests
 
